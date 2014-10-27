@@ -487,3 +487,115 @@ func TestHrefWithSpace(t *testing.T) {
 	ds.AssertExpectations(t)
 	h.AssertExpectations(t)
 }
+
+// func TestStallingTimeout(t *testing.T) {
+// 	ds := &MockDatastore{}
+// 	ds.On("ClaimNewHost").Return("test.com").Once()
+// 	ds.On("LinksForHost", "test.com").Return([]*walker.URL{
+// 		parse("http://test.com/page1.html"),
+// 	})
+// 	ds.On("UnclaimHost", "test.com").Return()
+// 	ds.On("ClaimNewHost").Return("")
+
+// 	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+// 	ds.On("StoreParsedURL",
+// 		mock.AnythingOfType("*walker.URL"),
+// 		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+// 	h := &MockHandler{}
+// 	h.On("HandleResponse", mock.Anything).Return()
+
+// 	// rs, err := NewMockRemoteServer()
+// 	// if err != nil {
+// 	// 	t.Fatal(err)
+// 	// }
+
+// 	manager := &walker.FetchManager{
+// 		Datastore: ds,
+// 		Handler:   h,
+// 		Transport: GetFakeTransport(),
+// 	}
+
+// 	go manager.Start()
+// 	time.Sleep(time.Second * 3)
+// 	manager.Stop()
+
+// 	rs.Stop()
+// 	recvTextHtml := false
+// 	recvTextPlain := false
+// 	for _, call := range h.Calls {
+// 		fr := call.Arguments.Get(0).(*walker.FetchResults)
+// 		switch fr.URL.String() {
+// 		case "http://norobots.com/page1.html":
+// 			contents, _ := ioutil.ReadAll(fr.Response.Body)
+// 			if string(contents) != html_body {
+// 				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
+// 					fr.URL, html_body, string(contents))
+// 			}
+// 		case "http://norobots.com/page2.html":
+// 		case "http://norobots.com/page3.html":
+// 		case "http://robotsdelay1.com/page4.html":
+// 		case "http://robotsdelay1.com/page5.html":
+// 		case "http://accept.com/accept_html.html":
+// 			recvTextHtml = true
+// 		case "http://accept.com/accept_text.txt":
+// 			recvTextPlain = true
+// 		case "http://linktests.com/links/test.html":
+// 		default:
+// 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+// 		}
+// 	}
+// 	if !recvTextHtml {
+// 		t.Errorf("Failed to handle explicit Content-Type: text/html")
+// 	}
+// 	if !recvTextPlain {
+// 		t.Errorf("Failed to handle Content-Type: text/plain")
+// 	}
+
+// 	// Link tests to ensure we resolve URLs to proper absolute forms
+// 	expectedMimesFound := map[string]string{
+// 		"http://accept.com/donthandle":       "foo/bar",
+// 		"http://accept.com/accept_text.txt":  "text/plain",
+// 		"http://accept.com/accept_html.html": "text/html",
+// 	}
+
+// 	for _, call := range ds.Calls {
+// 		switch call.Method {
+// 		case "StoreParsedURL":
+// 			u := call.Arguments.Get(0).(*walker.URL)
+// 			fr := call.Arguments.Get(1).(*walker.FetchResults)
+// 			if fr.URL.String() != "http://linktests.com/links/test.html" {
+// 				continue
+// 			}
+// 			switch u.String() {
+// 			case "http://linktests.com/links/relative-dir/":
+// 			case "http://linktests.com/links/relative-page/page.html":
+// 			case "http://linktests.com/abs-relative-dir/":
+// 			case "http://linktests.com/abs-relative-page/page.html":
+// 			case "https://other.org/abs-dir/":
+// 			case "https://other.org/abs-page/page.html":
+// 			case "http:donot/ignore.html":
+// 			default:
+// 				t.Errorf("StoreParsedURL call we didn't expect: %v", u)
+// 			}
+
+// 		case "StoreURLFetchResults":
+// 			fr := call.Arguments.Get(0).(*walker.FetchResults)
+// 			link := fr.URL.String()
+// 			mime, mimeOk := expectedMimesFound[link]
+// 			if mimeOk {
+// 				delete(expectedMimesFound, link)
+// 				if fr.MimeType != mime {
+// 					t.Errorf("StoreURLFetchResults for link %v, got mime type %q, expected %q",
+// 						link, fr.MimeType, mime)
+// 				}
+// 			}
+// 		}
+// 	}
+// 	for link := range expectedMimesFound {
+// 		t.Errorf("StoreURLFetchResults expected to find mime type for link %v, but didn't", link)
+// 	}
+
+// 	ds.AssertExpectations(t)
+// 	h.AssertExpectations(t)
+// }

@@ -30,6 +30,108 @@ func GetFakeTransport() http.RoundTripper {
 	}
 }
 
+//
+// http.Transport that tracks the number of requests canceled
+//
+type cancelTrackingTransport struct {
+	http.Transport
+	cancelCount int
+}
+
+func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
+	self.cancelCount++
+	self.Transport.CancelRequest(req)
+}
+
+//
+// Dialer that will never connect, and associated tracking Transport
+//
+func wontConnectDial(network, addr string) (net.Conn, error) {
+	return nil, fmt.Errorf("I'll never connect!!")
+}
+
+func getWontConnectTransport() http.RoundTripper {
+	return &cancelTrackingTransport{
+		Transport: http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			Dial:                wontConnectDial,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+}
+
+type emptyAddr struct{}
+
+func (self *emptyAddr) Network() string {
+	return ""
+}
+
+func (self *emptyAddr) String() string {
+	return ""
+
+}
+
+type stallingDial struct {
+	quit chan struct{}
+}
+
+func (self *stallingDial) Read(b []byte) (int, error) {
+	<-self.quit
+	return 0, fmt.Errorf("Staling Read")
+}
+
+func (self *stallingDial) Write(b []byte) (int, error) {
+	<-self.quit
+	return 0, fmt.Errorf("Staling Write")
+}
+
+func (self *stallingDial) Close() error {
+	close(self.quit)
+	return nil
+}
+
+func (self *stallingDial) LocalAddr() net.Addr {
+	return &emptyAddr{}
+}
+
+func (self *stallingDial) RemoteAddr() net.Addr {
+	return &emptyAddr{}
+}
+
+func (self *stallingDial) SetDeadline(t time.Time) error {
+	return nil
+}
+
+func (self *stallingDial) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (self *stallingDial) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+var allStalls = map[*stallingDial]bool{}
+
+func StallingReadDial(network, addr string) (net.Conn, error) {
+	x := &stallingDial{make(chan struct{})}
+	allStalls[x] = true
+	return x, nil
+}
+
+func GetStallingReadTransport() http.RoundTripper {
+	return &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		Dial:                StallingReadDial,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+}
+
+func ClearStallingConns() {
+	for k := range allStalls {
+		k.Close()
+	}
+}
+
 // parse is a helper to just get a URL object from a string we know is a safe
 // url (ParseURL requires us to deal with potential errors)
 func parse(ref string) *walker.URL {
