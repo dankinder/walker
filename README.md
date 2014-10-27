@@ -83,7 +83,10 @@ In most cases you will want to use walker for some kind of processing. The easie
 ```go
 package main
 
-import "github.com/iParadigms/walker/cmd"
+import (
+	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cmd"
+)
 
 type MyHandler struct{}
 
@@ -105,7 +108,7 @@ go run main.go # Has the same CLI as the walker binary
 
 ## Advanced features and configuration
 
-See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to be exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
+See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
 
 A small sampling of common configuration items:
 ```yaml
