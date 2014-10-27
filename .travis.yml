@@ -7,6 +7,6 @@ services:
   - cassandra
 
 before_script:
-  - sudo GOPATH=/tmp/tempGOPATH go get code.google.com/p/go.tools/cmd/...
+  - sudo GOPATH=/tmp/tempGOPATH $(which go) get code.google.com/p/go.tools/cmd/...
 
 script: ./script/test.sh
