@@ -16,10 +16,7 @@ import (
 //  3. Any error is flagged by HTTP status code 500. A json encoded error message will always be returned with a 500.
 //
 // The next thing to note is the format of each message exchanged with the rest API. Each message will have at least
-// a version attribute and a type attribute. The type attribute is often superfluous in it's content (if you're sending
-// a json blob to /rest/add you know it's an add request, so why set type="add"?). But by leaving type on the messages,
-// it would be easier to determine the destination of the message if the message was stored someplace else (think in
-// a log file somewhere).
+// a version attribute.
 //
 
 func RestRoutes() []Route {
