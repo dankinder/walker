@@ -30,7 +30,6 @@ func RestRoutes() []Route {
 
 type restErrorResponse struct {
 	Version int    `json:"version"`
-	Typ     string `json:"type"`
 	Tag     string `json:"tag"`
 	Message string `json:"message"`
 }
@@ -38,15 +37,13 @@ type restErrorResponse struct {
 func buildError(tag string, format string, args ...interface{}) *restErrorResponse {
 	return &restErrorResponse{
 		Version: 1,
-		Typ:     "error",
 		Tag:     tag,
 		Message: fmt.Sprintf(format, args...),
 	}
 }
 
 type restAddRequest struct {
-	Version int    `json:"version"`
-	Typ     string `json:"type"`
+	Version int `json:"version"`
 	Links   []struct {
 		Url string `json:"url"`
 	} `json:"links"`
@@ -61,11 +58,6 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 		Render.JSON(w, http.StatusInternalServerError, buildError("bad-json-decode", "%v", err))
 		return
 	}
-
-	//XXX: We don't enforce the correct usage of the Typ field of adds. For consistency,
-	// we might force our users to populate the type field with the string 'add'. The
-	// advantage of maintaining consistency is that all the json messages we exchange
-	// will be properly tagged, and thus easier to interpret when out of context (see above).
 
 	if len(adds.Links) == 0 {
 		Render.JSON(w, http.StatusInternalServerError, buildError("empty-links", "No links provided to add"))

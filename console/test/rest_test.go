@@ -75,7 +75,6 @@ func TestAdd(t *testing.T) {
 	}
 	mp := map[string]interface{}{
 		"version": 1,
-		"type":    "add",
 		"links": []interface{}{
 			map[string]interface{}{"url": links[0]},
 			map[string]interface{}{"url": links[1]},
@@ -119,7 +118,6 @@ func TestAdd(t *testing.T) {
 
 	mp = map[string]interface{}{
 		"version": 1,
-		"type":    "add",
 		"links": []interface{}{
 			map[string]interface{}{},
 			map[string]interface{}{},
