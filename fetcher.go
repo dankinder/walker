@@ -204,13 +204,19 @@ func (fm *FetchManager) Start() {
 	fm.started = true
 
 	if fm.Transport == nil {
+		timeout, err := time.ParseDuration(Config.HttpTimeout)
+		if err != nil {
+			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+			panic(err)
+		}
+
 		// Set fm.Transport == http.DefaultTransport, but create a new one; we
 		// want to override Dial but don't want to globally override it in
 		// http.DefaultTransport.
 		fm.Transport = &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
-				Timeout:   time.Duration(Config.HttpTimeoutSeconds) * time.Second,
+				Timeout:   timeout,
 				KeepAlive: 30 * time.Second,
 			}).Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
@@ -270,11 +276,17 @@ type fetcher struct {
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
+	timeout, err := time.ParseDuration(Config.HttpTimeout)
+	if err != nil {
+		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+		panic(err)
+	}
+
 	f := new(fetcher)
 	f.fm = fm
 	f.httpclient = &http.Client{
 		Transport: fm.Transport,
-		Timeout:   time.Duration(Config.HttpTimeoutSeconds) * time.Second,
+		Timeout:   timeout,
 	}
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})

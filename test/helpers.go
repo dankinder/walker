@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"code.google.com/p/log4go"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
 )
@@ -35,29 +36,49 @@ func GetFakeTransport() http.RoundTripper {
 //
 type cancelTrackingTransport struct {
 	http.Transport
-	cancelCount int
+	canceled map[string]int
 }
 
 func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
-	self.cancelCount++
+	key := req.URL.String()
+	count := 0
+	if c, cok := self.canceled[key]; cok {
+		count = c
+	}
+	self.canceled[key] = count + 1
 	self.Transport.CancelRequest(req)
 }
 
 //
 // Dialer that will never connect, and associated tracking Transport
 //
-func wontConnectDial(network, addr string) (net.Conn, error) {
+type wontConnectDial struct {
+	quit chan struct{}
+}
+
+func (self *wontConnectDial) close() {
+	close(self.quit)
+}
+
+func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
+	log4go.Error("Not dialing %q - %q", network, addr)
+	<-self.quit
+	log4go.Error("wontConnectDial was quit for %q - %q", network, addr)
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-func getWontConnectTransport() http.RoundTripper {
-	return &cancelTrackingTransport{
+func getWontConnectTransport() (*cancelTrackingTransport, *wontConnectDial) {
+	dialer := &wontConnectDial{make(chan struct{})}
+	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
-			Dial:                wontConnectDial,
+			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
+		canceled: make(map[string]int),
 	}
+
+	return trans, dialer
 }
 
 type emptyAddr struct{}
