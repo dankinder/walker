@@ -33,7 +33,7 @@ func GetFakeTransport() http.RoundTripper {
 }
 
 //
-// http.Transport that tracks the number of requests canceled
+// http.Transport that tracks which requests where canceled.
 //
 type cancelTrackingTransport struct {
 	http.Transport
@@ -51,7 +51,7 @@ func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
 }
 
 //
-// Dialer that will never connect, and associated tracking Transport
+// wontConnectDial has a Dial routine that will never connect
 //
 type wontConnectDial struct {
 	quit chan struct{}
@@ -63,9 +63,7 @@ func (self *wontConnectDial) Close() error {
 }
 
 func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
-	log4go.Error("Not dialing %q - %q", network, addr)
 	<-self.quit
-	log4go.Error("wontConnectDial was quit for %q - %q", network, addr)
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
@@ -167,7 +165,6 @@ func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
 	return self.newConn(), nil
 }
 
-//
 func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
 	trans := &cancelTrackingTransport{

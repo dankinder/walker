@@ -46,7 +46,7 @@
 # If true, walker will not crawl domains that resolve in private IP ranges
 #blacklist_private_ips: true
 
-# Duration the the complete http-Get is allowed to run before being
+# The duration the the complete http-Get is allowed to run before being
 # canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
 #http_timeout: 30s
 
