@@ -96,7 +96,73 @@ func NewCassandraDatastore() (*CassandraDatastore, error) {
 	return ds, nil
 }
 
+func (ds *CassandraDatastore) Close() {
+	ds.db.Close()
+}
+
+// tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
+// if the caller should re-call the method.
+func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
+	limit := 50
+	loopQuery := fmt.Sprintf(`SELECT dom FROM domain_info
+									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
+									AND dispatched = true LIMIT %d ALLOW FILTERING`, limit)
+
+	casQuery := `UPDATE domain_info 
+						SET 
+							claim_tok = ?, 
+							claim_time = ?
+						WHERE 
+							dom = ?
+						IF 
+							dispatched = true AND
+							claim_tok = 00000000-0000-0000-0000-000000000000`
+
+	// The trumpedClaim counter handles the case when the code attempts to
+	// grab limit domains, but all limit of those domains are claimed by
+	// another datastore before any can be claimed by this datastore.
+	// Under current expected use, it seems like we wouldn't need to retry
+	// more than 5-ish times (hence the retryLimit setting).
+
+	var domain string
+	start := time.Now()
+	trumpedClaim := 0
+	domain_iter := ds.db.Query(loopQuery).Iter()
+	for domain_iter.Scan(&domain) {
+		// The query below is a compare-and-set type query. It will only update the claim_tok, claim_time
+		// if the claim_tok remains 00000000-0000-0000-0000-000000000000 at the time of update.
+		casMap := map[string]interface{}{}
+		applied, err := ds.db.Query(casQuery, ds.crawlerUuid, time.Now(), domain).MapScanCAS(casMap)
+		if err != nil {
+			log4go.Error("Failed to claim segment %v: %v", domain, err)
+		} else if !applied {
+			trumpedClaim++
+			log4go.Debug("Domain %v was claimed by another crawler before resolution", domain)
+		} else {
+			domains = append(domains, domain)
+			log4go.Debug("Claimed segment %v with token %v in %v", domain, ds.crawlerUuid, time.Since(start))
+			start = time.Now()
+		}
+	}
+
+	err := domain_iter.Close()
+
+	if err != nil {
+		log4go.Error("Domain iteration query failed: %v", err)
+		return
+	}
+
+	if trumpedClaim >= limit {
+		retry = true
+	}
+
+	return
+}
+
 func (ds *CassandraDatastore) ClaimNewHost() string {
+
+	// XXX: Dan this commented-out-code is at least slightly outdated. You
+	// want it to remain, or should I yank it?
 
 	// Get our range of priority values, sort high to low and select starting
 	// with the highest priority
@@ -113,31 +179,13 @@ func (ds *CassandraDatastore) ClaimNewHost() string {
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
-		start := time.Now()
-		var domain string
-		//TODO: when using priorities: `WHERE priority = ?`
-		domain_iter := ds.db.Query(`SELECT dom FROM domain_info
-									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
-									AND dispatched = true
-									LIMIT 50 ALLOW FILTERING`).Iter()
-		for domain_iter.Scan(&domain) {
-			//TODO: use lightweight transaction to allow more crawlers
-			//TODO: use a per-crawler uuid
-			log4go.Debug("ClaimNewHost selected new domain in %v", time.Since(start))
-			start = time.Now()
-			err := ds.db.Query(`UPDATE domain_info SET claim_tok = ?, claim_time = ?
-								WHERE dom = ?`,
-				ds.crawlerUuid, time.Now(), domain).Exec()
-			if err != nil {
-				log4go.Error("Failed to claim segment %v: %v", domain, err)
-			} else {
-				log4go.Debug("Claimed segment %v with token %v in %v", domain, ds.crawlerUuid, time.Since(start))
-				ds.domains = append(ds.domains, domain)
+		retryLimit := 5
+		for i := 0; i < retryLimit; i++ {
+			doms, retry := ds.tryClaimHosts()
+			ds.domains = doms
+			if !retry {
+				break
 			}
-		}
-		err := domain_iter.Close()
-		if err != nil {
-			log4go.Error("Domain iteration query failed: %v", err)
 		}
 	}
 
