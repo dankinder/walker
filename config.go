@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -43,9 +44,10 @@ type WalkerConfig struct {
 	MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
 	IgnoreTags              []string `yaml:"ignore_tags"`
 	//TODO: allow -1 as a no max value
-	MaxLinksPerPage         int  `yaml:"max_links_per_page"`
-	NumSimultaneousFetchers int  `yaml:"num_simultaneous_fetchers"`
-	BlacklistPrivateIPs     bool `yaml:"blacklist_private_ips"`
+	MaxLinksPerPage         int    `yaml:"max_links_per_page"`
+	NumSimultaneousFetchers int    `yaml:"num_simultaneous_fetchers"`
+	BlacklistPrivateIPs     bool   `yaml:"blacklist_private_ips"`
+	HttpTimeout             string `yaml:"http_timeout"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -110,6 +112,7 @@ func SetDefaultConfig() {
 	Config.MaxLinksPerPage = 1000
 	Config.NumSimultaneousFetchers = 10
 	Config.BlacklistPrivateIPs = true
+	Config.HttpTimeout = "30s"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -142,6 +145,11 @@ func assertConfigInvariants() error {
 	}
 	if dis.NumConcurrentDomains < 1 {
 		errs = append(errs, "Dispatcher.NumConcurrentDomains must be greater than 0")
+	}
+
+	_, err := time.ParseDuration(Config.HttpTimeout)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("HttpTimeout failed to parse: %v", err))
 	}
 
 	if len(errs) > 0 {
