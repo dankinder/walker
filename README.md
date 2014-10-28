@@ -3,6 +3,8 @@ Walker
 
 An efficient, scalable, continuous crawler leveraging Go/Cassandra
 
+[![Build Status](https://travis-ci.org/iParadigms/walker.svg?branch=master)](https://travis-ci.org/iParadigms/walker)
+
 # Alpha Warning
 This project is a work in progress and not ready for production release. Much of the design described below is pending development. Stay tuned for an Alpha release.
 
