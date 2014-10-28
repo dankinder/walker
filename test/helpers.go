@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -56,8 +57,9 @@ type wontConnectDial struct {
 	quit chan struct{}
 }
 
-func (self *wontConnectDial) close() {
+func (self *wontConnectDial) Close() error {
 	close(self.quit)
+	return nil
 }
 
 func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
@@ -67,7 +69,7 @@ func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-func getWontConnectTransport() (*cancelTrackingTransport, *wontConnectDial) {
+func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
 	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
@@ -81,6 +83,9 @@ func getWontConnectTransport() (*cancelTrackingTransport, *wontConnectDial) {
 	return trans, dialer
 }
 
+//
+// Spoof an Addr interface. Used by stallingConn
+//
 type emptyAddr struct{}
 
 func (self *emptyAddr) Network() string {
@@ -92,65 +97,88 @@ func (self *emptyAddr) String() string {
 
 }
 
-type stallingDial struct {
-	quit chan struct{}
+//
+// stallingConn will stall during any read or write
+//
+type stallingConn struct {
+	closed bool
+	quit   chan struct{}
 }
 
-func (self *stallingDial) Read(b []byte) (int, error) {
+func (self *stallingConn) Read(b []byte) (int, error) {
 	<-self.quit
 	return 0, fmt.Errorf("Staling Read")
 }
 
-func (self *stallingDial) Write(b []byte) (int, error) {
+func (self *stallingConn) Write(b []byte) (int, error) {
 	<-self.quit
 	return 0, fmt.Errorf("Staling Write")
 }
 
-func (self *stallingDial) Close() error {
-	close(self.quit)
+func (self *stallingConn) Close() error {
+	if !self.closed {
+		close(self.quit)
+	}
+	self.closed = true
 	return nil
 }
 
-func (self *stallingDial) LocalAddr() net.Addr {
+func (self *stallingConn) LocalAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingDial) RemoteAddr() net.Addr {
+func (self *stallingConn) RemoteAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingDial) SetDeadline(t time.Time) error {
+func (self *stallingConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingDial) SetReadDeadline(t time.Time) error {
+func (self *stallingConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingDial) SetWriteDeadline(t time.Time) error {
+func (self *stallingConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-var allStalls = map[*stallingDial]bool{}
-
-func StallingReadDial(network, addr string) (net.Conn, error) {
-	x := &stallingDial{make(chan struct{})}
-	allStalls[x] = true
-	return x, nil
+//
+// stallCloser tracks a bundle of stallingConn's
+//
+type stallCloser struct {
+	stalls map[*stallingConn]bool
 }
 
-func GetStallingReadTransport() http.RoundTripper {
-	return &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		Dial:                StallingReadDial,
-		TLSHandshakeTimeout: 10 * time.Second,
+func (self *stallCloser) Close() error {
+	for conn := range self.stalls {
+		conn.Close()
 	}
+	return nil
 }
 
-func ClearStallingConns() {
-	for k := range allStalls {
-		k.Close()
+func (self *stallCloser) newConn() *stallingConn {
+	x := &stallingConn{quit: make(chan struct{})}
+	self.stalls[x] = true
+	return x
+}
+
+func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
+	return self.newConn(), nil
+}
+
+//
+func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
+	dialer := &stallCloser{make(map[*stallingConn]bool)}
+	trans := &cancelTrackingTransport{
+		Transport: http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			Dial:                dialer.Dial,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+		canceled: make(map[string]int),
 	}
+	return trans, dialer
 }
 
 // parse is a helper to just get a URL object from a string we know is a safe
@@ -232,6 +260,11 @@ func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 		return response404(), nil
 	}
 	return res, nil
+}
+
+// This allows the mapRoundTrip to be canceled. Which is needed to prevent
+// errant robots.txt GET's to break TestRedirects.
+func (self *mapRoundTrip) CancelRequest(req *http.Request) {
 }
 
 var initdb sync.Once

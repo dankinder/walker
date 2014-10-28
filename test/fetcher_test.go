@@ -4,6 +4,7 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"testing"
@@ -389,7 +390,6 @@ func TestRedirects(t *testing.T) {
 }
 
 func TestHrefWithSpace(t *testing.T) {
-
 	testPage := "http://t.com/page1.html"
 	const html_with_href_space = `<!DOCTYPE html>
 <html>
@@ -488,75 +488,82 @@ func TestHrefWithSpace(t *testing.T) {
 	h.AssertExpectations(t)
 }
 
-func TestWontConnectTimeout(t *testing.T) {
+func TestHttpTimeout(t *testing.T) {
 	origTimeout := walker.Config.HttpTimeout
 	walker.Config.HttpTimeout = "200ms"
 	defer func() {
 		walker.Config.HttpTimeout = origTimeout
 	}()
 
-	ds := &MockDatastore{}
-	ds.On("ClaimNewHost").Return("t1.com").Once()
-	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		parse("http://t1.com/page1.html"),
-	})
-	ds.On("UnclaimHost", "t1.com").Return()
+	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
-	ds.On("ClaimNewHost").Return("t2.com").Once()
-	ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
-		parse("http://t2.com/page1.html"),
-	})
-	ds.On("UnclaimHost", "t2.com").Return()
+		ds := &MockDatastore{}
+		ds.On("ClaimNewHost").Return("t1.com").Once()
+		ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+			parse("http://t1.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t1.com").Return()
 
-	ds.On("ClaimNewHost").Return("t3.com").Once()
-	ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
-		parse("http://t3.com/page1.html"),
-	})
-	ds.On("UnclaimHost", "t3.com").Return()
+		ds.On("ClaimNewHost").Return("t2.com").Once()
+		ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
+			parse("http://t2.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t2.com").Return()
 
-	ds.On("ClaimNewHost").Return("")
+		ds.On("ClaimNewHost").Return("t3.com").Once()
+		ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
+			parse("http://t3.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t3.com").Return()
 
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
+		ds.On("ClaimNewHost").Return("")
 
-	h := &MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
+		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+		ds.On("StoreParsedURL",
+			mock.AnythingOfType("*walker.URL"),
+			mock.AnythingOfType("*walker.FetchResults")).Return()
 
-	transport, dialer := getWontConnectTransport()
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: transport,
-	}
+		h := &MockHandler{}
+		h.On("HandleResponse", mock.Anything).Return()
 
-	go manager.Start()
-	time.Sleep(time.Second * 2)
-	manager.Stop()
-	dialer.close()
+		var transport *cancelTrackingTransport
+		var closer io.Closer
+		if timeoutType == "wontConnect" {
+			transport, closer = getWontConnectTransport()
+		} else {
+			transport, closer = getStallingReadTransport()
+		}
 
-	canceled := map[string]bool{}
-	for k := range transport.canceled {
-		canceled[k] = true
-	}
+		manager := &walker.FetchManager{
+			Datastore: ds,
+			Handler:   h,
+			Transport: transport,
+		}
 
-	expected := map[string]bool{
-		"http://t1.com/page1.html": true,
-		"http://t2.com/page1.html": true,
-		"http://t3.com/page1.html": true,
-	}
+		go manager.Start()
+		time.Sleep(time.Second * 2)
+		manager.Stop()
+		closer.Close()
 
-	for k := range expected {
-		if !canceled[k] {
-			t.Errorf("Expected to find canceled http get for %q, but didn't", k)
+		canceled := map[string]bool{}
+		for k := range transport.canceled {
+			canceled[k] = true
+		}
+
+		expected := map[string]bool{
+			"http://t1.com/page1.html": true,
+			"http://t2.com/page1.html": true,
+			"http://t3.com/page1.html": true,
+		}
+
+		for k := range expected {
+			if !canceled[k] {
+				t.Errorf("For timeoutType %q Expected to find canceled http get for %q, but didn't", timeoutType, k)
+			}
+		}
+
+		if len(h.Calls) > 0 {
+			t.Fatalf("For timeoutType %q Fetcher shouldn't have been able to connect, but did", timeoutType)
 		}
 	}
-
-	if len(h.Calls) > 0 {
-		t.Fatalf("Fetcher shouldn't have been able to connect, but did")
-	}
-
-	// ds.AssertExpectations(t)
-	// h.AssertExpectations(t)
 }
