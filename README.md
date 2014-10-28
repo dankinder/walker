@@ -27,6 +27,12 @@ The *dispatcher* runs batch jobs looking for domains that don't yet have segment
 
 _Note_: the fetchers uses a pluggable *datastore* component to tell it what to crawl (see the `Datastore` interface). Though the Cassandra datastore is the primarily supported implementation, the fetchers could be backed by alternative implementations (in-memory, classic SQL, etc.) that may not need a dispatcher to run at all.
 
+# Console
+
+Walker comes with a friendly console accessible from the browser. It provides an easy way to add new links to your crawl and see information about what you have crawled so far.
+
+TODO: console screenshot
+
 # Getting started
 
 ## Setup
@@ -37,28 +43,7 @@ Make sure you have [go installed and a GOPATH set](https://golang.org/doc/instal
 go get github.com/iParadigms/walker
 ```
 
-Make sure the build and basic tests work:
-
-```sh
-cd $GOPATH/src/github.com/iParadigms/walker
-go test ./test
-```
-
-### Running the full test suite
-
-Most Walker tests require dependencies to work and don't run with `go test ./test`. To run the full suite with coverage, use `script/test.sh`.
-
-We use two build tags to enable these tests:
-
-#### sudo
-
-The fetch manager tests, in order to more accurately match what the application does, try to listen locally on port 80. This requires elevated privileges. These use the `sudo` build tag, and `script/test.sh` calls the tests using `sudo -E` to run them.
-
-#### cassandra
-
-The datastore tests require a local Cassandra instance to be running. They automatically set up a `walker_test` keyspace for testing, so shouldn't interfere with existing data (nonetheless running tests with your production Cassandra instance is not a good idea).
-
-A simple install of Cassandra on Centos 6 is demonstrated below. See the [datastax documentation](http://www.datastax.com/documentation/cassandra/2.0/cassandra/install/install_cassandraTOC.html) non-RHEL-based installs and recommended settings (Oracle Java is recommended but not required)
+To get going quickly, you need to install Cassandra. A simple install of Cassandra on Centos 6 is demonstrated below. See the [datastax documentation](http://www.datastax.com/documentation/cassandra/2.0/cassandra/install/install_cassandraTOC.html) non-RHEL-based installs and recommended settings (Oracle Java is recommended but not required)
 
 ```sh
 echo "[datastax]
@@ -72,11 +57,10 @@ sudo yum install java-1.7.0-openjdk dsc20
 sudo service cassandra start # it can take a few minutes for this to actually start up
 ```
 
-Once you have these, the full test suite should work:
-
-```sh
-script/test.sh
-```
+In order to run walker and cassandra on your local machine, you may need to make the following changes to [cassandra.yaml](http://www.datastax.com/documentation/cassandra/2.0/cassandra/configuration/configCassandra_yaml_r.html):
+- Change `listen_address` to empty
+- Change `rpc_address` to `0.0.0.0`
+- `sudo service cassandra restart`
 
 ## Basic crawl
 
@@ -84,8 +68,9 @@ Once you've build a `walker` binary, you can crawl with the default handler easi
 
 ```sh
 # These assume walker is in your $PATH
-walker crawl # start crawling; runs fetchers and a dispatcher all-in-one
+walker crawl # start crawling; runs a fetch manager, dispatcher, and console all-in-one
 walker seed -u http://<test_site>.com # give it a seed URL
+# Visit http://<your_machine>:3000 in your browser to see the console
 
 # See more help info and other commands:
 walker help
@@ -98,7 +83,7 @@ In most cases you will want to use walker for some kind of processing. The easie
 ```go
 package main
 
-import "github.com/iParadigms/walker"
+import "github.com/iParadigms/walker/cmd"
 
 type MyHandler struct{}
 
@@ -107,8 +92,8 @@ func (h *MyHandler) HandleResponse(res *walker.FetchResults) {
 }
 
 func main() {
-	walker.Cmd.Handler = &MyHandler{}
-	walker.Cmd.Execute()
+	cmd.Handler(&MyHandler{})
+	cmd.Execute()
 }
 ```
 
@@ -120,16 +105,43 @@ go run main.go # Has the same CLI as the walker binary
 
 ## Advanced features and configuration
 
-### Configuration
+See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to be exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
 
-See `walker.yaml` for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to be exist, but will be read if it is in the working directory of the walker process.
+A small sampling of common configuration items:
+```yaml
+# Whether to dynamically add new-found domains (or their links) to the crawl (a
+# broad crawl) or discard them, assuming desired domains are manually seeded.
+add_new_domains: false
 
-One example key is `add_new_domains` (set to false by default) which configures a vertical crawl. It will crawl only the domains of URLs that you specifically seed. Set it to true to branch out to new domains.
+# Configure the User-Agent header
+user_agent: Walker (http://github.com/iParadigms/walker)
 
-Logging can also be configured by having a `log4go.xml` file in the same location as `walker.yaml`. See `walker/log4go.xml.sample` for an example.
+# Configure which formats this crawler Accepts
+accept_formats: ["text/html", "text/*"]
+
+# Which link to accept based on protocol (a.k.a. schema)
+accept_protocols: ["http", "https"]
+
+# Cassandra configuration for the datastore.
+# Generally these are used to create a gocql.ClusterConfig object
+# (https://godoc.org/github.com/gocql/gocql#ClusterConfig).
+#
+# keyspace shouldn't generally need to be changed; it is mainly changed in
+# testing as an extra layer of safety.
+#
+# replication_factor is used when defining the keyspace.
+cassandra:
+    hosts: ["localhost"]
+    keyspace: "walker"
+    replication_factor: 3
+```
+
+# Documentation
 
 TODO: add url of documentation site (walker.github.io?)
 
+Also see our [FAQ](FAQ.md)
+
 # Contributing
 
-TODO: mailing list information, contribution rules, source code layout
+See [contributing](contributing.md) for information about development, logging, and running tests.
