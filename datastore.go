@@ -100,7 +100,8 @@ func (ds *CassandraDatastore) Close() {
 	ds.db.Close()
 }
 
-// tryClaimHosts
+// tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
+// if the caller should re-call the method.
 func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
 	limit := 50
 	loopQuery := fmt.Sprintf(`SELECT dom FROM domain_info
