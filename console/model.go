@@ -83,7 +83,7 @@ type Model interface {
 	ListLinkHistorical(linkUrl string, seedIndex int, limit int) ([]LinkInfo, int, error)
 
 	// Find a link
-	FindLink(links string) (*LinkInfo, error)
+	FindLink(link string) (*LinkInfo, error)
 }
 
 var DS Model

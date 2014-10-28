@@ -162,6 +162,7 @@ func Start() {
 		//
 		router := mux.NewRouter()
 		routes := Routes()
+		routes = append(routes, RestRoutes()...)
 		for _, route := range routes {
 			log4go.Info("Registering path %s", route.Path)
 			router.HandleFunc(route.Path, buildControllerCounter(route.Controller))

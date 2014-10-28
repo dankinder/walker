@@ -24,6 +24,7 @@ func modifyConfigControllers() {
 	walker.Config.Cassandra.Hosts = []string{"localhost"}
 	walker.Config.Cassandra.ReplicationFactor = 1
 	walker.Config.Console.TemplateDirectory = "../templates"
+	walker.Config.Console.PublicFolder = "../public"
 }
 
 //
