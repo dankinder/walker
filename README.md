@@ -143,10 +143,6 @@ cassandra:
 
 # Documentation
 
-TODO: add url of documentation site (walker.github.io?)
-
-Also see our [FAQ](FAQ.md)
-
-# Contributing
-
-See [contributing](contributing.md) for information about development, logging, and running tests.
+- [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
+- [FAQ](FAQ.md)
+- [contributing](contributing.md) (see about development, logging, and running tests)
