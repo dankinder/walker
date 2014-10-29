@@ -3,7 +3,6 @@ package test
 import (
 	"fmt"
 	"sync"
-
 	"testing"
 	"time"
 
@@ -16,9 +15,33 @@ import (
 // Config alteration right up front
 //
 func modifyConfigDataSource() {
-	walker.Config.Cassandra.Keyspace = "walker_test_model"
-	walker.Config.Cassandra.Hosts = []string{"localhost"}
-	walker.Config.Cassandra.ReplicationFactor = 1
+	source := "test-walker.yaml"
+	err := walker.ReadConfigFile(source)
+	if err != nil {
+		panic(err)
+	}
+
+	// XXX: Weird bug that I've discovered. If I run this files
+	// tests alone, everything works fine. But if I run it
+	// at the same time as controllers_test.go, it fails. It
+	// can't find baz.com
+	//     panic: Unable to find domain before baz.com [recovered]
+	//            panic: Unable to find domain before baz.com
+	// What is happening is that INSERT's into the links table are being
+	// rejected, without notifying the inserting code.
+
+	// If I switch the order, and run model_test.go first and
+	// controllers_test.go I get errors similar in nature (i.e. table not
+	// being populated). With this I get a fairly cryptic error message from
+	// Cassandra:
+	//    ERROR 22:35:34 Attempted to write commit log entry for unrecognized column family: e2d57300-5fbb-11e4-9cad-9b9f6a4f92b6
+	//    ERROR 22:35:34 Attempting to mutate non-existant column family e2d57300-5fbb-11e4-9cad-9b9f6a4f92b6
+	// At this point this seems like a bigger problem than I should handle on
+	// the ConsoleRest branch. I can fix the whole mess by making the keyspace
+	// that the two test files use different. THis allows all the tests
+	// to run.
+
+	walker.Config.Cassandra.Keyspace = "walker_test2"
 }
 
 //
@@ -263,12 +286,10 @@ func getDs(t *testing.T) *console.CqlModel {
 	//
 	// Insert some data
 	//
-
 	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 0)`
 	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 0)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-
 	queries := []*gocql.Query{
 		db.Query(insertDomainToCrawl, "test.com", gocql.UUID{}, testTime),
 		db.Query(insertLink, "test.com", "", "/page1.html", "http", walker.NotYetCrawled, 200, "", false),
@@ -365,7 +386,6 @@ func getDs(t *testing.T) *console.CqlModel {
 		if err != nil {
 			panic(err)
 		}
-
 		if domain == "baz.com" {
 			foundBaz = true
 			break
@@ -373,12 +393,12 @@ func getDs(t *testing.T) *console.CqlModel {
 
 		beforeBazComLink = url
 	}
-	if !foundBaz {
-		panic("Unable to find domain before baz.com")
-	}
 	err = itr.Close()
 	if err != nil {
 		panic(fmt.Errorf("beforeBazCom link iterator error: %v", err))
+	}
+	if !foundBaz {
+		panic("Unable to find domain before baz.com")
 	}
 	if beforeBazComLink == nil {
 		bazSeed = ""
