@@ -169,28 +169,9 @@ func (ds *CassandraDatastore) tryClaimHosts(priority int, limit int) (domains []
 var limitPerClaimCycle int = 50
 
 // The allowed values of the priority in the domain_info table
-var AllowedPriorities = []int{2, 1, 0} //order matters here
+var AllowedPriorities = []int{5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5} //order matters here
 
 func (ds *CassandraDatastore) ClaimNewHost() string {
-
-	// XXX: Will remove this comment and commented code if we decide to stick
-	// with fixed allowedPriorities.
-
-	// // Get our range of priority values, sort high to low and select starting
-	// // with the highest priority. Because of the index on domain_info for priority,
-	// // I expect this query should be fairly fast. But note that the number
-	// // of distinct priority values that come out of this query could have a significant
-	// // impact on performance. Read: probably should use a small number of priority's.
-	// //
-	// priorities := []int{}
-	// var p int
-	// priority_iter := ds.db.Query(`SELECT DISTINCT priority FROM domain_info`).Iter()
-	// defer priority_iter.Close()
-	// for priority_iter.Scan(&p) {
-	// 	priorities = append(priorities, p)
-	// }
-	// sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
-
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
@@ -217,10 +198,8 @@ func (ds *CassandraDatastore) ClaimNewHost() string {
 		return ""
 	}
 
-	// Pop the last element and return it
-	lastIndex := len(ds.domains) - 1
-	domain := ds.domains[lastIndex]
-	ds.domains = ds.domains[:lastIndex]
+	domain := ds.domains[0]
+	ds.domains = ds.domains[1:]
 	return domain
 }
 
