@@ -102,11 +102,15 @@ func (ds *CassandraDatastore) Close() {
 
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
 // if the caller should re-call the method.
-func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
-	limit := 50
-	loopQuery := fmt.Sprintf(`SELECT dom FROM domain_info
-									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
-									AND dispatched = true LIMIT %d ALLOW FILTERING`, limit)
+func (ds *CassandraDatastore) tryClaimHosts(priority int, limit int) (domains []string, retry bool) {
+	loopQuery := fmt.Sprintf(`SELECT dom 
+									FROM domain_info
+									WHERE 
+										claim_tok = 00000000-0000-0000-0000-000000000000 AND
+								 		dispatched = true AND
+								 		priority = ?
+								 	LIMIT %d 
+								 	ALLOW FILTERING`, limit)
 
 	casQuery := `UPDATE domain_info 
 						SET 
@@ -127,7 +131,7 @@ func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
 	var domain string
 	start := time.Now()
 	trumpedClaim := 0
-	domain_iter := ds.db.Query(loopQuery).Iter()
+	domain_iter := ds.db.Query(loopQuery, priority).Iter()
 	for domain_iter.Scan(&domain) {
 		// The query below is a compare-and-set type query. It will only update the claim_tok, claim_time
 		// if the claim_tok remains 00000000-0000-0000-0000-000000000000 at the time of update.
@@ -137,10 +141,10 @@ func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
 			log4go.Error("Failed to claim segment %v: %v", domain, err)
 		} else if !applied {
 			trumpedClaim++
-			log4go.Debug("Domain %v was claimed by another crawler before resolution", domain)
+			log4go.Fine("Domain %v was claimed by another crawler before resolution", domain)
 		} else {
 			domains = append(domains, domain)
-			log4go.Debug("Claimed segment %v with token %v in %v", domain, ds.crawlerUuid, time.Since(start))
+			log4go.Fine("Claimed segment %v with token %v in %v", domain, ds.crawlerUuid, time.Since(start))
 			start = time.Now()
 		}
 	}
@@ -153,37 +157,57 @@ func (ds *CassandraDatastore) tryClaimHosts() (domains []string, retry bool) {
 	}
 
 	if trumpedClaim >= limit {
+		log4go.Fine("tryClaimHosts requesting retry with trumpedClaim = %d, and limit = %d", trumpedClaim, limit)
 		retry = true
 	}
 
 	return
 }
 
+// limitPerClaimCycle is the target number of domains to put in the
+// Datastore.domains per population.
+var limitPerClaimCycle int = 50
+
+// The allowed values of the priority in the domain_info table
+var allowedPriorities = []int{2, 1, 0} //order matters here
+
 func (ds *CassandraDatastore) ClaimNewHost() string {
 
-	// XXX: Dan this commented-out-code is at least slightly outdated. You
-	// want it to remain, or should I yank it?
+	// XXX: Will remove this comment and commented code if we decide to stick
+	// with fixed allowedPriorities.
 
-	// Get our range of priority values, sort high to low and select starting
-	// with the highest priority
-	//priorities := []int{}
-	//var p int
-	//priority_iter := ds.db.Query(`SELECT DISTINCT priority FROM domains_to_crawl`).Iter()
-	//defer priority_iter.Close()
-	//for priority_iter.Scan(&p) {
-	//	priorities = append(priorities, p)
-	//}
-	//sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
+	// // Get our range of priority values, sort high to low and select starting
+	// // with the highest priority. Because of the index on domain_info for priority,
+	// // I expect this query should be fairly fast. But note that the number
+	// // of distinct priority values that come out of this query could have a significant
+	// // impact on performance. Read: probably should use a small number of priority's.
+	// //
+	// priorities := []int{}
+	// var p int
+	// priority_iter := ds.db.Query(`SELECT DISTINCT priority FROM domain_info`).Iter()
+	// defer priority_iter.Close()
+	// for priority_iter.Scan(&p) {
+	// 	priorities = append(priorities, p)
+	// }
+	// sort.Sort(sort.Reverse(sort.IntSlice(priorities)))
 
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
-		retryLimit := 5
-		for i := 0; i < retryLimit; i++ {
-			doms, retry := ds.tryClaimHosts()
-			ds.domains = doms
-			if !retry {
+		for _, priority := range allowedPriorities {
+			var domainsPerPrio []string
+			retryLimit := 5
+			for i := 0; i < retryLimit; i++ {
+				log4go.Fine("ClaimNewHost pulling priority = %d", priority)
+				var retry bool
+				domainsPerPrio, retry = ds.tryClaimHosts(priority, limitPerClaimCycle-len(ds.domains))
+				if !retry {
+					break
+				}
+			}
+			ds.domains = append(ds.domains, domainsPerPrio...)
+			if len(ds.domains) >= limitPerClaimCycle {
 				break
 			}
 		}

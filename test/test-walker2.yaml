@@ -7,3 +7,6 @@ user_agent: "Test Agent (set in yaml)"
 console:
    template_directory: ../console/templates
    public_folder: ../console/public
+cassandra:
+   keyspace: "walker_test"
+   replication_factor: 1

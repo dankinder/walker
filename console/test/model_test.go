@@ -263,8 +263,8 @@ func getDs(t *testing.T) *console.CqlModel {
 	//
 	// Insert some data
 	//
-	insertDomainInfo := `INSERT INTO domain_info (dom) VALUES (?)`
-	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched) VALUES (?, ?, ?, true)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 0)`
+	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 0)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
@@ -283,11 +283,11 @@ func getDs(t *testing.T) *console.CqlModel {
 		db.Query(insertSegment, "test.com", "", "/page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "/page2.html", "http"),
 
-		db.Query(insertDomainInfo, "foo.com"),
+		db.Query(insertDomainInfo, "foo.com", walker.NotYetCrawled),
 		db.Query(insertLink, "foo.com", "sub", "/page1.html", "http", fooTime, 200, "", false),
 		db.Query(insertLink, "foo.com", "sub", "/page2.html", "http", fooTime, 200, "", false),
 
-		db.Query(insertDomainInfo, "bar.com"),
+		db.Query(insertDomainInfo, "bar.com", walker.NotYetCrawled),
 
 		db.Query(insertDomainToCrawl, "baz.com", bazUuid, testTime),
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[0].CrawlTime, 200, "", false),
