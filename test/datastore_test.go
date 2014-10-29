@@ -512,7 +512,7 @@ func TestClaimHostConcurrency(t *testing.T) {
 	numDomain := 1000
 
 	db := getDB(t)
-	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, dispatched) VALUES (?, 00000000-0000-0000-0000-000000000000, true)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, 00000000-0000-0000-0000-000000000000, true, 0)`
 	for i := 0; i < numDomain; i++ {
 		err := db.Query(insertDomainInfo, fmt.Sprintf("d%d.com", i)).Exec()
 		if err != nil {

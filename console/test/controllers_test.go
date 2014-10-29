@@ -17,24 +17,18 @@ import (
 )
 
 //
-// Config
-//
-func modifyConfigControllers() {
-	walker.Config.Cassandra.Keyspace = "walker_controllers"
-	walker.Config.Cassandra.Hosts = []string{"localhost"}
-	walker.Config.Cassandra.ReplicationFactor = 1
-	walker.Config.Console.TemplateDirectory = "../templates"
-}
-
-//
-// Generate Fixtures
+// Fixtures
 //
 func spoofData() {
 	if console.DS != nil {
 		console.DS.Close()
 		console.DS = nil
 	}
-	modifyConfigControllers()
+
+	err := walker.ReadConfigFile("test-walker.yaml")
+	if err != nil {
+		panic(err)
+	}
 
 	console.SpoofData()
 	ds, err := console.NewCqlModel()
