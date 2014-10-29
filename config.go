@@ -100,6 +100,13 @@ type WalkerConfig struct {
 // SetDefaultConfig resets the Config object to default values, regardless of
 // what was set by any configuration file.
 func SetDefaultConfig() {
+	// NOTE: go-yaml has a bug where it does not overwrite sequence values
+	// (i.e. lists), it appends to them.
+	// See https://github.com/go-yaml/yaml/issues/48
+	// Until this is fixed, for any sequence value, in readConfig we have to
+	// nil it and then fill in the default value if yaml.Unmarshal did not fill
+	// anything in
+
 	Config.AddNewDomains = false
 	Config.AddedDomainsCacheSize = 20000
 	Config.MaxDNSCacheEntries = 20000
@@ -169,6 +176,12 @@ func assertConfigInvariants() error {
 func readConfig() error {
 	SetDefaultConfig()
 
+	// See NOTE in SetDefaultConfig regarding sequence values
+	Config.AcceptFormats = []string{}
+	Config.AcceptProtocols = []string{}
+	Config.IgnoreTags = []string{}
+	Config.Cassandra.Hosts = []string{}
+
 	data, err := ioutil.ReadFile(ConfigName)
 	if err != nil {
 		return fmt.Errorf("Failed to read config file (%v): %v", ConfigName, err)
@@ -177,8 +190,24 @@ func readConfig() error {
 	if err != nil {
 		return fmt.Errorf("Failed to unmarshal yaml from config file (%v): %v", ConfigName, err)
 	}
-	log4go.Info("Loaded config file %v", ConfigName)
+
+	// See NOTE in SetDefaultConfig regarding sequence values
+	if len(Config.AcceptFormats) == 0 {
+		Config.AcceptFormats = []string{"text/html", "text/*;"}
+	}
+	if len(Config.AcceptProtocols) == 0 {
+		Config.AcceptProtocols = []string{"http", "https"}
+	}
+	if len(Config.IgnoreTags) == 0 {
+		Config.IgnoreTags = []string{"script", "img", "link"}
+	}
+	if len(Config.Cassandra.Hosts) == 0 {
+		Config.Cassandra.Hosts = []string{"localhost"}
+	}
 
 	err = assertConfigInvariants()
+	if err != nil {
+		log4go.Info("Loaded config file %v", ConfigName)
+	}
 	return err
 }
