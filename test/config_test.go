@@ -2,6 +2,7 @@ package test
 
 import (
 	"path"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -87,5 +88,24 @@ func TestConfigLoadingBadFiles(t *testing.T) {
 		} else if err.Error() != c.expected {
 			t.Errorf("Reading config %v, expected: %v\nBut got: %v", c.file, c.expected, err)
 		}
+	}
+}
+
+// TestSequenceOverwrites tests a bug that we hit with go-yaml: for a sequence
+// value in the yaml (a list like cassandra.hosts) it would append instead of
+// overwriting.
+func TestSequenceOverwrites(t *testing.T) {
+	defer func() {
+		// Reset config for the remaining tests
+		loadTestConfig("test-walker.yaml")
+	}()
+
+	err := walker.ReadConfigFile("test-cassandra-host.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(walker.Config.Cassandra.Hosts, []string{"other.host.com"}) {
+		t.Errorf("Yaml sequence did not properly get overwritten, got %v",
+			walker.Config.Cassandra.Hosts)
 	}
 }
