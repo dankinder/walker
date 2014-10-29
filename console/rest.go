@@ -13,7 +13,7 @@ import (
 // IMPLEMENTATION NOTE: Few notes about the approach to REST used in this file:
 //  1. Always exchange JSON
 //  2. Any successful rest request returns HTTP status code 200. If the server can leave the HTTP body empty, it will
-//  3. Any error is flagged by HTTP status code 500. A json encoded error message will always be returned with a 500.
+//  3. Any error is flagged by HTTP status != 200. A json encoded error message will always be returned with a 500.
 //
 // The next thing to note is the format of each message exchanged with the rest API. Each message will have at least
 // a version attribute.
@@ -52,12 +52,12 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 	err := decoder.Decode(&adds)
 	if err != nil {
 		log4go.Error("RestAdd failed to decode %v", err)
-		Render.JSON(w, http.StatusInternalServerError, buildError("bad-json-decode", "%v", err))
+		Render.JSON(w, http.StatusBadRequest, buildError("bad-json-decode", "%v", err))
 		return
 	}
 
 	if len(adds.Links) == 0 {
-		Render.JSON(w, http.StatusInternalServerError, buildError("empty-links", "No links provided to add"))
+		Render.JSON(w, http.StatusBadRequest, buildError("empty-links", "No links provided to add"))
 		return
 	}
 
@@ -65,7 +65,7 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 	for _, l := range adds.Links {
 		u := l.Url
 		if u == "" {
-			Render.JSON(w, http.StatusInternalServerError, buildError("bad-link-element", "No URL provided for link"))
+			Render.JSON(w, http.StatusBadRequest, buildError("bad-link-element", "No URL provided for link"))
 			return
 		}
 		links = append(links, u)
@@ -78,7 +78,7 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 			buffer.WriteString(e.Error())
 			buffer.WriteString("\n")
 		}
-		Render.JSON(w, http.StatusInternalServerError, buildError("insert-links-error", buffer.String()))
+		Render.JSON(w, http.StatusBadRequest, buildError("insert-links-error", buffer.String()))
 		return
 	}
 

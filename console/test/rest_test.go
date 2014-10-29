@@ -107,8 +107,8 @@ func TestAdd(t *testing.T) {
 		"type":    "add",
 	}
 	rmp, status = restReq(url, mp)
-	if status != http.StatusInternalServerError {
-		t.Fatalf("ErrorAdd1 Got status code %d, but expected status code %d", status, http.StatusInternalServerError)
+	if status != http.StatusBadRequest {
+		t.Fatalf("ErrorAdd1 Got status code %d, but expected status code %d", status, http.StatusBadRequest)
 	}
 	tag, tagOk := rmp["tag"].(string)
 	tagExpect := "empty-links"
@@ -125,8 +125,8 @@ func TestAdd(t *testing.T) {
 		},
 	}
 	rmp, status = restReq(url, mp)
-	if status != http.StatusInternalServerError {
-		t.Fatalf("ErrorAdd2 Got status code %d, but expected status code %d", status, http.StatusInternalServerError)
+	if status != http.StatusBadRequest {
+		t.Fatalf("ErrorAdd2 Got status code %d, but expected status code %d", status, http.StatusBadRequest)
 	}
 	tag, tagOk = rmp["tag"].(string)
 	tagExpect = "bad-link-element"
@@ -142,8 +142,8 @@ func TestAdd(t *testing.T) {
 		},
 	}
 	rmp, status = restReq(url, mp)
-	if status != http.StatusInternalServerError {
-		t.Fatalf("ErrorAdd3 Got status code %d, but expected status code %d", status, http.StatusInternalServerError)
+	if status != http.StatusBadRequest {
+		t.Fatalf("ErrorAdd3 Got status code %d, but expected status code %d", status, http.StatusBadRequest)
 	}
 	tag, tagOk = rmp["tag"].(string)
 	tagExpect = "insert-links-error"
