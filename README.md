@@ -3,6 +3,8 @@ Walker
 
 An efficient, scalable, continuous crawler leveraging Go/Cassandra
 
+[![Build Status](https://travis-ci.org/iParadigms/walker.svg?branch=master)](https://travis-ci.org/iParadigms/walker)
+
 # Alpha Warning
 This project is a work in progress and not ready for production release. Much of the design described below is pending development. Stay tuned for an Alpha release.
 
@@ -83,7 +85,10 @@ In most cases you will want to use walker for some kind of processing. The easie
 ```go
 package main
 
-import "github.com/iParadigms/walker/cmd"
+import (
+	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cmd"
+)
 
 type MyHandler struct{}
 
@@ -105,7 +110,7 @@ go run main.go # Has the same CLI as the walker binary
 
 ## Advanced features and configuration
 
-See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to be exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
+See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
 
 A small sampling of common configuration items:
 ```yaml
@@ -138,10 +143,6 @@ cassandra:
 
 # Documentation
 
-TODO: add url of documentation site (walker.github.io?)
-
-Also see our [FAQ](FAQ.md)
-
-# Contributing
-
-See [contributing](contributing.md) for information about development, logging, and running tests.
+- [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
+- [FAQ](FAQ.md)
+- [contributing](contributing.md) (see about development, logging, and running tests)

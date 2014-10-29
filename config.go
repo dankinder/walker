@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -43,9 +44,10 @@ type WalkerConfig struct {
 	MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
 	IgnoreTags              []string `yaml:"ignore_tags"`
 	//TODO: allow -1 as a no max value
-	MaxLinksPerPage         int  `yaml:"max_links_per_page"`
-	NumSimultaneousFetchers int  `yaml:"num_simultaneous_fetchers"`
-	BlacklistPrivateIPs     bool `yaml:"blacklist_private_ips"`
+	MaxLinksPerPage         int    `yaml:"max_links_per_page"`
+	NumSimultaneousFetchers int    `yaml:"num_simultaneous_fetchers"`
+	BlacklistPrivateIPs     bool   `yaml:"blacklist_private_ips"`
+	HttpTimeout             string `yaml:"http_timeout"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -98,6 +100,13 @@ type WalkerConfig struct {
 // SetDefaultConfig resets the Config object to default values, regardless of
 // what was set by any configuration file.
 func SetDefaultConfig() {
+	// NOTE: go-yaml has a bug where it does not overwrite sequence values
+	// (i.e. lists), it appends to them.
+	// See https://github.com/go-yaml/yaml/issues/48
+	// Until this is fixed, for any sequence value, in readConfig we have to
+	// nil it and then fill in the default value if yaml.Unmarshal did not fill
+	// anything in
+
 	Config.AddNewDomains = false
 	Config.AddedDomainsCacheSize = 20000
 	Config.MaxDNSCacheEntries = 20000
@@ -110,6 +119,7 @@ func SetDefaultConfig() {
 	Config.MaxLinksPerPage = 1000
 	Config.NumSimultaneousFetchers = 10
 	Config.BlacklistPrivateIPs = true
+	Config.HttpTimeout = "30s"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -144,6 +154,11 @@ func assertConfigInvariants() error {
 		errs = append(errs, "Dispatcher.NumConcurrentDomains must be greater than 0")
 	}
 
+	_, err := time.ParseDuration(Config.HttpTimeout)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("HttpTimeout failed to parse: %v", err))
+	}
+
 	if len(errs) > 0 {
 		em := ""
 		for _, err := range errs {
@@ -161,6 +176,12 @@ func assertConfigInvariants() error {
 func readConfig() error {
 	SetDefaultConfig()
 
+	// See NOTE in SetDefaultConfig regarding sequence values
+	Config.AcceptFormats = []string{}
+	Config.AcceptProtocols = []string{}
+	Config.IgnoreTags = []string{}
+	Config.Cassandra.Hosts = []string{}
+
 	data, err := ioutil.ReadFile(ConfigName)
 	if err != nil {
 		return fmt.Errorf("Failed to read config file (%v): %v", ConfigName, err)
@@ -169,8 +190,24 @@ func readConfig() error {
 	if err != nil {
 		return fmt.Errorf("Failed to unmarshal yaml from config file (%v): %v", ConfigName, err)
 	}
-	log4go.Info("Loaded config file %v", ConfigName)
+
+	// See NOTE in SetDefaultConfig regarding sequence values
+	if len(Config.AcceptFormats) == 0 {
+		Config.AcceptFormats = []string{"text/html", "text/*;"}
+	}
+	if len(Config.AcceptProtocols) == 0 {
+		Config.AcceptProtocols = []string{"http", "https"}
+	}
+	if len(Config.IgnoreTags) == 0 {
+		Config.IgnoreTags = []string{"script", "img", "link"}
+	}
+	if len(Config.Cassandra.Hosts) == 0 {
+		Config.Cassandra.Hosts = []string{"localhost"}
+	}
 
 	err = assertConfigInvariants()
+	if err != nil {
+		log4go.Info("Loaded config file %v", ConfigName)
+	}
 	return err
 }

@@ -507,7 +507,16 @@ CREATE TABLE {{.Keyspace}}.links (
 	--encoding text,
 
 	PRIMARY KEY (dom, subdom, path, proto, time)
-) WITH compaction = { 'class' : 'LeveledCompactionStrategy' };
+) WITH compaction = { 'class' : 'LeveledCompactionStrategy' }
+	-- Since we delete segments frequently, gc_grace_seconds = 0 indicates that
+	-- we should immediately delete the records. In certain failure scenarios
+	-- this could cause a deleted row to reappear, but for this table that is
+	-- okay, we'll just crawl that link again, no harm.
+	-- The performance cost of making this non-zero: D is the frequency (per
+	-- second) that we crawl and dispatch a domain, and G is the grace period
+	-- defined here (in seconds), then segment queries will cost roughly an
+	-- extra factor of D*G in query time
+	AND gc_grace_seconds = 0;
 
 -- segments contains groups of links that are ready to be crawled for a given domain.
 -- Links belonging to the same domain are considered one segment.

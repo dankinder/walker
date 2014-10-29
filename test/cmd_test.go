@@ -1,3 +1,5 @@
+// +build cassandra
+
 package test
 
 import (
@@ -25,6 +27,7 @@ func TestCommandsReadConfig(t *testing.T) {
 	handler := &MockHandler{}
 	cmd.Handler(handler)
 
+	getDB(t) // Ensure that walker_test exists, as the console will try to connect
 	datastore := &MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("ClaimNewHost").Return("")
