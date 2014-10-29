@@ -169,7 +169,7 @@ func (ds *CassandraDatastore) tryClaimHosts(priority int, limit int) (domains []
 var limitPerClaimCycle int = 50
 
 // The allowed values of the priority in the domain_info table
-var allowedPriorities = []int{2, 1, 0} //order matters here
+var AllowedPriorities = []int{2, 1, 0} //order matters here
 
 func (ds *CassandraDatastore) ClaimNewHost() string {
 
@@ -195,7 +195,7 @@ func (ds *CassandraDatastore) ClaimNewHost() string {
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
-		for _, priority := range allowedPriorities {
+		for _, priority := range AllowedPriorities {
 			var domainsPerPrio []string
 			retryLimit := 5
 			for i := 0; i < retryLimit; i++ {

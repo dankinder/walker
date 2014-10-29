@@ -560,5 +560,49 @@ func TestClaimHostConcurrency(t *testing.T) {
 			t.Fatalf("Failed to claim domain %s", host)
 		}
 	}
+}
+
+func TestDomainPriority(t *testing.T) {
+	numPrios := 100
+
+	db := getDB(t)
+	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
+	for i := 0; i < numPrios; i++ {
+		for _, priority := range walker.AllowedPriorities {
+			err := db.Query(insertDomainInfo, fmt.Sprintf("d%d-%d.com", i, priority), priority).Exec()
+			if err != nil {
+				t.Fatalf("Failed to insert domain d%d.com", i)
+			}
+		}
+	}
+	db.Close()
+	ds := getDS(t)
+	var allHosts []string
+	for {
+		host := ds.ClaimNewHost()
+		if host == "" {
+			break
+		}
+		allHosts = append(allHosts, host)
+	}
+	ds.Close()
+
+	expectedAllHostsLength := len(walker.AllowedPriorities) * numPrios
+	if len(allHosts) != expectedAllHostsLength {
+		t.Fatalf("allHosts length mismatch: got %d, expected %d", len(allHosts), expectedAllHostsLength)
+	}
+
+	highestPriority := walker.AllowedPriorities[0] + 1
+	for _, host := range allHosts {
+		var prio, index int
+		n, err := fmt.Sscanf(host, "d%d-%d.com", &index, &prio)
+		if n != 2 || err != nil {
+			t.Fatalf("Sscanf failed unexpectedly: %d, %v", n, err)
+		}
+
+		if prio > highestPriority {
+			t.Fatalf("Found domain %q out of order: prio = %d, highestPriority = %d", host, prio, highestPriority)
+		}
+	}
 
 }
