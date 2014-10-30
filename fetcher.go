@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/iParadigms/walker/dnscache"
 	"github.com/iParadigms/walker/mimetools"
 
 	"github.com/temoto/robotstxt.go"
@@ -224,7 +225,7 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = DNSCachingDial(t.Dial, Config.MaxDNSCacheEntries)
+		t.Dial = dnscache.Dial(t.Dial, Config.MaxDNSCacheEntries)
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
