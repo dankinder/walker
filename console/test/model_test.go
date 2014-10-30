@@ -172,33 +172,37 @@ func timeClose(l time.Time, r time.Time) bool {
 
 //Shared Domain Information
 var bazDomain = console.DomainInfo{
-	Domain:            "baz.com",
-	NumberLinksTotal:  1,
-	NumberLinksQueued: 1,
-	TimeQueued:        testTime,
-	UuidOfQueued:      bazUuid,
+	Domain:               "baz.com",
+	NumberLinksTotal:     1,
+	NumberLinksQueued:    1,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           testTime,
+	UuidOfQueued:         bazUuid,
 }
 
 var fooDomain = console.DomainInfo{
-	Domain:            "foo.com",
-	NumberLinksTotal:  2,
-	NumberLinksQueued: 0,
-	TimeQueued:        walker.NotYetCrawled,
+	Domain:               "foo.com",
+	NumberLinksTotal:     2,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           walker.NotYetCrawled,
 }
 
 var barDomain = console.DomainInfo{
-	Domain:            "bar.com",
-	NumberLinksTotal:  0,
-	NumberLinksQueued: 0,
-	TimeQueued:        walker.NotYetCrawled,
+	Domain:               "bar.com",
+	NumberLinksTotal:     0,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           walker.NotYetCrawled,
 }
 
 var testDomain = console.DomainInfo{
-	Domain:            "test.com",
-	NumberLinksTotal:  8,
-	NumberLinksQueued: 2,
-	TimeQueued:        testTime,
-	UuidOfQueued:      gocql.UUID{},
+	Domain:               "test.com",
+	NumberLinksTotal:     8,
+	NumberLinksQueued:    2,
+	NumberLinksUncrawled: 8,
+	TimeQueued:           testTime,
+	UuidOfQueued:         gocql.UUID{},
 }
 
 type updatedInDb struct {
@@ -459,6 +463,9 @@ func TestListDomains(t *testing.T) {
 			if got.NumberLinksQueued != exp.NumberLinksQueued {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksQueued mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
 			}
+			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
+			}
 			if !timeClose(got.TimeQueued, exp.TimeQueued) {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' TimeQueued mismatch got %v, expected %v", got.Domain, test.tag, got.TimeQueued, exp.TimeQueued)
 			}
@@ -524,6 +531,9 @@ func TestFindDomain(t *testing.T) {
 		}
 		if got.NumberLinksQueued != exp.NumberLinksQueued {
 			t.Errorf("FindDomain %s NumberLinksQueued mismatch got %v, expected %v", test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
+		}
+		if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+			t.Errorf("FindDomain with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 		}
 		if !timeClose(got.TimeQueued, exp.TimeQueued) {
 			t.Errorf("FindDomain %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)
@@ -593,6 +603,9 @@ func TestListWorkingDomains(t *testing.T) {
 			}
 			if got.NumberLinksQueued != exp.NumberLinksQueued {
 				t.Errorf("ListWorkingDomains %s NumberLinksQueued mismatch got %v, expected %v", test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
+			}
+			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+				t.Errorf("ListWorkingDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 			}
 			if !timeClose(got.TimeQueued, exp.TimeQueued) {
 				t.Errorf("ListWorkingDomains %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)
