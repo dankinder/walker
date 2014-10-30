@@ -14,6 +14,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
 // FakeDial makes connections to localhost, no matter what addr was given.
@@ -267,7 +268,7 @@ var initdb sync.Once
 
 func getDB(t *testing.T) *gocql.Session {
 	initdb.Do(func() {
-		err := walker.CreateCassandraSchema()
+		err := cassandra.CreateSchema()
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
@@ -277,7 +278,7 @@ func getDB(t *testing.T) *gocql.Session {
 		t.Fatal("Running tests requires using the walker_test keyspace")
 		return nil
 	}
-	config := walker.GetCassandraConfig()
+	config := cassandra.GetConfig()
 	db, err := config.CreateSession()
 	if err != nil {
 		t.Fatalf("Could not connect to local cassandra db: %v", err)
