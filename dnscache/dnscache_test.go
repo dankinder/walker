@@ -1,11 +1,10 @@
-package test
+package dnscache
 
 import (
 	"net"
 	"testing"
 	"time"
 
-	"github.com/iParadigms/walker"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -87,7 +86,7 @@ func TestHostnameCached(t *testing.T) {
 	dialer.On("Dial", "tcp", "test.com").Return(conn, nil).Once()
 	dialer.On("Dial", "tcp", "1.2.3.4").Return(conn, nil).Twice()
 
-	cdial := walker.DNSCachingDial(dialer.Dial, 2)
+	cdial := Dial(dialer.Dial, 2)
 	cdial("tcp", "test.com")
 	cdial("tcp", "test.com")
 	cdial("tcp", "test.com")
@@ -105,7 +104,7 @@ func TestHostPushedOutOfCache(t *testing.T) {
 	dialer.On("Dial", "tcp", "host2.com").Return(conn, nil).Once()
 	dialer.On("Dial", "tcp", "host3.com").Return(conn, nil).Once()
 
-	cdial := walker.DNSCachingDial(dialer.Dial, 2)
+	cdial := Dial(dialer.Dial, 2)
 	cdial("tcp", "host1.com")
 	cdial("tcp", "host2.com")
 	cdial("tcp", "host3.com")
