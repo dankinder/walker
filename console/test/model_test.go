@@ -20,28 +20,6 @@ func modifyConfigDataSource() {
 	if err != nil {
 		panic(err)
 	}
-
-	// XXX: Weird bug that I've discovered. If I run this files
-	// tests alone, everything works fine. But if I run it
-	// at the same time as controllers_test.go, it fails. It
-	// can't find baz.com
-	//     panic: Unable to find domain before baz.com [recovered]
-	//            panic: Unable to find domain before baz.com
-	// What is happening is that INSERT's into the links table are being
-	// rejected, without notifying the inserting code.
-
-	// If I switch the order, and run model_test.go first and
-	// controllers_test.go I get errors similar in nature (i.e. table not
-	// being populated). With this I get a fairly cryptic error message from
-	// Cassandra:
-	//    ERROR 22:35:34 Attempted to write commit log entry for unrecognized column family: e2d57300-5fbb-11e4-9cad-9b9f6a4f92b6
-	//    ERROR 22:35:34 Attempting to mutate non-existant column family e2d57300-5fbb-11e4-9cad-9b9f6a4f92b6
-	// At this point this seems like a bigger problem than I should handle on
-	// the ConsoleRest branch. I can fix the whole mess by making the keyspace
-	// that the two test files use different. THis allows all the tests
-	// to run.
-
-	walker.Config.Cassandra.Keyspace = "walker_test2"
 }
 
 //
