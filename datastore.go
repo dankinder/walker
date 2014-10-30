@@ -71,8 +71,15 @@ type CassandraDatastore struct {
 }
 
 func GetCassandraConfig() *gocql.ClusterConfig {
+	timeout, err := time.ParseDuration(Config.Cassandra.Timeout)
+	if err != nil {
+		// This shouldn't happen because it is tested in assertConfigInvariants
+		panic(err)
+	}
+
 	config := gocql.NewCluster(Config.Cassandra.Hosts...)
 	config.Keyspace = Config.Cassandra.Keyspace
+	config.Timeout = timeout
 	return config
 }
 
