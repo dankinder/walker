@@ -75,6 +75,7 @@
 #    hosts: ["localhost"]
 #    keyspace: "walker"
 #    replication_factor: 3
+#    timeout: "2s"
 
 ## Console specific config
 #console:

@@ -71,6 +71,7 @@ type WalkerConfig struct {
 		Hosts             []string `yaml:"hosts"`
 		Keyspace          string   `yaml:"keyspace"`
 		ReplicationFactor int      `yaml:"replication_factor"`
+		Timeout           string   `yaml:"timeout"`
 
 		//TODO: Currently only exposing values needed for testing; should expose more?
 		//CQLVersion       string
@@ -128,6 +129,7 @@ func SetDefaultConfig() {
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
 	Config.Cassandra.ReplicationFactor = 3
+	Config.Cassandra.Timeout = "2s"
 
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"
@@ -157,6 +159,11 @@ func assertConfigInvariants() error {
 	_, err := time.ParseDuration(Config.HttpTimeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("HttpTimeout failed to parse: %v", err))
+	}
+
+	_, err = time.ParseDuration(Config.Cassandra.Timeout)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
 	}
 
 	if len(errs) > 0 {
