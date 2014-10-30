@@ -41,7 +41,7 @@ func modifyConfigDataSource() {
 	// that the two test files use different. THis allows all the tests
 	// to run.
 
-	walker.Config.Cassandra.Keyspace = "walker_test2"
+	//walker.Config.Cassandra.Keyspace = "walker_test2"
 }
 
 //
@@ -327,6 +327,9 @@ func getDs(t *testing.T) *console.CqlModel {
 			t.Fatalf("Failed to insert test data: %v\nQuery: %v", err, q)
 		}
 	}
+
+	fmt.Printf("fooTime = %v\n", fooTime.String())
+	fmt.Printf("bazUUid = %v\n", bazUuid.String())
 
 	//
 	// Need to record the order that the test.com urls come off on
