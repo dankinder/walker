@@ -563,8 +563,15 @@ func TestClaimHostConcurrency(t *testing.T) {
 }
 
 func TestDomainPriority(t *testing.T) {
-	numPrios := 25
+	// Implementation note: each domain that is added in the first part of
+	// this test is added with a priority selected from
+	// walker.AllowedPriorities. And that priority is encoded into the domain
+	// name. Then in the second part of this test, domains are pulled out in
+	// ClaimNewHost order, and the priority of each domain is parsed out of
+	// the domain name. Because the priority is embedded in the domain name,
+	// it's easy to test that the domains come out in priority order.
 
+	numPrios := 25
 	db := getDB(t)
 	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
 	for i := 0; i < numPrios; i++ {
