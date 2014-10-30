@@ -118,7 +118,7 @@ func (ds *CqlModel) addDomainIfNew(domain string) error {
 	}
 
 	if count == 0 {
-		err := ds.Db.Query(`INSERT INTO domain_info (dom) VALUES (?)`, domain).Exec()
+		err := ds.Db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
 		if err != nil {
 			return fmt.Errorf("insert; %v", err)
 		}
