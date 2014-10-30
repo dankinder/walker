@@ -14,6 +14,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
 var spoofRun sync.Once
@@ -50,7 +51,7 @@ func spoofDataLong() {
 	//
 	// Build the new schema
 	//
-	err := walker.CreateCassandraSchema()
+	err := cassandra.CreateSchema()
 	if err != nil {
 		panic(err)
 	}

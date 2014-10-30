@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
 	"github.com/spf13/cobra"
 )
@@ -100,12 +101,12 @@ func init() {
 			readConfig()
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			if commander.Handler == nil {
@@ -151,12 +152,12 @@ func init() {
 			readConfig()
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			if commander.Handler == nil {
@@ -185,7 +186,7 @@ func init() {
 			readConfig()
 
 			if commander.Dispatcher == nil {
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			go func() {
@@ -231,7 +232,7 @@ crawl, regardless of the add_new_domains configuration setting.`,
 			}
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
@@ -268,10 +269,7 @@ Useful for something like:
 			}
 			defer out.Close()
 
-			schema, err := walker.GetCassandraSchema()
-			if err != nil {
-				panic(err.Error())
-			}
+			schema := cassandra.GetSchema()
 			fmt.Fprint(out, schema)
 		},
 	}

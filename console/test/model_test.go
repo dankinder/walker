@@ -8,6 +8,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
 )
 
@@ -236,7 +237,7 @@ func getDs(t *testing.T) *console.CqlModel {
 		if err != nil {
 			panic(fmt.Errorf("Failed to drop %s keyspace: %v", walker.Config.Cassandra.Keyspace, err))
 		}
-		err = walker.CreateCassandraSchema()
+		err = cassandra.CreateSchema()
 		if err != nil {
 			t.Fatalf(err.Error())
 		}

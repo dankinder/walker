@@ -1,4 +1,4 @@
-package walker
+package cassandra
 
 import (
 	"container/heap"
@@ -9,26 +9,10 @@ import (
 
 	"code.google.com/p/log4go"
 	"github.com/gocql/gocql"
+	"github.com/iParadigms/walker"
 )
 
-// Dispatcher defines the calls a dispatcher should respond to. A dispatcher
-// would typically be paired with a particular Datastore, and not all Datastore
-// implementations may need a Dispatcher.
-//
-// A basic crawl will likely run the dispatcher in the same process as the
-// fetchers, but higher-scale crawl setups may run dispatchers separately.
-type Dispatcher interface {
-	// StartDispatcher should be a blocking call that starts the dispatcher. It
-	// should return an error if it could not start or stop properly and nil
-	// when it has safely shut down and stopped all internal processing.
-	StartDispatcher() error
-
-	// Stop signals the dispatcher to stop. It should block until all internal
-	// goroutines have stopped.
-	StopDispatcher() error
-}
-
-// CassandraDispatcher analyzes what we've crawled so far (generally on a per-domain
+// Dispatcher analyzes what we've crawled so far (generally on a per-domain
 // basis) and updates the database. At minimum this means generating new
 // segments to crawl in the `segments` table, but it can also mean updating
 // domain_info if we find out new things about a domain.
@@ -37,7 +21,7 @@ type Dispatcher interface {
 // fetchmanager. Fetchers and dispatchers claim domains in Cassandra, so the
 // dispatcher can operate on the domains not currently being crawled (and vice
 // versa).
-type CassandraDispatcher struct {
+type Dispatcher struct {
 	cf *gocql.ClusterConfig
 	db *gocql.Session
 
@@ -53,9 +37,9 @@ type CassandraDispatcher struct {
 	generatingWG sync.WaitGroup
 }
 
-func (d *CassandraDispatcher) StartDispatcher() error {
+func (d *Dispatcher) StartDispatcher() error {
 	log4go.Info("Starting CassandraDispatcher")
-	d.cf = GetCassandraConfig()
+	d.cf = GetConfig()
 	var err error
 	d.db, err = d.cf.CreateSession()
 	if err != nil {
@@ -65,7 +49,7 @@ func (d *CassandraDispatcher) StartDispatcher() error {
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
 
-	for i := 0; i < Config.Dispatcher.NumConcurrentDomains; i++ {
+	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
 		go func() {
 			d.generateRoutine()
@@ -77,7 +61,7 @@ func (d *CassandraDispatcher) StartDispatcher() error {
 	return nil
 }
 
-func (d *CassandraDispatcher) StopDispatcher() error {
+func (d *Dispatcher) StopDispatcher() error {
 	log4go.Info("Stopping CassandraDispatcher")
 	close(d.quit)
 	d.finishWG.Wait()
@@ -85,7 +69,7 @@ func (d *CassandraDispatcher) StopDispatcher() error {
 	return nil
 }
 
-func (d *CassandraDispatcher) domainIterator() {
+func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
 		domainiter := d.db.Query(`SELECT dom, dispatched FROM domain_info
@@ -127,7 +111,7 @@ func (d *CassandraDispatcher) domainIterator() {
 	}
 }
 
-func (d *CassandraDispatcher) generateRoutine() {
+func (d *Dispatcher) generateRoutine() {
 	for domain := range d.domains {
 		d.generatingWG.Add(1)
 		if err := d.generateSegment(domain); err != nil {
@@ -184,7 +168,7 @@ func (c *cell) equivalent(other *cell) bool {
 // class is designed to be used with the container/heap package. This type is
 // currently only used in generateSegments
 //
-type PriorityUrl []*URL
+type PriorityUrl []*walker.URL
 
 func (pq PriorityUrl) Len() int {
 	return len(pq)
@@ -199,7 +183,7 @@ func (pq PriorityUrl) Swap(i, j int) {
 }
 
 func (pq *PriorityUrl) Push(x interface{}) {
-	*pq = append(*pq, x.(*URL))
+	*pq = append(*pq, x.(*walker.URL))
 }
 
 func (pq *PriorityUrl) Pop() interface{} {
@@ -213,22 +197,22 @@ func (pq *PriorityUrl) Pop() interface{} {
 // generateSegment reads links in for this domain, generates a segment for it,
 // and inserts the domain into domains_to_crawl (assuming a segment is ready to
 // go)
-func (d *CassandraDispatcher) generateSegment(domain string) error {
+func (d *Dispatcher) generateSegment(domain string) error {
 	log4go.Info("Generating a crawl segment for %v", domain)
 
 	//
 	// Three lists to hold the 3 link types
 	//
-	var getNowLinks []*URL       // links marked getnow
-	var uncrawledLinks []*URL    // links that haven't been crawled
-	var crawledLinks PriorityUrl // already crawled links, oldest links out first
+	var getNowLinks []*walker.URL    // links marked getnow
+	var uncrawledLinks []*walker.URL // links that haven't been crawled
+	var crawledLinks PriorityUrl     // already crawled links, oldest links out first
 	heap.Init(&crawledLinks)
 
 	// cell push will push the argument cell onto one of the three link-lists.
 	// logs failure if CreateURL fails.
-	var limit = Config.Dispatcher.MaxLinksPerSegment
+	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
 	cell_push := func(c *cell) {
-		u, err := CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
+		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
 		if err != nil {
 			log4go.Error("CreateURL: " + err.Error())
 			return
@@ -236,7 +220,7 @@ func (d *CassandraDispatcher) generateSegment(domain string) error {
 
 		if c.getnow {
 			getNowLinks = append(getNowLinks, u)
-		} else if c.crawl_time.Equal(NotYetCrawled) {
+		} else if c.crawl_time.Equal(walker.NotYetCrawled) {
 			if len(uncrawledLinks) < limit {
 				uncrawledLinks = append(uncrawledLinks, u)
 			}
@@ -286,12 +270,12 @@ func (d *CassandraDispatcher) generateSegment(domain string) error {
 	//
 	// Merge the 3 link types
 	//
-	var links []*URL
+	var links []*walker.URL
 	links = append(links, getNowLinks...)
 
 	numRemain := limit - len(links)
 	if numRemain > 0 {
-		refreshDecimal := Config.Dispatcher.RefreshPercentage / 100.0
+		refreshDecimal := walker.Config.Dispatcher.RefreshPercentage / 100.0
 		idealCrawled := round(refreshDecimal * float64(numRemain))
 		idealUncrawled := numRemain - idealCrawled
 
@@ -301,7 +285,7 @@ func (d *CassandraDispatcher) generateSegment(domain string) error {
 		}
 
 		for i := 0; i < idealCrawled && crawledLinks.Len() > 0 && len(links) < limit; i++ {
-			links = append(links, heap.Pop(&crawledLinks).(*URL))
+			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
 		}
 
 		for len(uncrawledLinks) > 0 && len(links) < limit {
@@ -310,7 +294,7 @@ func (d *CassandraDispatcher) generateSegment(domain string) error {
 		}
 
 		for crawledLinks.Len() > 0 && len(links) < limit {
-			links = append(links, heap.Pop(&crawledLinks).(*URL))
+			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
 		}
 	}
 

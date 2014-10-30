@@ -1,4 +1,4 @@
-package walker
+package cassandra
 
 import (
 	"bytes"
@@ -12,49 +12,12 @@ import (
 
 	"github.com/dropbox/godropbox/container/lrucache"
 	"github.com/gocql/gocql"
+	"github.com/iParadigms/walker"
 )
 
-// Datastore defines the interface for an object to be used as walker's datastore.
-//
-// Note that this is for link and metadata storage required to make walker
-// function properly. It has nothing to do with storing fetched content (see
-// `Handler` for that).
-type Datastore interface {
-	// ClaimNewHost returns a hostname that is now claimed for this crawler to
-	// crawl. A segment of links for this host is assumed to be available.
-	// Returns the domain of the segment it claimed, or "" if there are none
-	// available.
-	ClaimNewHost() string
-
-	// UnclaimHost indicates that all links from `LinksForHost` have been
-	// processed, so other work may be done with this host. For example the
-	// dispatcher will be free analyze the links and generate a new segment.
-	UnclaimHost(host string)
-
-	// LinksForHost returns a channel that will feed URLs for a given host.
-	LinksForHost(host string) <-chan *URL
-
-	// StoreURLFetchResults takes the return data/metadata from a fetch and
-	// stores the visit. Fetchers will call this once for each link in the
-	// segment being crawled.
-	StoreURLFetchResults(fr *FetchResults)
-
-	// StoreParsedURL stores a URL parsed out of a page (i.e. a URL we may not
-	// have crawled yet). `u` is the URL to store. `fr` is the FetchResults
-	// object for the fetch from which we got the URL, for any context the
-	// datastore may want. A datastore implementation should handle `fr` being
-	// nil, so links can be seeded without a fetch having occurred.
-	//
-	// URLs passed to StoreParsedURL should be absolute.
-	//
-	// This layer should handle efficiently deduplicating
-	// links (i.e. a fetcher should be safe feeding the same URL many times.
-	StoreParsedURL(u *URL, fr *FetchResults)
-}
-
-// CassandraDatastore is the primary Datastore implementation, using Apache
+// Datastore is the primary walker Datastore implementation, using Apache
 // Cassandra as a highly scalable backend.
-type CassandraDatastore struct {
+type Datastore struct {
 	cf *gocql.ClusterConfig
 	db *gocql.Session
 
@@ -70,29 +33,29 @@ type CassandraDatastore struct {
 	crawlerUuid gocql.UUID
 }
 
-func GetCassandraConfig() *gocql.ClusterConfig {
-	timeout, err := time.ParseDuration(Config.Cassandra.Timeout)
+func GetConfig() *gocql.ClusterConfig {
+	timeout, err := time.ParseDuration(walker.Config.Cassandra.Timeout)
 	if err != nil {
 		// This shouldn't happen because it is tested in assertConfigInvariants
 		panic(err)
 	}
 
-	config := gocql.NewCluster(Config.Cassandra.Hosts...)
-	config.Keyspace = Config.Cassandra.Keyspace
+	config := gocql.NewCluster(walker.Config.Cassandra.Hosts...)
+	config.Keyspace = walker.Config.Cassandra.Keyspace
 	config.Timeout = timeout
 	return config
 }
 
-func NewCassandraDatastore() (*CassandraDatastore, error) {
-	ds := &CassandraDatastore{
-		cf: GetCassandraConfig(),
+func NewDatastore() (*Datastore, error) {
+	ds := &Datastore{
+		cf: GetConfig(),
 	}
 	var err error
 	ds.db, err = ds.cf.CreateSession()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create cassandra datastore: %v", err)
 	}
-	ds.addedDomains = lrucache.New(Config.AddedDomainsCacheSize)
+	ds.addedDomains = lrucache.New(walker.Config.AddedDomainsCacheSize)
 
 	u, err := gocql.RandomUUID()
 	if err != nil {
@@ -103,13 +66,13 @@ func NewCassandraDatastore() (*CassandraDatastore, error) {
 	return ds, nil
 }
 
-func (ds *CassandraDatastore) Close() {
+func (ds *Datastore) Close() {
 	ds.db.Close()
 }
 
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
 // if the caller should re-call the method.
-func (ds *CassandraDatastore) tryClaimHosts(priority int, limit int) (domains []string, retry bool) {
+func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, retry bool) {
 	loopQuery := fmt.Sprintf(`SELECT dom 
 									FROM domain_info
 									WHERE 
@@ -178,7 +141,7 @@ var limitPerClaimCycle int = 50
 // The allowed values of the priority in the domain_info table
 var AllowedPriorities = []int{5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5} //order matters here
 
-func (ds *CassandraDatastore) ClaimNewHost() string {
+func (ds *Datastore) ClaimNewHost() string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
@@ -210,7 +173,7 @@ func (ds *CassandraDatastore) ClaimNewHost() string {
 	return domain
 }
 
-func (ds *CassandraDatastore) UnclaimHost(host string) {
+func (ds *Datastore) UnclaimHost(host string) {
 	err := ds.db.Query(`DELETE FROM segments WHERE dom = ?`, host).Exec()
 	if err != nil {
 		log4go.Error("Failed deleting segment links for %v: %v", host, err)
@@ -224,17 +187,17 @@ func (ds *CassandraDatastore) UnclaimHost(host string) {
 	}
 }
 
-func (ds *CassandraDatastore) LinksForHost(domain string) <-chan *URL {
+func (ds *Datastore) LinksForHost(domain string) <-chan *walker.URL {
 	links, err := ds.getSegmentLinks(domain)
 	if err != nil {
 		log4go.Error("Failed to grab segment for %v: %v", domain, err)
-		c := make(chan *URL)
+		c := make(chan *walker.URL)
 		close(c)
 		return c
 	}
 	log4go.Info("Returning %v links to crawl domain %v", len(links), domain)
 
-	linkchan := make(chan *URL, len(links))
+	linkchan := make(chan *walker.URL, len(links))
 	for _, l := range links {
 		linkchan <- l
 	}
@@ -249,7 +212,7 @@ type dbfield struct {
 	value interface{}
 }
 
-func (ds *CassandraDatastore) StoreURLFetchResults(fr *FetchResults) {
+func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 	url := fr.URL
 	if len(fr.RedirectedFrom) > 0 {
 		// Remember that the actual response of this FetchResults is from
@@ -331,7 +294,7 @@ func (ds *CassandraDatastore) StoreURLFetchResults(fr *FetchResults) {
 	}
 }
 
-func (ds *CassandraDatastore) StoreParsedURL(u *URL, fr *FetchResults) {
+func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	if !u.IsAbs() {
 		log4go.Warn("Link should not have made it to StoreParsedURL: %v", u)
 		return
@@ -342,20 +305,20 @@ func (ds *CassandraDatastore) StoreParsedURL(u *URL, fr *FetchResults) {
 		return
 	}
 
-	if Config.AddNewDomains {
+	if walker.Config.AddNewDomains {
 		ds.addDomainIfNew(dom)
 	}
 	log4go.Fine("Inserting parsed URL: %v", u)
 	err = ds.db.Query(`INSERT INTO links (dom, subdom, path, proto, time)
 						VALUES (?, ?, ?, ?, ?)`,
-		dom, subdom, u.RequestURI(), u.Scheme, NotYetCrawled).Exec()
+		dom, subdom, u.RequestURI(), u.Scheme, walker.NotYetCrawled).Exec()
 	if err != nil {
 		log4go.Error("failed inserting parsed url (%v) to cassandra, %v", u, err)
 	}
 }
 
 // addDomainIfNew expects a toplevel domain, no subdomain
-func (ds *CassandraDatastore) addDomainIfNew(domain string) {
+func (ds *Datastore) addDomainIfNew(domain string) {
 	_, ok := ds.addedDomains.Get(domain)
 	if ok {
 		return
@@ -376,7 +339,7 @@ func (ds *CassandraDatastore) addDomainIfNew(domain string) {
 	ds.addedDomains.Set(domain, nil)
 }
 
-func (ds *CassandraDatastore) getSegmentLinks(domain string) (links []*URL, err error) {
+func (ds *Datastore) getSegmentLinks(domain string) (links []*walker.URL, err error) {
 	q := ds.db.Query(`SELECT dom, subdom, path, proto, time
 						FROM segments WHERE dom = ?`, domain)
 	iter := q.Iter()
@@ -385,7 +348,7 @@ func (ds *CassandraDatastore) getSegmentLinks(domain string) (links []*URL, err 
 	var dbdomain, subdomain, path, protocol string
 	var crawl_time time.Time
 	for iter.Scan(&dbdomain, &subdomain, &path, &protocol, &crawl_time) {
-		u, e := CreateURL(dbdomain, subdomain, path, protocol, crawl_time)
+		u, e := walker.CreateURL(dbdomain, subdomain, path, protocol, crawl_time)
 		if e != nil {
 			log4go.Error("Error adding link (%v) to crawl: %v", u, e)
 		} else {
@@ -396,30 +359,26 @@ func (ds *CassandraDatastore) getSegmentLinks(domain string) (links []*URL, err 
 	return
 }
 
-// CreateCassandraSchema creates the walker schema in the configured Cassandra
-// database. It requires that the keyspace not already exist (so as to losing
-// non-test data), with the exception of the walker_test schema, which it will
-// drop automatically.
-func CreateCassandraSchema() error {
-	config := GetCassandraConfig()
+// CreateSchema creates the walker schema in the configured Cassandra database.
+// It requires that the keyspace not already exist (so as to losing non-test
+// data), with the exception of the walker_test schema, which it will drop
+// automatically.
+func CreateSchema() error {
+	config := GetConfig()
 	config.Keyspace = ""
 	db, err := config.CreateSession()
 	if err != nil {
 		return fmt.Errorf("Could not connect to create cassandra schema: %v", err)
 	}
 
-	if Config.Cassandra.Keyspace == "walker_test" {
+	if walker.Config.Cassandra.Keyspace == "walker_test" {
 		err := db.Query("DROP KEYSPACE IF EXISTS walker_test").Exec()
 		if err != nil {
 			return fmt.Errorf("Failed to drop walker_test keyspace: %v", err)
 		}
 	}
 
-	schema, err := GetCassandraSchema()
-	if err != nil {
-		return err
-	}
-
+	schema := GetSchema()
 	for _, q := range strings.Split(schema, ";") {
 		q = strings.TrimSpace(q)
 		if q == "" {
@@ -433,14 +392,18 @@ func CreateCassandraSchema() error {
 	return nil
 }
 
-func GetCassandraSchema() (string, error) {
+// GetSchema returns the CQL schema for this version of the cassandra
+// datastore. Certain values, like keyspace and replication factor, are
+// dynamically inserted.
+func GetSchema() string {
 	t, err := template.New("schema").Parse(schemaTemplate)
 	if err != nil {
-		return "", fmt.Errorf("Failure parsing the CQL schema template: %v", err)
+		// Really shouldn't happen because we build this in
+		panic(fmt.Sprintf("Failure parsing the CQL schema template: %v", err))
 	}
 	var b bytes.Buffer
-	t.Execute(&b, Config.Cassandra)
-	return b.String(), nil
+	t.Execute(&b, walker.Config.Cassandra)
+	return b.String()
 }
 
 const schemaTemplate string = `-- The schema file for walker

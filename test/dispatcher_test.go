@@ -11,6 +11,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
 type DispatcherTest struct {
@@ -391,7 +392,7 @@ func TestDispatcherBasic(t *testing.T) {
 			}
 		}
 
-		d := &walker.CassandraDispatcher{}
+		d := &cassandra.Dispatcher{}
 		go d.StartDispatcher()
 		time.Sleep(time.Second)
 		d.StopDispatcher()
@@ -435,7 +436,7 @@ func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 		t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 	}
 
-	d := &walker.CassandraDispatcher{}
+	d := &cassandra.Dispatcher{}
 	go d.StartDispatcher()
 	// Pete says this time used to be 10 millis, but I was observing spurious nil channel
 	// panics. Increased it to 100 to see if that would help.

@@ -8,17 +8,6 @@ import (
 	"code.google.com/p/log4go"
 )
 
-// Handler defines the interface for objects that will be set as handlers on a
-// FetchManager.
-type Handler interface {
-	// HandleResponse will be called by fetchers as they make requests.
-	// Handlers can do whatever they want with responses. HandleResponse will
-	// be called as long as the request successfully reached the remote server
-	// and got an HTTP code. This means there should never be a FetchError set
-	// on the FetchResults.
-	HandleResponse(res *FetchResults)
-}
-
 // SimpleWriterHandler just writes returned pages as files locally, naming the
 // file after the URL of the request.
 type SimpleWriterHandler struct{}

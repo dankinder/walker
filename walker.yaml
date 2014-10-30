@@ -8,7 +8,7 @@
 # broad crawl) or discard them, assuming desired domains are manually seeded.
 #add_new_domains: false
 
-# The number of entries to keep in the CassandraDatastore's LRU cache of
+# The number of entries to keep in the cassandra datastore's LRU cache of
 # domains, preventing us from querying too frequently to see if we already have
 # them.
 #added_domains_cache_size: 20000

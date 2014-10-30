@@ -13,14 +13,15 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
-// getDS is a convenience function for getting a CassandraDatastore and failing
+// getDS is a convenience function for getting a cassandra datastore and failing
 // if we couldn't
-func getDS(t *testing.T) *walker.CassandraDatastore {
-	ds, err := walker.NewCassandraDatastore()
+func getDS(t *testing.T) *cassandra.Datastore {
+	ds, err := cassandra.NewDatastore()
 	if err != nil {
-		t.Fatalf("Failed to create CassandraDatastore: %v", err)
+		t.Fatalf("Failed to create Datastore: %v", err)
 	}
 	return ds
 }
@@ -565,7 +566,7 @@ func TestClaimHostConcurrency(t *testing.T) {
 func TestDomainPriority(t *testing.T) {
 	// Implementation note: each domain that is added in the first part of
 	// this test is added with a priority selected from
-	// walker.AllowedPriorities. And that priority is encoded into the domain
+	// cassandra.AllowedPriorities. And that priority is encoded into the domain
 	// name. Then in the second part of this test, domains are pulled out in
 	// ClaimNewHost order, and the priority of each domain is parsed out of
 	// the domain name. Because the priority is embedded in the domain name,
@@ -575,7 +576,7 @@ func TestDomainPriority(t *testing.T) {
 	db := getDB(t)
 	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
 	for i := 0; i < numPrios; i++ {
-		for _, priority := range walker.AllowedPriorities {
+		for _, priority := range cassandra.AllowedPriorities {
 			err := db.Query(insertDomainInfo, fmt.Sprintf("d%dLL%d.com", i, priority), priority).Exec()
 			if err != nil {
 				t.Fatalf("Failed to insert domain d%d.com", i)
@@ -594,12 +595,12 @@ func TestDomainPriority(t *testing.T) {
 	}
 	ds.Close()
 
-	expectedAllHostsLength := len(walker.AllowedPriorities) * numPrios
+	expectedAllHostsLength := len(cassandra.AllowedPriorities) * numPrios
 	if len(allHosts) != expectedAllHostsLength {
 		t.Fatalf("allHosts length mismatch: got %d, expected %d", len(allHosts), expectedAllHostsLength)
 	}
 
-	highestPriority := walker.AllowedPriorities[0] + 1
+	highestPriority := cassandra.AllowedPriorities[0] + 1
 	for _, host := range allHosts {
 		var prio, index int
 		n, err := fmt.Sscanf(host, "d%dLL%d.com", &index, &prio)
