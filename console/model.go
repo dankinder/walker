@@ -13,39 +13,42 @@ import (
 )
 
 type DomainInfo struct {
-	//TLD+1
+	// TLD+1
 	Domain string
 
-	//Why did this domain get excluded, or empty if not excluded
+	// Why did this domain get excluded, or empty if not excluded
 	ExcludeReason string
 
-	//When did this domain last get queued to be crawled. Or TimeQueed.IsZero() if not crawled
+	// When did this domain last get queued to be crawled. Or TimeQueed.IsZero() if not crawled
 	TimeQueued time.Time
 
-	//What was the UUID of the crawler that last crawled the domain
+	// What was the UUID of the crawler that last crawled the domain
 	UuidOfQueued gocql.UUID
 
-	//Number of (unique) links found in this domain
+	// Number of (unique) links found in this domain
 	NumberLinksTotal int
 
-	//Number of (unique) links queued to be processed for this domain
+	// Number of (unique) links queued to be processed for this domain
 	NumberLinksQueued int
+
+	// Number of links not yet crawled
+	NumberLinksUncrawled int
 }
 
 type LinkInfo struct {
-	//URL of the link
+	// URL of the link
 	Url string
 
-	//Status of the GET
+	// Status of the GET
 	Status int
 
-	//Any error reported during the get
+	// Any error reported during the get
 	Error string
 
-	//Was this excluded by robots
+	// Was this excluded by robots
 	RobotsExcluded bool
 
-	//When did this link get crawled
+	// When did this link get crawled
 	CrawlTime time.Time
 }
 
@@ -205,7 +208,10 @@ func (ds *CqlModel) InsertLinks(links []string) []error {
 	return errList
 }
 
-func (ds *CqlModel) countUniqueLinks(domain string, table string) (int, error) {
+// countUniqueLinks counts
+//   (a) Total links for this domain
+//   (b) Total links for this domain, not-yet-crawled
+func (ds *CqlModel) countUniqueLinks(domain string, table string) (linksTotal int, linksUncrawled int, err error) {
 	db := ds.Db
 	q := fmt.Sprintf("SELECT subdom, path, proto, time FROM %s WHERE dom = ?", table)
 	itr := db.Query(q, domain).Iter()
@@ -214,14 +220,24 @@ func (ds *CqlModel) countUniqueLinks(domain string, table string) (int, error) {
 	var crawlTime time.Time
 	found := map[string]time.Time{}
 	for itr.Scan(&subdomain, &path, &protocol, &crawlTime) {
-		key := fmt.Sprintf("%s : %s : %s", subdomain, path, protocol)
+		key := fmt.Sprintf("%s:%s:%s", path, subdomain, protocol)
 		t, foundT := found[key]
-		if !foundT || t.Before(crawlTime) {
+		if !foundT {
 			found[key] = crawlTime
+			if crawlTime.Equal(walker.NotYetCrawled) {
+				linksUncrawled++
+			}
+		} else if t.Before(crawlTime) {
+			found[key] = crawlTime
+			if t.Equal(walker.NotYetCrawled) {
+				linksUncrawled--
+			}
 		}
 	}
-	err := itr.Close()
-	return len(found), err
+	err = itr.Close()
+	linksTotal = len(found)
+
+	return
 }
 
 func (ds *CqlModel) annotateDomainInfo(dinfos []DomainInfo) error {
@@ -231,15 +247,16 @@ func (ds *CqlModel) annotateDomainInfo(dinfos []DomainInfo) error {
 	for i := range dinfos {
 		d := &dinfos[i]
 
-		linkCount, err := ds.countUniqueLinks(d.Domain, "links")
+		linkCount, linkUncrawled, err := ds.countUniqueLinks(d.Domain, "links")
 		if err != nil {
 			return err
 		}
 		d.NumberLinksTotal = linkCount
+		d.NumberLinksUncrawled = linkUncrawled
 
 		d.NumberLinksQueued = 0
 		if d.TimeQueued != zeroTime {
-			segmentCount, err := ds.countUniqueLinks(d.Domain, "segments")
+			segmentCount, _, err := ds.countUniqueLinks(d.Domain, "segments")
 			if err != nil {
 				return err
 			}

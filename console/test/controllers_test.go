@@ -331,6 +331,8 @@ func TestListLinksWeb(t *testing.T) {
 		"UuidOfQueued",
 		"NumberLinksTotal",
 		"NumberLinksQueued",
+		"NumberLinksCrawled",
+		"NumberLinksUncrawled",
 	}
 
 	sub = domainTable.Find("tr > td:nth-child(1)")
@@ -348,8 +350,8 @@ func TestListLinksWeb(t *testing.T) {
 	})
 
 	secondColSize := domainTable.Find("tr > td:nth-child(2)").Size()
-	if secondColSize != 6 {
-		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %s", secondColSize, 6)
+	if secondColSize != len(domainKeys) {
+		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %s", secondColSize, len(domainKeys))
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
