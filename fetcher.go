@@ -362,7 +362,6 @@ func (f *fetcher) start() {
 				}
 			}
 
-			// isHTML || isHandleable calls the handler
 			canHandle := isHandleable(fr.Response, f.fm.acceptFormats)
 			if isHTML(fr.Response) {
 				log4go.Debug("Reading and parsing as HTML (%v)", link)
@@ -533,9 +532,11 @@ func parseHtml(contents []byte) (links []*URL, metaNoIndex bool, metaNoFollow bo
 				if tags[tagName] {
 					links = parseAnchorAttrs(tokenizer, links)
 				} else if tagName == "meta" {
-					index, follow := parseMetaAttrs(tokenizer)
-					metaNoIndex = metaNoIndex || index
-					metaNoFollow = metaNoFollow || follow
+					isRobots, index, follow := parseMetaAttrs(tokenizer)
+					if isRobots {
+						metaNoIndex = metaNoIndex || index
+						metaNoFollow = metaNoFollow || follow
+					}
 				}
 			}
 		}
@@ -564,20 +565,24 @@ func getIncludedTags() map[string]bool {
 	return tags
 }
 
+var nameMetaBytes = []byte("name")
+var robotsMetaBytes = []byte("robots")
 var contentMetaBytes = []byte("content")
 var noindexMetaBytes = []byte("noindex")
 var nofollowMetaBytes = []byte("nofollow")
 
-func parseMetaAttrs(tokenizer *html.Tokenizer) (noIndex bool, noFollow bool) {
+func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, contentMetaBytes) == 0 {
+		if bytes.Compare(key, nameMetaBytes) == 0 {
+			name := bytes.ToLower(val)
+			isRobots = bytes.Compare(name, robotsMetaBytes) == 0
+		} else if bytes.Compare(key, contentMetaBytes) == 0 {
 			content := bytes.ToLower(val)
 			// This will match ill-formatted contents like "noindexnofollow",
 			// but I don't expect that to be a big deal.
 			noIndex = bytes.Contains(content, noindexMetaBytes)
 			noFollow = bytes.Contains(content, nofollowMetaBytes)
-			return
 		}
 		if !moreAttr {
 			break
