@@ -387,11 +387,11 @@ func (f *fetcher) start() {
 				if err != nil {
 					log4go.Debug("error parsing HTML for page %v: %v", link, err)
 				} else {
-					if noindex {
+					if Config.HonorMetaNoindex && noindex {
 						canHandle = false
 					}
 
-					if !nofollow {
+					if !(Config.HonorMetaNofollow && nofollow) {
 						for _, outlink := range outlinks {
 							outlink.MakeAbsolute(link)
 							log4go.Fine("Parsed link: %v", outlink)

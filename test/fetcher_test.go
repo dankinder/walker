@@ -584,6 +584,15 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
+	origHonorNoindex := walker.Config.HonorMetaNoindex
+	origHonorNofollow := walker.Config.HonorMetaNofollow
+	defer func() {
+		walker.Config.HonorMetaNoindex = origHonorNoindex
+		walker.Config.HonorMetaNofollow = origHonorNofollow
+	}()
+	walker.Config.HonorMetaNoindex = true
+	walker.Config.HonorMetaNofollow = true
+
 	const nofollowHtml string = `<!DOCTYPE html>
 <html>
 <head>
