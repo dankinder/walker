@@ -22,7 +22,7 @@ import (
 // instead.
 func LoadTestConfig(filename string) {
 	testdir := GetTestFileDir()
-	err := walker.ReadConfigFile(path.Join(path.Dir(testdir), filename))
+	err := walker.ReadConfigFile(path.Join(testdir, filename))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -36,7 +36,7 @@ func GetTestFileDir() string {
 	if !ok {
 		panic("Failed to get location of test source file")
 	}
-	return p
+	return path.Dir(p)
 }
 
 // FakeDial makes connections to localhost, no matter what addr was given.
@@ -57,18 +57,18 @@ func GetFakeTransport() http.RoundTripper {
 //
 // http.Transport that tracks which requests where canceled.
 //
-type cancelTrackingTransport struct {
+type CancelTrackingTransport struct {
 	http.Transport
-	canceled map[string]int
+	Canceled map[string]int
 }
 
-func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
+func (self *CancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
-	if c, cok := self.canceled[key]; cok {
+	if c, cok := self.Canceled[key]; cok {
 		count = c
 	}
-	self.canceled[key] = count + 1
+	self.Canceled[key] = count + 1
 	self.Transport.CancelRequest(req)
 }
 
@@ -89,15 +89,15 @@ func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
+func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
-	trans := &cancelTrackingTransport{
+	trans := &CancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
-		canceled: make(map[string]int),
+		Canceled: make(map[string]int),
 	}
 
 	return trans, dialer
@@ -187,15 +187,15 @@ func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
 	return self.newConn(), nil
 }
 
-func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
+func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
-	trans := &cancelTrackingTransport{
+	trans := &CancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
-		canceled: make(map[string]int),
+		Canceled: make(map[string]int),
 	}
 	return trans, dialer
 }
@@ -220,7 +220,7 @@ func UrlParse(ref string) *url.URL {
 	return u
 }
 
-func response404() *http.Response {
+func Response404() *http.Response {
 	return &http.Response{
 		Status:        "404",
 		StatusCode:    404,
@@ -233,7 +233,7 @@ func response404() *http.Response {
 	}
 }
 
-func response307(link string) *http.Response {
+func Response307(link string) *http.Response {
 	return &http.Response{
 		Status:        "307",
 		StatusCode:    307,
@@ -246,7 +246,7 @@ func response307(link string) *http.Response {
 	}
 }
 
-func response200() *http.Response {
+func Response200() *http.Response {
 	return &http.Response{
 		Status:     "200 OK",
 		StatusCode: 200,
@@ -268,20 +268,20 @@ func response200() *http.Response {
 	}
 }
 
-// mapRoundTrip maps input links --> http.Response. See TestRedirects for example.
-type mapRoundTrip struct {
-	responses map[string]*http.Response
+// MapRoundTrip maps input links --> http.Response. See TestRedirects for example.
+type MapRoundTrip struct {
+	Responses map[string]*http.Response
 }
 
-func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
-	res, resOk := mrt.responses[req.URL.String()]
+func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, resOk := mrt.Responses[req.URL.String()]
 	if !resOk {
-		return response404(), nil
+		return Response404(), nil
 	}
 	return res, nil
 }
 
-// This allows the mapRoundTrip to be canceled. Which is needed to prevent
+// This allows the MapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (self *mapRoundTrip) CancelRequest(req *http.Request) {
+func (self *MapRoundTrip) CancelRequest(req *http.Request) {
 }

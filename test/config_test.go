@@ -70,7 +70,7 @@ func TestConfigLoadingBadFiles(t *testing.T) {
 
 	testdir := helpers.GetTestFileDir()
 	for _, c := range ConfigTestCases {
-		err := walker.ReadConfigFile(path.Join(path.Dir(testdir), c.file))
+		err := walker.ReadConfigFile(path.Join(testdir, c.file))
 		if err == nil {
 			t.Errorf("Expected an error trying to read %v but did not get one", c.file)
 		} else if !c.expected.MatchString(err.Error()) {

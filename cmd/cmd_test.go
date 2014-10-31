@@ -1,21 +1,22 @@
-// +build cassandra
-
 package cmd
 
 import (
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/helpers"
 
 	"github.com/stretchr/testify/mock"
 )
+
+//TODO: we currently do not test the console command since we haven't mocked
+//		the model yet
 
 func TestCommandsReadConfig(t *testing.T) {
 	orig := os.Args
@@ -28,7 +29,6 @@ func TestCommandsReadConfig(t *testing.T) {
 	handler := &helpers.MockHandler{}
 	Handler(handler)
 
-	cassandra.GetTestDB() // Ensure that walker_test exists, as the console will try to connect
 	datastore := &helpers.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("ClaimNewHost").Return("")
@@ -40,7 +40,7 @@ func TestCommandsReadConfig(t *testing.T) {
 	dispatcher.On("StopDispatcher").Return(nil)
 	Dispatcher(dispatcher)
 
-	var walkerCommands = []string{"crawl", "fetch", "dispatch", "seed", "console"}
+	var walkerCommands = []string{"crawl", "fetch", "dispatch", "seed"}
 	for _, walkerCom := range walkerCommands {
 		helpers.LoadTestConfig("test-walker.yaml")
 		expectedDefaultAgent := "Walker (http://github.com/iParadigms/walker)"
@@ -49,11 +49,12 @@ func TestCommandsReadConfig(t *testing.T) {
 				expectedDefaultAgent, walker.Config.UserAgent)
 		}
 
+		conf := path.Join(helpers.GetTestFileDir(), "test-walker2.yaml")
 		switch walkerCom {
 		case "seed":
-			os.Args = []string{os.Args[0], walkerCom, "--url=http://test.com", "--config=test-walker2.yaml"}
+			os.Args = []string{os.Args[0], walkerCom, "--url=http://test.com", "--config=" + conf}
 		default:
-			os.Args = []string{os.Args[0], walkerCom, "--config=test-walker2.yaml"}
+			os.Args = []string{os.Args[0], walkerCom, "--config=" + conf}
 		}
 
 		go func() {
@@ -75,7 +76,7 @@ func TestCrawlCommand(t *testing.T) {
 	defer func() { os.Args = orig }()
 
 	args := [][]string{
-		[]string{os.Args[0], "crawl"},
+		//[]string{os.Args[0], "crawl"}, // console tests not currently enabled
 		[]string{os.Args[0], "crawl", "--no-console"},
 	}
 
