@@ -146,3 +146,7 @@ cassandra:
 - [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
 - [FAQ](FAQ.md)
 - [contributing](contributing.md) (see about development, logging, and running tests)
+
+# License
+
+All code contributed to the Walker repository is open source software released under the BSD 3-clause license. See [LICENSE.txt](LICENSE.txt) for details.
