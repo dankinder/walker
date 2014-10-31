@@ -1,4 +1,4 @@
-package test
+package helpers
 
 import (
 	"fmt"
@@ -7,15 +7,37 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
+	"runtime"
 	"strings"
-	"sync"
-	"testing"
 	"time"
 
-	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
 )
+
+// LoadTestConfig loads the given test config yaml file. The given path is
+// assumed to be relative to the `walker/helpers/` directory, the location of this
+// file. This will panic if it cannot read the requested config file. If you
+// expect an error or are testing walker.ReadConfigFile, use `GetTestFileDir()`
+// instead.
+func LoadTestConfig(filename string) {
+	testdir := GetTestFileDir()
+	err := walker.ReadConfigFile(path.Join(path.Dir(testdir), filename))
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+// GetTestFileDir returns the directory where shared test files are stored, for
+// example test config files. It will panic if it could not get the path from
+// the runtime.
+func GetTestFileDir() string {
+	_, p, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("Failed to get location of test source file")
+	}
+	return p
+}
 
 // FakeDial makes connections to localhost, no matter what addr was given.
 func FakeDial(network, addr string) (net.Conn, error) {
@@ -178,9 +200,9 @@ func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
 	return trans, dialer
 }
 
-// parse is a helper to just get a URL object from a string we know is a safe
-// url (ParseURL requires us to deal with potential errors)
-func parse(ref string) *walker.URL {
+// Parse is a helper to just get a walker.URL object from a string we know is a
+// safe url (ParseURL requires us to deal with potential errors)
+func Parse(ref string) *walker.URL {
 	u, err := walker.ParseURL(ref)
 	if err != nil {
 		panic("Failed to parse walker.URL: " + ref)
@@ -188,9 +210,9 @@ func parse(ref string) *walker.URL {
 	return u
 }
 
-// urlParse is similar to `parse` but gives a Go builtin URL type (not a walker
+// UrlParse is similar to `parse` but gives a Go builtin URL type (not a walker
 // URL)
-func urlParse(ref string) *url.URL {
+func UrlParse(ref string) *url.URL {
 	u, err := url.Parse(ref)
 	if err != nil {
 		panic("Failed to parse url.URL: " + ref)
@@ -262,36 +284,4 @@ func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 // This allows the mapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
 func (self *mapRoundTrip) CancelRequest(req *http.Request) {
-}
-
-var initdb sync.Once
-
-func getDB(t *testing.T) *gocql.Session {
-	initdb.Do(func() {
-		err := cassandra.CreateSchema()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
-	})
-
-	if walker.Config.Cassandra.Keyspace != "walker_test" {
-		t.Fatal("Running tests requires using the walker_test keyspace")
-		return nil
-	}
-	config := cassandra.GetConfig()
-	db, err := config.CreateSession()
-	if err != nil {
-		t.Fatalf("Could not connect to local cassandra db: %v", err)
-		return nil
-	}
-
-	tables := []string{"links", "segments", "domain_info"}
-	for _, table := range tables {
-		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
-		if err != nil {
-			t.Fatalf("Failed to truncate table %v: %v", table, err)
-		}
-	}
-
-	return db
 }
