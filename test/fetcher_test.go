@@ -61,11 +61,7 @@ const html_test_links string = `<!DOCTYPE html>
 </html>`
 
 func init() {
-	source := "../helpers/test-walker.yaml"
-	err := walker.ReadConfigFile(source)
-	if err != nil {
-		panic(err)
-	}
+	helpers.LoadTestConfig("test-walker.yaml")
 }
 
 func TestBasicFetchManagerRun(t *testing.T) {
