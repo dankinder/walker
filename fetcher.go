@@ -504,6 +504,30 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 	return false
 }
 
+// getIncludedTags gets a map of tags we should check for outlinks. It uses
+// ignored_tags in the config to exclude ones we don't want. Tags are []byte
+// types (not strings) because []byte is what the parser uses.
+func getIncludedTags() map[string]bool {
+	tags := map[string]bool{
+		"a":      true,
+		"area":   true,
+		"form":   true,
+		"frame":  true,
+		"iframe": true,
+		"script": true,
+		"link":   true,
+		"img":    true,
+	}
+	for _, t := range Config.IgnoreTags {
+		delete(tags, t)
+	}
+	return tags
+}
+
+//
+// P A R S I N G   H T M L
+//
+
 // parseHtml processes the html stored in content.
 // It returns:
 //     (a) a list of `links` on the page
@@ -543,26 +567,6 @@ func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bo
 	}
 
 	return
-}
-
-// getIncludedTags gets a map of tags we should check for outlinks. It uses
-// ignored_tags in the config to exclude ones we don't want. Tags are []byte
-// types (not strings) because []byte is what the parser uses.
-func getIncludedTags() map[string]bool {
-	tags := map[string]bool{
-		"a":      true,
-		"area":   true,
-		"form":   true,
-		"frame":  true,
-		"iframe": true,
-		"script": true,
-		"link":   true,
-		"img":    true,
-	}
-	for _, t := range Config.IgnoreTags {
-		delete(tags, t)
-	}
-	return tags
 }
 
 var nameMetaBytes = []byte("name")
