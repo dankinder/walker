@@ -50,6 +50,14 @@
 # canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
 #http_timeout: 30s
 
+# If true, walker will honor the website authors 
+# <meta name="ROBOTS" content="noindex"> tags
+#honor_meta_noindex: true
+
+# If true, walker will honor the website authors 
+# <meta name="ROBOTS" content="nofollow"> tags
+#honor_meta_nofollow: false
+
 ## Dispatcher configuration
 #dispatcher:
 #    ## maximum number of links added to segments table per dispatch (must be >0)

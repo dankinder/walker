@@ -60,6 +60,14 @@ const html_test_links string = `<!DOCTYPE html>
 </div>
 </html>`
 
+func init() {
+	source := "test-walker.yaml"
+	err := walker.ReadConfigFile(source)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestBasicFetchManagerRun(t *testing.T) {
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("norobots.com").Once()
@@ -566,5 +574,131 @@ func TestHttpTimeout(t *testing.T) {
 		if len(h.Calls) > 0 {
 			t.Fatalf("For timeoutType %q Fetcher shouldn't have been able to connect, but did", timeoutType)
 		}
+	}
+}
+
+func TestMetaNos(t *testing.T) {
+	origHonorNoindex := walker.Config.HonorMetaNoindex
+	origHonorNofollow := walker.Config.HonorMetaNofollow
+	defer func() {
+		walker.Config.HonorMetaNoindex = origHonorNoindex
+		walker.Config.HonorMetaNofollow = origHonorNofollow
+	}()
+	walker.Config.HonorMetaNoindex = true
+	walker.Config.HonorMetaNofollow = true
+
+	const nofollowHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="ROBOTS" content="NoFollow">
+<title>No Links</title>
+</head>
+<div id="menu">
+	<a href="relative-dir/">link</a>
+	<a href="relative-page/page.html">link</a>
+	<a href="/abs-relative-dir/">link</a>
+	<a href="/abs-relative-page/page.html">link</a>
+	<a href="https://other.org/abs-dir/">link</a>
+	<a href="https://other.org/abs-page/page.html">link</a>
+</div>
+</html>`
+
+	const noindexHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="ROBOTS" content="noindex">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+</html>`
+
+	const bothHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="ROBOTS" content="noindeX, nofoLLow">
+<title>No Links</title>
+</head>
+div id="menu">
+	<a href="relative-dirX/">link</a>
+	<a href="relative-pageX/page.html">link</a>
+	<a href="/abs-relative-dirX/">link</a>
+	<a href="/abs-relative-pageX/page.html">link</a>
+	<a href="https://other.org/abs-dirX/">link</a>
+	<a href="https://other.org/abs-pageX/page.html">link</a>
+</div>
+</html>`
+
+	ds := &MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		parse("http://t1.com/nofollow.html"),
+		parse("http://t1.com/noindex.html"),
+		parse("http://t1.com/both.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/nofollow.html", &MockResponse{
+		Body: nofollowHtml,
+	})
+	rs.SetResponse("http://t1.com/noindex.html", &MockResponse{
+		Body: noindexHtml,
+	})
+	rs.SetResponse("http://t1.com/both.html", &MockResponse{
+		Body: bothHtml,
+	})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 2)
+	manager.Stop()
+
+	rs.Stop()
+
+	// Did the fetcher honor noindex (if noindex is set
+	// the handler shouldn't be called)
+	callCount := 0
+	for _, call := range h.Calls {
+		fr := call.Arguments.Get(0).(*walker.FetchResults)
+		link := fr.URL.String()
+		switch link {
+		case "http://t1.com/nofollow.html":
+			callCount++
+		default:
+			t.Errorf("Fetcher did not honor noindex in meta link = %s", link)
+		}
+	}
+	if callCount != 1 {
+		t.Errorf("Expected call to handler for nofollow.html, but didn't get it")
+	}
+
+	// Did the fetcher honor nofollow (if nofollow is set fetcher
+	// shouldn't follow any links)
+	callCount = 0
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			callCount++
+		}
+	}
+	if callCount != 0 {
+		t.Errorf("Fetcher did not honor nofollow in meta: expected 0 callCount, found %d", callCount)
 	}
 }

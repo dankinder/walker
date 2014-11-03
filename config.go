@@ -48,6 +48,8 @@ type WalkerConfig struct {
 	NumSimultaneousFetchers int    `yaml:"num_simultaneous_fetchers"`
 	BlacklistPrivateIPs     bool   `yaml:"blacklist_private_ips"`
 	HttpTimeout             string `yaml:"http_timeout"`
+	HonorMetaNoindex        bool   `yaml:"honor_meta_noindex"`
+	HonorMetaNofollow       bool   `yaml:"honor_meta_nofollow"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -121,6 +123,8 @@ func SetDefaultConfig() {
 	Config.NumSimultaneousFetchers = 10
 	Config.BlacklistPrivateIPs = true
 	Config.HttpTimeout = "30s"
+	Config.HonorMetaNoindex = true
+	Config.HonorMetaNofollow = false
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25

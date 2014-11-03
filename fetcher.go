@@ -362,9 +362,12 @@ func (f *fetcher) start() {
 				}
 			}
 
-			canSearch := isHTML(fr.Response)
-			if canSearch {
+			canHandle := isHandleable(fr.Response, f.fm.acceptFormats)
+			if isHTML(fr.Response) {
 				log4go.Debug("Reading and parsing as HTML (%v)", link)
+
+				// backward compatibility demands we handle any html.
+				canHandle = true
 
 				//TODO: ReadAll is inefficient. We should use a properly sized
 				//		buffer here (determined by
@@ -379,24 +382,27 @@ func (f *fetcher) start() {
 				}
 				fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 
-				outlinks, err := getLinks(body)
+				outlinks, noindex, nofollow, err := parseHtml(body)
 				if err != nil {
 					log4go.Debug("error parsing HTML for page %v: %v", link, err)
 				} else {
-					for _, outlink := range outlinks {
-						outlink.MakeAbsolute(link)
-						log4go.Fine("Parsed link: %v", outlink)
-						if shouldStore(outlink) {
-							f.fm.Datastore.StoreParsedURL(outlink, fr)
+					if Config.HonorMetaNoindex && noindex {
+						canHandle = false
+					}
+
+					if !(Config.HonorMetaNofollow && nofollow) {
+						for _, outlink := range outlinks {
+							outlink.MakeAbsolute(link)
+							log4go.Fine("Parsed link: %v", outlink)
+							if shouldStoreParsedLink(outlink) {
+								f.fm.Datastore.StoreParsedURL(outlink, fr)
+							}
 						}
 					}
 				}
 			}
 
-			// handle any doc that we searched or that is in our AcceptFormats
-			// list
-			canHandle := isHandleable(fr.Response, f.fm.acceptFormats)
-			if canSearch || canHandle {
+			if canHandle {
 				f.fm.Handler.HandleResponse(fr)
 			} else {
 				ctype := strings.Join(fr.Response.Header["Content-Type"], ",")
@@ -498,15 +504,18 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 	return false
 }
 
-// getLinks parses the response for links, doing it's best with bad HTML.
-func getLinks(contents []byte) ([]*URL, error) {
+// parseHtml processes the html stored in content.
+// It returns:
+//     (a) a list of `links` on the page
+//     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
+//     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
+func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
 	utf8Reader, err := charset.NewReader(bytes.NewReader(contents), "text/html")
 	if err != nil {
-		return nil, err
+		return
 	}
 	tokenizer := html.NewTokenizer(utf8Reader)
 
-	var links []*URL
 	tags := getIncludedTags()
 
 	for {
@@ -515,17 +524,25 @@ func getLinks(contents []byte) ([]*URL, error) {
 		case html.ErrorToken:
 			//TODO: should use tokenizer.Err() to see if this is io.EOF
 			//		(meaning success) or an actual error
-			return links, nil
-		case html.StartTagToken:
-
-			tagName, hasAttrs := tokenizer.TagName()
-			if hasAttrs && tags[string(tagName)] {
-				links = parseAnchorAttrs(tokenizer, links)
+			return
+		case html.StartTagToken, html.SelfClosingTagToken:
+			tagNameB, hasAttrs := tokenizer.TagName()
+			tagName := string(tagNameB)
+			if hasAttrs {
+				if tags[tagName] {
+					links = parseAnchorAttrs(tokenizer, links)
+				} else if tagName == "meta" {
+					isRobots, index, follow := parseMetaAttrs(tokenizer)
+					if isRobots {
+						metaNoindex = metaNoindex || index
+						metaNofollow = metaNofollow || follow
+					}
+				}
 			}
 		}
 	}
 
-	return links, nil
+	return
 }
 
 // getIncludedTags gets a map of tags we should check for outlinks. It uses
@@ -546,6 +563,32 @@ func getIncludedTags() map[string]bool {
 		delete(tags, t)
 	}
 	return tags
+}
+
+var nameMetaBytes = []byte("name")
+var robotsMetaBytes = []byte("robots")
+var contentMetaBytes = []byte("content")
+var noindexMetaBytes = []byte("noindex")
+var nofollowMetaBytes = []byte("nofollow")
+
+func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, nameMetaBytes) == 0 {
+			name := bytes.ToLower(val)
+			isRobots = bytes.Compare(name, robotsMetaBytes) == 0
+		} else if bytes.Compare(key, contentMetaBytes) == 0 {
+			content := bytes.ToLower(val)
+			// This will match ill-formatted contents like "noindexnofollow",
+			// but I don't expect that to be a big deal.
+			noIndex = bytes.Contains(content, noindexMetaBytes)
+			noFollow = bytes.Contains(content, nofollowMetaBytes)
+		}
+		if !moreAttr {
+			break
+		}
+	}
+	return
 }
 
 // parseAnchorAttrs iterates over all of the attributes in the current anchor token.
@@ -590,8 +633,9 @@ func isHandleable(r *http.Response, mm *mimetools.Matcher) bool {
 	return false
 }
 
-// shouldStore determines if a link should be stored as a parsed link.
-func shouldStore(u *URL) bool {
+// shouldStoreParsedLink returns true if the argument URL is an Accepted
+// Protocol
+func shouldStoreParsedLink(u *URL) bool {
 	// Could also check extension here, possibly
 	for _, f := range Config.AcceptProtocols {
 		if u.Scheme == f {
