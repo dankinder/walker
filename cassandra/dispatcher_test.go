@@ -19,6 +19,10 @@ type DispatcherTest struct {
 	ExistingDomainInfos  []ExistingDomainInfo
 	ExistingLinks        []ExistingLink
 	ExpectedSegmentLinks []walker.URL
+
+	// Use to indicate that we do not expect a domain to end up dispatched.
+	// Generally left out, we do usually expect a dispatch to happen
+	NoDispatchExpected bool
 }
 
 type ExistingDomainInfo struct {
@@ -26,6 +30,7 @@ type ExistingDomainInfo struct {
 	ClaimTok   gocql.UUID
 	Priority   int
 	Dispatched bool
+	Excluded   bool
 }
 
 type ExistingLink struct {
@@ -49,7 +54,7 @@ var DispatcherTests = []DispatcherTest{
 		Tag: "BasicTest",
 
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, false},
+			{Dom: "test.com"},
 		},
 
 		ExistingLinks: []ExistingLink{
@@ -123,7 +128,7 @@ var DispatcherTests = []DispatcherTest{
 		Tag: "AllCrawledCorrectOrder",
 
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, false},
+			{Dom: "test.com"},
 		},
 
 		ExistingLinks: []ExistingLink{
@@ -194,7 +199,7 @@ var DispatcherTests = []DispatcherTest{
 		Tag: "NoGetNow",
 
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, false},
+			{Dom: "test.com"},
 		},
 
 		ExistingLinks: []ExistingLink{
@@ -265,7 +270,7 @@ var DispatcherTests = []DispatcherTest{
 		Tag: "OnlyUncrawled",
 
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, false},
+			{Dom: "test.com"},
 		},
 
 		ExistingLinks: []ExistingLink{
@@ -314,7 +319,7 @@ var DispatcherTests = []DispatcherTest{
 	DispatcherTest{ // Verifies that we work with query parameters properly
 		Tag: "QueryParmsOK",
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, false},
+			{Dom: "test.com"},
 		},
 		ExistingLinks: []ExistingLink{
 			{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html?p=v"),
@@ -329,13 +334,26 @@ var DispatcherTests = []DispatcherTest{
 	DispatcherTest{ // Verifies that we don't generate an already-dispatched domain
 		Tag: "NoAlreadyDispatched",
 		ExistingDomainInfos: []ExistingDomainInfo{
-			{"test.com", gocql.UUID{}, 0, true},
+			{Dom: "test.com", Dispatched: true},
 		},
 		ExistingLinks: []ExistingLink{
 			{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
 				LastCrawled: walker.NotYetCrawled}, Status: -1},
 		},
 		ExpectedSegmentLinks: []walker.URL{},
+	},
+
+	DispatcherTest{
+		Tag: "ShouldBeExcluded",
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com", Excluded: true},
+		},
+		ExistingLinks: []ExistingLink{
+			{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+				LastCrawled: walker.NotYetCrawled}, Status: -1},
+		},
+		ExpectedSegmentLinks: []walker.URL{},
+		NoDispatchExpected:   true,
 	},
 }
 
@@ -357,9 +375,9 @@ func TestDispatcherBasic(t *testing.T) {
 		db := GetTestDB() // runs between tests to reset the db
 
 		for _, edi := range dt.ExistingDomainInfos {
-			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
-							VALUES (?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched)
+			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
+							VALUES (?, ?, ?, ?, ?)`,
+				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
@@ -421,7 +439,11 @@ func TestDispatcherBasic(t *testing.T) {
 			if err := q.Scan(&dispatched); err != nil {
 				t.Fatalf("For tag %q failed to insert find domain info: %v\nQuery: %v", dt.Tag, err, q)
 			}
-			if !dispatched {
+			if dt.NoDispatchExpected {
+				if dispatched {
+					t.Errorf("For tag %q `dispatched` flag got set on domain: %v", dt.Tag, edi.Dom)
+				}
+			} else if !dispatched {
 				t.Errorf("For tag %q `dispatched` flag not set on domain: %v", dt.Tag, edi.Dom)
 			}
 		}

@@ -528,12 +528,12 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 	-- true if this domain has had a segment generated and is ready for crawling
 	dispatched boolean,
 
-	---- Items yet to be added to walker
-
 	-- true if this domain is excluded from the crawl (null implies not excluded)
-	--excluded boolean,
+	excluded boolean,
 	-- the reason this domain is excluded, null if not excluded
-	--exclude_reason text,
+	exclude_reason text,
+
+	---- Items yet to be added to walker
 
 	-- If not null, identifies another domain as a mirror of this one
 	--mirr_for text,
