@@ -394,7 +394,7 @@ func (f *fetcher) start() {
 						for _, outlink := range outlinks {
 							outlink.MakeAbsolute(link)
 							log4go.Fine("Parsed link: %v", outlink)
-							if shouldStore(outlink) {
+							if shouldStoreProtocol(outlink) {
 								f.fm.Datastore.StoreParsedURL(outlink, fr)
 							}
 						}
@@ -507,8 +507,9 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 // parseHtml processes the html stored in content.
 // It returns:
 //     (a) a list of `links` on the page
-//     (b) a boolean metaNoIndex to note if <meta content="noindex"> was found
-func parseHtml(contents []byte) (links []*URL, metaNoIndex bool, metaNoFollow bool, err error) {
+//     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
+//     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
+func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
 	utf8Reader, err := charset.NewReader(bytes.NewReader(contents), "text/html")
 	if err != nil {
 		return
@@ -533,8 +534,8 @@ func parseHtml(contents []byte) (links []*URL, metaNoIndex bool, metaNoFollow bo
 				} else if tagName == "meta" {
 					isRobots, index, follow := parseMetaAttrs(tokenizer)
 					if isRobots {
-						metaNoIndex = metaNoIndex || index
-						metaNoFollow = metaNoFollow || follow
+						metaNoindex = metaNoindex || index
+						metaNofollow = metaNofollow || follow
 					}
 				}
 			}
@@ -632,8 +633,9 @@ func isHandleable(r *http.Response, mm *mimetools.Matcher) bool {
 	return false
 }
 
-// shouldStore determines if a link should be stored as a parsed link.
-func shouldStore(u *URL) bool {
+// shouldStoreProtocol returns true if the argument URL is an Accepted
+// Protocol
+func shouldStoreProtocol(u *URL) bool {
 	// Could also check extension here, possibly
 	for _, f := range Config.AcceptProtocols {
 		if u.Scheme == f {
