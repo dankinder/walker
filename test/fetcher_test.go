@@ -59,7 +59,7 @@ const html_test_links string = `<!DOCTYPE html>
 </div>
 </html>`
 
-func readConfig() {
+func init() {
 	source := "test-walker.yaml"
 	err := walker.ReadConfigFile(source)
 	if err != nil {
@@ -68,7 +68,6 @@ func readConfig() {
 }
 
 func TestBasicFetchManagerRun(t *testing.T) {
-	readConfig()
 	ds := &MockDatastore{}
 	ds.On("ClaimNewHost").Return("norobots.com").Once()
 	ds.On("LinksForHost", "norobots.com").Return([]*walker.URL{
@@ -229,7 +228,6 @@ func TestBasicFetchManagerRun(t *testing.T) {
 }
 
 func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
-	readConfig()
 	orig := walker.Config.BlacklistPrivateIPs
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = true
@@ -267,7 +265,6 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 }
 
 func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
-	readConfig()
 	orig := walker.Config.BlacklistPrivateIPs
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = true
@@ -298,7 +295,6 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 }
 
 func TestFetcherCreatesTransport(t *testing.T) {
-	readConfig()
 	orig := walker.Config.BlacklistPrivateIPs
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = false
@@ -346,7 +342,6 @@ func TestFetcherCreatesTransport(t *testing.T) {
 }
 
 func TestRedirects(t *testing.T) {
-	readConfig()
 	link := func(index int) string {
 		return fmt.Sprintf("http://sub.dom.com/page%d.html", index)
 	}
@@ -403,7 +398,6 @@ func TestRedirects(t *testing.T) {
 }
 
 func TestHrefWithSpace(t *testing.T) {
-	readConfig()
 	testPage := "http://t.com/page1.html"
 	const html_with_href_space = `<!DOCTYPE html>
 <html>
@@ -503,7 +497,6 @@ func TestHrefWithSpace(t *testing.T) {
 }
 
 func TestHttpTimeout(t *testing.T) {
-	readConfig()
 	origTimeout := walker.Config.HttpTimeout
 	walker.Config.HttpTimeout = "200ms"
 	defer func() {
@@ -584,8 +577,6 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
-	readConfig()
-
 	origHonorNoindex := walker.Config.HonorMetaNoindex
 	origHonorNofollow := walker.Config.HonorMetaNofollow
 	defer func() {
