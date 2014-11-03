@@ -394,7 +394,7 @@ func (f *fetcher) start() {
 						for _, outlink := range outlinks {
 							outlink.MakeAbsolute(link)
 							log4go.Fine("Parsed link: %v", outlink)
-							if shouldStoreProtocol(outlink) {
+							if shouldStoreParsedLink(outlink) {
 								f.fm.Datastore.StoreParsedURL(outlink, fr)
 							}
 						}
@@ -633,9 +633,9 @@ func isHandleable(r *http.Response, mm *mimetools.Matcher) bool {
 	return false
 }
 
-// shouldStoreProtocol returns true if the argument URL is an Accepted
+// shouldStoreParsedLink returns true if the argument URL is an Accepted
 // Protocol
-func shouldStoreProtocol(u *URL) bool {
+func shouldStoreParsedLink(u *URL) bool {
 	// Could also check extension here, possibly
 	for _, f := range Config.AcceptProtocols {
 		if u.Scheme == f {
