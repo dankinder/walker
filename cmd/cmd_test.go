@@ -1,65 +1,67 @@
-// +build cassandra
-
-package test
+package cmd
 
 import (
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cmd"
+	"github.com/iParadigms/walker/helpers"
 
 	"github.com/stretchr/testify/mock"
 )
+
+//TODO: we currently do not test the console command since we haven't mocked
+//		the model yet
 
 func TestCommandsReadConfig(t *testing.T) {
 	orig := os.Args
 	defer func() {
 		os.Args = orig
 		// Reset config for the remaining tests
-		loadTestConfig("test-walker.yaml")
+		helpers.LoadTestConfig("test-walker.yaml")
 	}()
 
-	handler := &MockHandler{}
-	cmd.Handler(handler)
+	handler := &helpers.MockHandler{}
+	Handler(handler)
 
-	getDB(t) // Ensure that walker_test exists, as the console will try to connect
-	datastore := &MockDatastore{}
+	datastore := &helpers.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("StoreParsedURL", mock.Anything, mock.Anything).Return()
-	cmd.Datastore(datastore)
+	Datastore(datastore)
 
-	dispatcher := &MockDispatcher{}
+	dispatcher := &helpers.MockDispatcher{}
 	dispatcher.On("StartDispatcher").Return(nil)
 	dispatcher.On("StopDispatcher").Return(nil)
-	cmd.Dispatcher(dispatcher)
+	Dispatcher(dispatcher)
 
-	var walkerCommands = []string{"crawl", "fetch", "dispatch", "seed", "console"}
+	var walkerCommands = []string{"crawl", "fetch", "dispatch", "seed"}
 	for _, walkerCom := range walkerCommands {
-		loadTestConfig("test-walker.yaml")
+		helpers.LoadTestConfig("test-walker.yaml")
 		expectedDefaultAgent := "Walker (http://github.com/iParadigms/walker)"
 		if walker.Config.UserAgent != expectedDefaultAgent {
 			t.Fatalf("Failed to reset default config value (user_agent), expected: %v\nBut got: %v",
 				expectedDefaultAgent, walker.Config.UserAgent)
 		}
 
+		conf := path.Join(helpers.GetTestFileDir(), "test-walker2.yaml")
 		switch walkerCom {
 		case "seed":
-			os.Args = []string{os.Args[0], walkerCom, "--url=http://test.com", "--config=test-walker2.yaml"}
+			os.Args = []string{os.Args[0], walkerCom, "--url=http://test.com", "--config=" + conf}
 		default:
-			os.Args = []string{os.Args[0], walkerCom, "--config=test-walker2.yaml"}
+			os.Args = []string{os.Args[0], walkerCom, "--config=" + conf}
 		}
 
 		go func() {
 			time.Sleep(100 * time.Millisecond)
 			syscall.Kill(os.Getpid(), syscall.SIGINT)
 		}()
-		cmd.Execute()
+		Execute()
 
 		expectedTestAgent := "Test Agent (set in yaml)"
 		if walker.Config.UserAgent != expectedTestAgent {
@@ -74,22 +76,22 @@ func TestCrawlCommand(t *testing.T) {
 	defer func() { os.Args = orig }()
 
 	args := [][]string{
-		[]string{os.Args[0], "crawl"},
+		//[]string{os.Args[0], "crawl"}, // console tests not currently enabled
 		[]string{os.Args[0], "crawl", "--no-console"},
 	}
 
 	for index := range args {
-		handler := &MockHandler{}
-		cmd.Handler(handler)
+		handler := &helpers.MockHandler{}
+		Handler(handler)
 
-		datastore := &MockDatastore{}
+		datastore := &helpers.MockDatastore{}
 		datastore.On("ClaimNewHost").Return("")
-		cmd.Datastore(datastore)
+		Datastore(datastore)
 
-		dispatcher := &MockDispatcher{}
+		dispatcher := &helpers.MockDispatcher{}
 		dispatcher.On("StartDispatcher").Return(nil)
 		dispatcher.On("StopDispatcher").Return(nil)
-		cmd.Dispatcher(dispatcher)
+		Dispatcher(dispatcher)
 
 		os.Args = args[index]
 
@@ -97,7 +99,7 @@ func TestCrawlCommand(t *testing.T) {
 			time.Sleep(5 * time.Millisecond)
 			syscall.Kill(os.Getpid(), syscall.SIGINT)
 		}()
-		cmd.Execute()
+		Execute()
 
 		handler.AssertExpectations(t)
 		datastore.AssertExpectations(t)
@@ -106,16 +108,16 @@ func TestCrawlCommand(t *testing.T) {
 }
 
 func TestFetchCommand(t *testing.T) {
-	handler := &MockHandler{}
-	cmd.Handler(handler)
+	handler := &helpers.MockHandler{}
+	Handler(handler)
 
-	datastore := &MockDatastore{}
+	datastore := &helpers.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
-	cmd.Datastore(datastore)
+	Datastore(datastore)
 
 	// Set the dispatcher to ensure it doesn't receive any calls
-	dispatcher := &MockDispatcher{}
-	cmd.Dispatcher(dispatcher)
+	dispatcher := &helpers.MockDispatcher{}
+	Dispatcher(dispatcher)
 
 	orig := os.Args
 	defer func() { os.Args = orig }()
@@ -125,7 +127,7 @@ func TestFetchCommand(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 		syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	cmd.Execute()
+	Execute()
 
 	handler.AssertExpectations(t)
 	datastore.AssertExpectations(t)
@@ -134,16 +136,16 @@ func TestFetchCommand(t *testing.T) {
 
 func TestDispatchCommand(t *testing.T) {
 	// Set a handler and datastore to ensure they doesn't receive any calls
-	handler := &MockHandler{}
-	cmd.Handler(handler)
+	handler := &helpers.MockHandler{}
+	Handler(handler)
 
-	datastore := &MockDatastore{}
-	cmd.Datastore(datastore)
+	datastore := &helpers.MockDatastore{}
+	Datastore(datastore)
 
-	dispatcher := &MockDispatcher{}
+	dispatcher := &helpers.MockDispatcher{}
 	dispatcher.On("StartDispatcher").Return(nil)
 	dispatcher.On("StopDispatcher").Return(nil)
-	cmd.Dispatcher(dispatcher)
+	Dispatcher(dispatcher)
 
 	orig := os.Args
 	defer func() { os.Args = orig }()
@@ -153,7 +155,7 @@ func TestDispatchCommand(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 		syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	cmd.Execute()
+	Execute()
 
 	handler.AssertExpectations(t)
 	datastore.AssertExpectations(t)
@@ -162,9 +164,9 @@ func TestDispatchCommand(t *testing.T) {
 
 func TestSeedCommand(t *testing.T) {
 	u, _ := walker.ParseURL("http://test.com")
-	datastore := &MockDatastore{}
+	datastore := &helpers.MockDatastore{}
 	datastore.On("StoreParsedURL", u, mock.AnythingOfType("*walker.FetchResults")).Return("")
-	cmd.Datastore(datastore)
+	Datastore(datastore)
 
 	orig := os.Args
 	defer func() { os.Args = orig }()
@@ -174,7 +176,7 @@ func TestSeedCommand(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 		syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	cmd.Execute()
+	Execute()
 
 	datastore.AssertExpectations(t)
 }
@@ -183,7 +185,7 @@ func TestSchemaCommand(t *testing.T) {
 	orig := os.Args
 	defer func() { os.Args = orig }()
 	os.Args = []string{os.Args[0], "schema", "--out=test.cql"}
-	cmd.Execute()
+	Execute()
 	defer os.Remove("test.cql")
 
 	f, err := ioutil.ReadFile("test.cql")

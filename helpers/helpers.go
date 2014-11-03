@@ -1,4 +1,4 @@
-package test
+package helpers
 
 import (
 	"fmt"
@@ -7,15 +7,37 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
+	"runtime"
 	"strings"
-	"sync"
-	"testing"
 	"time"
 
-	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
 )
+
+// LoadTestConfig loads the given test config yaml file. The given path is
+// assumed to be relative to the `walker/helpers/` directory, the location of this
+// file. This will panic if it cannot read the requested config file. If you
+// expect an error or are testing walker.ReadConfigFile, use `GetTestFileDir()`
+// instead.
+func LoadTestConfig(filename string) {
+	testdir := GetTestFileDir()
+	err := walker.ReadConfigFile(path.Join(testdir, filename))
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+// GetTestFileDir returns the directory where shared test files are stored, for
+// example test config files. It will panic if it could not get the path from
+// the runtime.
+func GetTestFileDir() string {
+	_, p, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("Failed to get location of test source file")
+	}
+	return path.Dir(p)
+}
 
 // FakeDial makes connections to localhost, no matter what addr was given.
 func FakeDial(network, addr string) (net.Conn, error) {
@@ -35,18 +57,18 @@ func GetFakeTransport() http.RoundTripper {
 //
 // http.Transport that tracks which requests where canceled.
 //
-type cancelTrackingTransport struct {
+type CancelTrackingTransport struct {
 	http.Transport
-	canceled map[string]int
+	Canceled map[string]int
 }
 
-func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
+func (self *CancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
-	if c, cok := self.canceled[key]; cok {
+	if c, cok := self.Canceled[key]; cok {
 		count = c
 	}
-	self.canceled[key] = count + 1
+	self.Canceled[key] = count + 1
 	self.Transport.CancelRequest(req)
 }
 
@@ -67,15 +89,15 @@ func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
+func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
-	trans := &cancelTrackingTransport{
+	trans := &CancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
-		canceled: make(map[string]int),
+		Canceled: make(map[string]int),
 	}
 
 	return trans, dialer
@@ -165,22 +187,22 @@ func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
 	return self.newConn(), nil
 }
 
-func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
+func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
-	trans := &cancelTrackingTransport{
+	trans := &CancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		},
-		canceled: make(map[string]int),
+		Canceled: make(map[string]int),
 	}
 	return trans, dialer
 }
 
-// parse is a helper to just get a URL object from a string we know is a safe
-// url (ParseURL requires us to deal with potential errors)
-func parse(ref string) *walker.URL {
+// Parse is a helper to just get a walker.URL object from a string we know is a
+// safe url (ParseURL requires us to deal with potential errors)
+func Parse(ref string) *walker.URL {
 	u, err := walker.ParseURL(ref)
 	if err != nil {
 		panic("Failed to parse walker.URL: " + ref)
@@ -188,9 +210,9 @@ func parse(ref string) *walker.URL {
 	return u
 }
 
-// urlParse is similar to `parse` but gives a Go builtin URL type (not a walker
+// UrlParse is similar to `parse` but gives a Go builtin URL type (not a walker
 // URL)
-func urlParse(ref string) *url.URL {
+func UrlParse(ref string) *url.URL {
 	u, err := url.Parse(ref)
 	if err != nil {
 		panic("Failed to parse url.URL: " + ref)
@@ -198,7 +220,7 @@ func urlParse(ref string) *url.URL {
 	return u
 }
 
-func response404() *http.Response {
+func Response404() *http.Response {
 	return &http.Response{
 		Status:        "404",
 		StatusCode:    404,
@@ -211,7 +233,7 @@ func response404() *http.Response {
 	}
 }
 
-func response307(link string) *http.Response {
+func Response307(link string) *http.Response {
 	return &http.Response{
 		Status:        "307",
 		StatusCode:    307,
@@ -224,7 +246,7 @@ func response307(link string) *http.Response {
 	}
 }
 
-func response200() *http.Response {
+func Response200() *http.Response {
 	return &http.Response{
 		Status:     "200 OK",
 		StatusCode: 200,
@@ -246,52 +268,20 @@ func response200() *http.Response {
 	}
 }
 
-// mapRoundTrip maps input links --> http.Response. See TestRedirects for example.
-type mapRoundTrip struct {
-	responses map[string]*http.Response
+// MapRoundTrip maps input links --> http.Response. See TestRedirects for example.
+type MapRoundTrip struct {
+	Responses map[string]*http.Response
 }
 
-func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
-	res, resOk := mrt.responses[req.URL.String()]
+func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, resOk := mrt.Responses[req.URL.String()]
 	if !resOk {
-		return response404(), nil
+		return Response404(), nil
 	}
 	return res, nil
 }
 
-// This allows the mapRoundTrip to be canceled. Which is needed to prevent
+// This allows the MapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (self *mapRoundTrip) CancelRequest(req *http.Request) {
-}
-
-var initdb sync.Once
-
-func getDB(t *testing.T) *gocql.Session {
-	initdb.Do(func() {
-		err := cassandra.CreateSchema()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
-	})
-
-	if walker.Config.Cassandra.Keyspace != "walker_test" {
-		t.Fatal("Running tests requires using the walker_test keyspace")
-		return nil
-	}
-	config := cassandra.GetConfig()
-	db, err := config.CreateSession()
-	if err != nil {
-		t.Fatalf("Could not connect to local cassandra db: %v", err)
-		return nil
-	}
-
-	tables := []string{"links", "segments", "domain_info"}
-	for _, table := range tables {
-		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
-		if err != nil {
-			t.Fatalf("Failed to truncate table %v: %v", table, err)
-		}
-	}
-
-	return db
+func (self *MapRoundTrip) CancelRequest(req *http.Request) {
 }

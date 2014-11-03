@@ -1,12 +1,11 @@
-package test
+package mimetools
 
 import (
-	"github.com/iParadigms/walker/mimetools"
 	"testing"
 )
 
 func testMatch(t *testing.T, target string, matchInputs ...string) {
-	mm, err := mimetools.NewMatcher(matchInputs)
+	mm, err := NewMatcher(matchInputs)
 	if err != nil {
 		t.Error(err)
 	}
@@ -21,7 +20,7 @@ func testMatch(t *testing.T, target string, matchInputs ...string) {
 }
 
 func testMatchFail(t *testing.T, target string, matchInputs ...string) {
-	mm, err := mimetools.NewMatcher(matchInputs)
+	mm, err := NewMatcher(matchInputs)
 	if err != nil {
 		t.Error(err)
 	}

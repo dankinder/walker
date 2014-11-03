@@ -1,4 +1,4 @@
-package test
+package simplehandler
 
 import (
 	"bytes"
@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/helpers"
 )
 
 func TestSimpleWriterHandler(t *testing.T) {
-	h := &walker.SimpleWriterHandler{}
+	h := &Handler{}
 
-	page1URL := parse("http://test.com/page1.html")
+	page1URL := helpers.Parse("http://test.com/page1.html")
 	page1Contents := []byte("<html>stuff</html>")
 	page1Fetch := &walker.FetchResults{
 		URL:              page1URL,
@@ -52,9 +53,9 @@ func TestSimpleWriterHandler(t *testing.T) {
 }
 
 func TestSimpleWriterHandlerIgnoresOnRobots(t *testing.T) {
-	h := &walker.SimpleWriterHandler{}
+	h := &Handler{}
 
-	page2URL := parse("http://test.com/page2.html")
+	page2URL := helpers.Parse("http://test.com/page2.html")
 	page2Contents := []byte("<html>stuff</html>")
 	page2Fetch := &walker.FetchResults{
 		URL:              page2URL,
@@ -88,9 +89,9 @@ func TestSimpleWriterHandlerIgnoresOnRobots(t *testing.T) {
 }
 
 func TestSimpleWriterHandlerIgnoresBadHTTPCode(t *testing.T) {
-	h := &walker.SimpleWriterHandler{}
+	h := &Handler{}
 
-	page3URL := parse("http://test.com/page3.html")
+	page3URL := helpers.Parse("http://test.com/page3.html")
 	page3Contents := []byte("<html>stuff</html>")
 	page3Fetch := &walker.FetchResults{
 		URL:              page3URL,

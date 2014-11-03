@@ -1,18 +1,20 @@
-package walker
+package simplehandler
 
 import (
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/iParadigms/walker"
+
 	"code.google.com/p/log4go"
 )
 
-// SimpleWriterHandler just writes returned pages as files locally, naming the
+// Handler just writes returned pages as files locally, naming the
 // file after the URL of the request.
-type SimpleWriterHandler struct{}
+type Handler struct{}
 
-func (h *SimpleWriterHandler) HandleResponse(fr *FetchResults) {
+func (h *Handler) HandleResponse(fr *walker.FetchResults) {
 	if fr.ExcludedByRobots {
 		log4go.Debug("Excluded by robots.txt, ignoring url: %v", fr.URL)
 		return

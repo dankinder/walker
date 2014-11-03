@@ -1,17 +1,3 @@
-package cmd
-
-import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-
-	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
-	"github.com/iParadigms/walker/console"
-	"github.com/spf13/cobra"
-)
-
 // cmd provides an easy interface for creating walker binaries that use their
 // own Handler, Datastore, or Dispatcher. A crawler that uses the default for
 // each of these requires simply:
@@ -37,6 +23,20 @@ import (
 //
 // cmd.Execute() blocks until the program has completed (usually by
 // being shutdown gracefully via SIGINT).
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
+	"github.com/iParadigms/walker/console"
+	"github.com/iParadigms/walker/simplehandler"
+	"github.com/spf13/cobra"
+)
 
 //
 // P U B L I C
@@ -110,7 +110,7 @@ func init() {
 			}
 
 			if commander.Handler == nil {
-				commander.Handler = &walker.SimpleWriterHandler{}
+				commander.Handler = &simplehandler.Handler{}
 			}
 
 			manager := &walker.FetchManager{
@@ -161,7 +161,7 @@ func init() {
 			}
 
 			if commander.Handler == nil {
-				commander.Handler = &walker.SimpleWriterHandler{}
+				commander.Handler = &simplehandler.Handler{}
 			}
 
 			manager := &walker.FetchManager{
