@@ -305,47 +305,59 @@ func newFetcher(fm *FetchManager) *fetcher {
 // start blocks until the fetcher has completed by being told to quit.
 func (f *fetcher) start() {
 	log4go.Debug("Starting new fetcher")
-	for {
-		if f.host != "" {
-			//TODO: ensure that this unclaim will happen... probably want the
-			//logic below in a function where the Unclaim is deferred
-			log4go.Info("Finished crawling %v, unclaiming", f.host)
-			f.fm.Datastore.UnclaimHost(f.host)
-		}
+	for f.crawlNewHost() {
+		// Crawl until told to stop...
+	}
+	log4go.Debug("Stopping fetcher")
+	f.done <- struct{}{}
+}
 
+// crawlNewHost host crawls a single host, or delays and returns if there was
+// nothing to crawl.
+// Returns false if it was signaled to quit and the routine should finish
+func (f *fetcher) crawlNewHost() bool {
+	select {
+	case <-f.quit:
+		return false
+	default:
+	}
+
+	f.host = f.fm.Datastore.ClaimNewHost()
+	if f.host == "" {
+		time.Sleep(time.Second)
+		return true
+	}
+	defer func() {
+		log4go.Info("Finished crawling %v, unclaiming", f.host)
+		f.fm.Datastore.UnclaimHost(f.host)
+	}()
+
+	if f.checkForBlacklisting(f.host) {
+		return true
+	}
+
+	f.fetchRobots(f.host)
+	f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
+	if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
+		f.crawldelay = f.robots.CrawlDelay
+	}
+	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
+
+	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
-			f.done <- struct{}{}
-			return
+			// Let the defer unclaim the host and the caller indicate that this
+			// goroutine is done
+			return false
 		default:
 		}
 
-		f.host = f.fm.Datastore.ClaimNewHost()
-		if f.host == "" {
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if f.checkForBlacklisting(f.host) {
-			continue
-		}
-
-		f.fetchRobots(f.host)
-		f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
-		if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
-			f.crawldelay = f.robots.CrawlDelay
-		}
-		log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
-
-		for link := range f.fm.Datastore.LinksForHost(f.host) {
-			//TODO: check <-f.quit and clean up appropriately
-
-			shouldDelay := f.fetchAndHandle(link)
-			if shouldDelay {
-				time.Sleep(f.crawldelay)
-			}
+		shouldDelay := f.fetchAndHandle(link)
+		if shouldDelay {
+			time.Sleep(f.crawldelay)
 		}
 	}
+	return true
 }
 
 // fetchAndHandle takes care of fetching and processing a URL beginning to end.
@@ -496,6 +508,8 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 // TODO: since different subdomains my resolve to different IPs, find a way to
 // check this for every HTTP fetch without extraneous connections or fetching
 // data we aren't going to care about
+// TODO: write back to the database that this domain has been blacklisted so we
+// don't just keep re-dispatching it
 func (f *fetcher) checkForBlacklisting(host string) bool {
 	t, ok := f.fm.Transport.(*http.Transport)
 	if !ok {
