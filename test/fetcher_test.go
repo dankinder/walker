@@ -698,3 +698,7 @@ div id="menu">
 		t.Errorf("Fetcher did not honor nofollow in meta: expected 0 callCount, found %d", callCount)
 	}
 }
+
+func TestFail(t *testing.T) {
+	//t.Fatalf("PETE CORRECT")
+}
