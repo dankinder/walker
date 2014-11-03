@@ -584,6 +584,8 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
+	readConfig()
+
 	origHonorNoindex := walker.Config.HonorMetaNoindex
 	origHonorNofollow := walker.Config.HonorMetaNofollow
 	defer func() {
@@ -626,16 +628,15 @@ func TestMetaNos(t *testing.T) {
 <title>No Links</title>
 </head>
 div id="menu">
-	<a href="relative-dir/">link</a>
-	<a href="relative-page/page.html">link</a>
-	<a href="/abs-relative-dir/">link</a>
-	<a href="/abs-relative-page/page.html">link</a>
-	<a href="https://other.org/abs-dir/">link</a>
-	<a href="https://other.org/abs-page/page.html">link</a>
+	<a href="relative-dirX/">link</a>
+	<a href="relative-pageX/page.html">link</a>
+	<a href="/abs-relative-dirX/">link</a>
+	<a href="/abs-relative-pageX/page.html">link</a>
+	<a href="https://other.org/abs-dirX/">link</a>
+	<a href="https://other.org/abs-pageX/page.html">link</a>
 </div>
 </html>`
 
-	readConfig()
 	ds := &MockDatastore{}
 	ds.On("ClaimNewHost").Return("t1.com").Once()
 	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{

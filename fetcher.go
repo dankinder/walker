@@ -366,8 +366,7 @@ func (f *fetcher) start() {
 			if isHTML(fr.Response) {
 				log4go.Debug("Reading and parsing as HTML (%v)", link)
 
-				// backward compatibility demands we handle any html. But
-				// pete suspects we may want to change this in the future.
+				// backward compatibility demands we handle any html.
 				canHandle = true
 
 				//TODO: ReadAll is inefficient. We should use a properly sized
