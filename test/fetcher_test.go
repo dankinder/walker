@@ -61,11 +61,7 @@ const html_test_links string = `<!DOCTYPE html>
 </html>`
 
 func init() {
-	source := "test-walker.yaml"
-	err := walker.ReadConfigFile(source)
-	if err != nil {
-		panic(err)
-	}
+	helpers.LoadTestConfig("test-walker.yaml")
 }
 
 func TestBasicFetchManagerRun(t *testing.T) {
@@ -629,12 +625,12 @@ div id="menu">
 </div>
 </html>`
 
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("t1.com").Once()
 	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		parse("http://t1.com/nofollow.html"),
-		parse("http://t1.com/noindex.html"),
-		parse("http://t1.com/both.html"),
+		helpers.Parse("http://t1.com/nofollow.html"),
+		helpers.Parse("http://t1.com/noindex.html"),
+		helpers.Parse("http://t1.com/both.html"),
 	})
 	ds.On("UnclaimHost", "t1.com").Return()
 	ds.On("ClaimNewHost").Return("")
@@ -644,27 +640,27 @@ div id="menu">
 		mock.AnythingOfType("*walker.URL"),
 		mock.AnythingOfType("*walker.FetchResults")).Return()
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 	h.On("HandleResponse", mock.Anything).Return()
 
-	rs, err := NewMockRemoteServer()
+	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs.SetResponse("http://t1.com/nofollow.html", &MockResponse{
+	rs.SetResponse("http://t1.com/nofollow.html", &helpers.MockResponse{
 		Body: nofollowHtml,
 	})
-	rs.SetResponse("http://t1.com/noindex.html", &MockResponse{
+	rs.SetResponse("http://t1.com/noindex.html", &helpers.MockResponse{
 		Body: noindexHtml,
 	})
-	rs.SetResponse("http://t1.com/both.html", &MockResponse{
+	rs.SetResponse("http://t1.com/both.html", &helpers.MockResponse{
 		Body: bothHtml,
 	})
 
 	manager := &walker.FetchManager{
 		Datastore: ds,
 		Handler:   h,
-		Transport: GetFakeTransport(),
+		Transport: helpers.GetFakeTransport(),
 	}
 
 	go manager.Start()
