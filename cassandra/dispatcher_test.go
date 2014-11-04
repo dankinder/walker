@@ -40,8 +40,37 @@ type ExistingLink struct {
 }
 
 var DispatcherTests = []DispatcherTest{
-	// This first test is complicated, so I describe it in this comment. Below
-	// you'll see we set
+	DispatcherTest{
+		Tag: "BasicTest",
+
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+
+		ExistingLinks: []ExistingLink{
+			{URL: walker.URL{URL: helpers.UrlParse("http://test.com/"),
+				LastCrawled: walker.NotYetCrawled}, Status: -1},
+		},
+
+		ExpectedSegmentLinks: []walker.URL{
+			{URL: helpers.UrlParse("http://test.com/"),
+				LastCrawled: walker.NotYetCrawled},
+		},
+	},
+
+	DispatcherTest{
+		Tag: "NothingToDispatch",
+
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+		ExistingLinks:        []ExistingLink{},
+		ExpectedSegmentLinks: []walker.URL{},
+		NoDispatchExpected:   true,
+	},
+
+	// This test is complicated, so I describe it in this comment. Below you'll
+	// see we set
 	//   Config.Dispatcher.MaxLinksPerSegment = 9
 	//   Config.Dispatcher.RefreshPercentage = 33
 	//
@@ -51,7 +80,7 @@ var DispatcherTests = []DispatcherTest{
 	// 4 (= 6-2) links should be not-yet-crawled links. And that is the
 	// composition of the first tests expected.
 	DispatcherTest{
-		Tag: "BasicTest",
+		Tag: "MultipleLinksTest",
 
 		ExistingDomainInfos: []ExistingDomainInfo{
 			{Dom: "test.com"},
