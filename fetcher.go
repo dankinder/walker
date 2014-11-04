@@ -548,16 +548,14 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 		log4go.Fine("Page has nofollow meta tag: %v", fr.URL)
 	}
 
-	if !(Config.HonorMetaNofollow && fr.MetaNoFollow) {
-		for _, outlink := range outlinks {
-			if f.rejectLink(outlink) {
-				continue
-			}
-			outlink.MakeAbsolute(fr.URL)
-			log4go.Fine("Parsed link: %v", outlink)
-			if shouldStoreParsedLink(outlink) {
-				f.fm.Datastore.StoreParsedURL(outlink, fr)
-			}
+	for _, outlink := range outlinks {
+		if f.rejectLink(outlink) {
+			continue
+		}
+		outlink.MakeAbsolute(fr.URL)
+		log4go.Fine("Parsed link: %v", outlink)
+		if shouldStoreParsedLink(outlink) {
+			f.fm.Datastore.StoreParsedURL(outlink, fr)
 		}
 	}
 }
@@ -610,6 +608,30 @@ func (f *fetcher) isHandleable(r *http.Response) bool {
 	return false
 }
 
+// getIncludedTags gets a map of tags we should check for outlinks. It uses
+// ignored_tags in the config to exclude ones we don't want. Tags are []byte
+// types (not strings) because []byte is what the parser uses.
+func getIncludedTags() map[string]bool {
+	tags := map[string]bool{
+		"a":      true,
+		"area":   true,
+		"form":   true,
+		"frame":  true,
+		"iframe": true,
+		"script": true,
+		"link":   true,
+		"img":    true,
+		"object": true,
+		"embed":  true,
+	}
+	for _, t := range Config.IgnoreTags {
+		delete(tags, t)
+	}
+
+	tags["meta"] = true
+	return tags
+}
+
 // parseHtml processes the html stored in content.
 // It returns:
 //     (a) a list of `links` on the page
@@ -634,15 +656,33 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tagNameB, hasAttrs := tokenizer.TagName()
 			tagName := string(tagNameB)
-			if hasAttrs {
-				if tags[tagName] {
-					links = parseAnchorAttrs(tokenizer, links)
-				} else if tagName == "meta" {
+			if hasAttrs && tags[tagName] {
+				switch tagName {
+				case "a":
+					if !metaNofollow {
+						links = parseAnchorAttrs(tokenizer, links)
+					}
+
+				case "embed":
+					if !metaNofollow {
+						links = parseObjectOrEmbed(tokenizer, links, true)
+					}
+
+				case "iframe":
+					links = parseIframe(tokenizer, links, metaNofollow)
+
+				case "meta":
 					isRobots, index, follow := parseMetaAttrs(tokenizer)
 					if isRobots {
 						metaNoindex = metaNoindex || index
 						metaNofollow = metaNofollow || follow
 					}
+
+				case "object":
+					if !metaNofollow {
+						links = parseObjectOrEmbed(tokenizer, links, false)
+					}
+
 				}
 			}
 		}
@@ -651,49 +691,149 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 	return
 }
 
-// getIncludedTags gets a map of tags we should check for outlinks. It uses
-// ignored_tags in the config to exclude ones we don't want. Tags are []byte
-// types (not strings) because []byte is what the parser uses.
-func getIncludedTags() map[string]bool {
-	tags := map[string]bool{
-		"a":      true,
-		"area":   true,
-		"form":   true,
-		"frame":  true,
-		"iframe": true,
-		"script": true,
-		"link":   true,
-		"img":    true,
+func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
+	var ln *URL
+	var err error
+	if isEmbed {
+		ln, err = parseEmbedAttrs(tokenizer)
+	} else {
+		ln, err = parseObjectAttrs(tokenizer)
 	}
-	for _, t := range Config.IgnoreTags {
-		delete(tags, t)
+
+	if err != nil {
+		label := "parseEmbedAttrs"
+		if !isEmbed {
+			label = "parseObjectAttrs"
+		}
+		log4go.Error("%s encountered an error: %v", label, err)
+	} else {
+		links = append(links, ln)
 	}
-	return tags
+
+	return links
 }
 
-var nameMetaBytes = []byte("name")
-var robotsMetaBytes = []byte("robots")
-var contentMetaBytes = []byte("content")
-var noindexMetaBytes = []byte("noindex")
-var nofollowMetaBytes = []byte("nofollow")
+// parseIframe takes 3 arguments
+// (a) tokenizer
+// (b) list of links already collected
+// (c) a flag indicating if the parser is currently in a nofollow state
+// and returns a possibly extended list of links.
+func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) (links []*URL) {
+	links = in_links
+	docsrc, body, err := parseIframeAttrs(tokenizer)
+	if err != nil {
+		return
+	} else if docsrc {
+		var nlinks []*URL
+		var nNofollow bool
+		nlinks, _, nNofollow, err = parseHtml([]byte(body))
+		if err != nil {
+			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
+			return
+		}
+		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
+			links = append(links, nlinks...)
+		}
+	} else { //!docsrc
+		if !metaNofollow {
+			var u *URL
+			u, err = ParseURL(body)
+			if err != nil {
+				log4go.Error("parseEmbed failed to parse src: %v", err)
+				return
+			}
+			links = append(links, u)
+		}
+	}
+
+	return
+}
+
+// A set of words used by the parse* routines below
+var contentWordBytes = []byte("content")
+var dataWordBytes = []byte("data")
+var nameWordBytes = []byte("name")
+var noindexWordBytes = []byte("noindex")
+var nofollowWordBytes = []byte("nofollow")
+var robotsWordBytes = []byte("robots")
+var srcWordBytes = []byte("src")
+var srcdocWordBytes = []byte("srcdoc")
 
 func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, nameMetaBytes) == 0 {
+		if bytes.Compare(key, nameWordBytes) == 0 {
 			name := bytes.ToLower(val)
-			isRobots = bytes.Compare(name, robotsMetaBytes) == 0
-		} else if bytes.Compare(key, contentMetaBytes) == 0 {
+			isRobots = bytes.Compare(name, robotsWordBytes) == 0
+		} else if bytes.Compare(key, contentWordBytes) == 0 {
 			content := bytes.ToLower(val)
 			// This will match ill-formatted contents like "noindexnofollow",
 			// but I don't expect that to be a big deal.
-			noIndex = bytes.Contains(content, noindexMetaBytes)
-			noFollow = bytes.Contains(content, nofollowMetaBytes)
+			noIndex = bytes.Contains(content, noindexWordBytes)
+			noFollow = bytes.Contains(content, nofollowWordBytes)
 		}
 		if !moreAttr {
 			break
 		}
 	}
+	return
+}
+
+// parse object tag attributes
+func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, dataWordBytes) == 0 {
+			return ParseURL(string(val))
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	return nil, fmt.Errorf("Failed to find data attribute in object tag")
+}
+
+// parse embed tag attributes
+func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, srcWordBytes) == 0 {
+			return ParseURL(string(val))
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	return nil, fmt.Errorf("Failed to find src attribute in embed tag")
+}
+
+// parseIframeAttrs parses iframe attributes. An iframe can have a src attribute, which
+// holds a url to an second document. An iframe can also have a srcdoc attribute which
+// include html inline in a string. The method below returns 3 results
+// (a) a boolean indicating if the iframe had a srcdoc attribute (true means srcdoc, false
+//     means src)
+// (b) the body of whichever src or srcdoc attribute was read
+// (c) any errors that arise during processing.
+func parseIframeAttrs(tokenizer *html.Tokenizer) (srcdoc bool, body string, err error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, srcWordBytes) == 0 {
+			srcdoc = false
+			body = string(val)
+			return
+		} else if bytes.Compare(key, srcdocWordBytes) == 0 {
+			srcdoc = true
+			body = string(val)
+			return
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	err = fmt.Errorf("Failed to find src or srcdoc attribute in iframe tag")
 	return
 }
 
