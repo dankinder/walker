@@ -568,10 +568,6 @@ func getIncludedTags() map[string]bool {
 	return tags
 }
 
-//
-// P A R S I N G   H T M L
-//
-
 // parseHtml processes the html stored in content.
 // It returns:
 //     (a) a list of `links` on the page
@@ -665,6 +661,7 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 	return
 }
 
+// A set of words used by the parse* routines below
 var contentWordBytes = []byte("content")
 var dataWordBytes = []byte("data")
 var nameWordBytes = []byte("name")
@@ -694,6 +691,7 @@ func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noF
 	return
 }
 
+// parse object tag attributes
 func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
@@ -708,11 +706,11 @@ func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	return nil, fmt.Errorf("Failed to find data attribute in object tag")
 }
 
+// parse embed tag attributes
 func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, srcWordBytes) == 0 {
-
 			return ParseURL(string(val))
 		}
 
@@ -723,15 +721,22 @@ func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	return nil, fmt.Errorf("Failed to find src attribute in embed tag")
 }
 
-func parseIframeAttrs(tokenizer *html.Tokenizer) (docsrc bool, body string, err error) {
+// parseIframeAttrs parses iframe attributes. An iframe can have a src attribute, which
+// holds a url to an second document. An iframe can also have a srcdoc attribute which
+// include html inline in a string. The method below returns 3 results
+// (a) a boolean indicating if the iframe had a srcdoc attribute (true means srcdoc, false
+//     means src)
+// (b) the body of whichever src or srcdoc attribute was read
+// (c) any errors that arise during processing.
+func parseIframeAttrs(tokenizer *html.Tokenizer) (srcdoc bool, body string, err error) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, srcWordBytes) == 0 {
-			docsrc = false
+			srcdoc = false
 			body = string(val)
 			return
 		} else if bytes.Compare(key, srcdocWordBytes) == 0 {
-			docsrc = true
+			srcdoc = true
 			body = string(val)
 			return
 		}
