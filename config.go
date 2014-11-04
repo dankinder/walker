@@ -44,12 +44,14 @@ type WalkerConfig struct {
 	MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
 	IgnoreTags              []string `yaml:"ignore_tags"`
 	//TODO: allow -1 as a no max value
-	MaxLinksPerPage         int    `yaml:"max_links_per_page"`
-	NumSimultaneousFetchers int    `yaml:"num_simultaneous_fetchers"`
-	BlacklistPrivateIPs     bool   `yaml:"blacklist_private_ips"`
-	HttpTimeout             string `yaml:"http_timeout"`
-	HonorMetaNoindex        bool   `yaml:"honor_meta_noindex"`
-	HonorMetaNofollow       bool   `yaml:"honor_meta_nofollow"`
+	MaxLinksPerPage         int      `yaml:"max_links_per_page"`
+	NumSimultaneousFetchers int      `yaml:"num_simultaneous_fetchers"`
+	BlacklistPrivateIPs     bool     `yaml:"blacklist_private_ips"`
+	HttpTimeout             string   `yaml:"http_timeout"`
+	HonorMetaNoindex        bool     `yaml:"honor_meta_noindex"`
+	HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
+	ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
+	IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -125,6 +127,8 @@ func SetDefaultConfig() {
 	Config.HttpTimeout = "30s"
 	Config.HonorMetaNoindex = true
 	Config.HonorMetaNofollow = false
+	Config.ExcludeLinkPatterns = nil
+	Config.IncludeLinkPatterns = nil
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -168,6 +172,16 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(Config.Cassandra.Timeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
+	}
+
+	_, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+
+	_, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+	if err != nil {
+		errs = append(errs, err.Error())
 	}
 
 	if len(errs) > 0 {
