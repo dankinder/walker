@@ -601,40 +601,11 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 
 				case "embed":
 					if !metaNofollow {
-						var ln *URL
-						ln, err = parseEmbedAttrs(tokenizer)
-						if err != nil {
-							return
-						}
-						links = append(links, ln)
+						links = parseObjectOrEmbed(tokenizer, links, false)
 					}
 
 				case "iframe":
-					var docsrc bool
-					var body string
-					docsrc, body, err = parseIframeAttrs(tokenizer)
-					if err != nil {
-						return
-					} else if docsrc {
-						var nlinks []*URL
-						var nNofollow bool
-						nlinks, _, nNofollow, err = parseHtml([]byte(body))
-						if err != nil {
-							return
-						}
-						if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
-							links = append(links, nlinks...)
-						}
-					} else { //!docsrc
-						if !metaNofollow {
-							var u *URL
-							u, err = ParseURL(body)
-							if err != nil {
-								return
-							}
-							links = append(links, u)
-						}
-					}
+					links = parseIframe(tokenizer, links, metaNofollow)
 
 				case "meta":
 					isRobots, index, follow := parseMetaAttrs(tokenizer)
@@ -645,16 +616,69 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 
 				case "object":
 					if !metaNofollow {
-						var ln *URL
-						ln, err = parseObjectAttrs(tokenizer)
-						if err != nil {
-							return
-						}
-						links = append(links, ln)
+						links = parseObjectOrEmbed(tokenizer, links, false)
 					}
 
 				}
 			}
+		}
+	}
+
+	return
+}
+
+func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
+	var ln *URL
+	var err error
+	if isEmbed {
+		ln, err = parseEmbedAttrs(tokenizer)
+	} else {
+		ln, err = parseObjectAttrs(tokenizer)
+	}
+
+	if err != nil {
+		label := "parseEmbedAttrs"
+		if !isEmbed {
+			label = "parseObjectAttrs"
+		}
+		log4go.Error("%s encountered an error: %v", label, err)
+	} else {
+		links = append(links, ln)
+	}
+
+	return links
+}
+
+// parseIframe takes 3 arguments
+// (a) tokenizer
+// (b) list of links already collected
+// (c) a flag indicating if the parser is currently in a nofollow state
+// and returns a possibly extended list of links.
+func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) (links []*URL) {
+	links = in_links
+	docsrc, body, err := parseIframeAttrs(tokenizer)
+	if err != nil {
+		return
+	} else if docsrc {
+		var nlinks []*URL
+		var nNofollow bool
+		nlinks, _, nNofollow, err = parseHtml([]byte(body))
+		if err != nil {
+			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
+			return
+		}
+		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
+			links = append(links, nlinks...)
+		}
+	} else { //!docsrc
+		if !metaNofollow {
+			var u *URL
+			u, err = ParseURL(body)
+			if err != nil {
+				log4go.Error("parseEmbed failed to parse src: %v", err)
+				return
+			}
+			links = append(links, u)
 		}
 	}
 
