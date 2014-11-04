@@ -72,13 +72,14 @@ func (d *Dispatcher) StopDispatcher() error {
 func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched FROM domain_info
+		domainiter := d.db.Query(`SELECT dom, dispatched, excluded FROM domain_info
 									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
 									AND dispatched = false ALLOW FILTERING`).Iter()
 
 		var domain string
 		var dispatched bool
-		for domainiter.Scan(&domain, &dispatched) {
+		var excluded bool
+		for domainiter.Scan(&domain, &dispatched, &excluded) {
 			select {
 			case <-d.quit:
 				log4go.Debug("Domain iterator signaled to stop")
@@ -87,7 +88,7 @@ func (d *Dispatcher) domainIterator() {
 			default:
 			}
 
-			if !dispatched {
+			if !dispatched && !excluded {
 				d.domains <- domain
 			}
 		}
