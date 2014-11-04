@@ -699,6 +699,55 @@ div id="menu">
 	}
 }
 
+func TestFetchManagerFastShutdown(t *testing.T) {
+	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
+	defer func() {
+		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
+	}()
+	walker.Config.DefaultCrawlDelay = 1
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("test.com").Once()
+	ds.On("LinksForHost", "test.com").Return([]*walker.URL{
+		helpers.Parse("http://test.com/page1.html"),
+		helpers.Parse("http://test.com/page2.html"),
+	})
+	ds.On("UnclaimHost", "test.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   &helpers.MockHandler{},
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Millisecond * 200)
+	manager.Stop()
+
+	expectedCall := false
+	for _, call := range ds.Calls {
+		switch call.Method {
+		case "StoreURLFetchResults":
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			link := fr.URL.String()
+			switch link {
+			case "http://test.com/page1.html":
+				expectedCall = true
+			default:
+				t.Errorf("Got unexpected StoreURLFetchResults call for %v", link)
+			}
+		}
+	}
+	if !expectedCall {
+		t.Errorf("Did not get expected StoreURLFetchResults call for http://test.com/page1.html")
+	}
+
+	ds.AssertExpectations(t)
+}
+
 func TestObjectEmbedIframeTags(t *testing.T) {
 	origHonorNoindex := walker.Config.HonorMetaNoindex
 	origHonorNofollow := walker.Config.HonorMetaNofollow

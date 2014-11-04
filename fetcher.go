@@ -63,6 +63,14 @@ type FetchResults struct {
 	// robots.txt rules
 	ExcludedByRobots bool
 
+	// True if the page was marked as 'noindex' via a <meta> tag. Whether it
+	// was crawled depends on the honor_meta_noindex configuration parameter
+	MetaNoIndex bool
+
+	// True if the page was marked as 'nofollow' via a <meta> tag. Whether it
+	// was crawled depends on the honor_meta_nofollow configuration parameter
+	MetaNoFollow bool
+
 	// The Content-Type of the fetched page.
 	MimeType string
 }
@@ -297,121 +305,114 @@ func newFetcher(fm *FetchManager) *fetcher {
 // start blocks until the fetcher has completed by being told to quit.
 func (f *fetcher) start() {
 	log4go.Debug("Starting new fetcher")
-	for {
-		if f.host != "" {
-			//TODO: ensure that this unclaim will happen... probably want the
-			//logic below in a function where the Unclaim is deferred
-			log4go.Info("Finished crawling %v, unclaiming", f.host)
-			f.fm.Datastore.UnclaimHost(f.host)
-		}
+	for f.crawlNewHost() {
+		// Crawl until told to stop...
+	}
+	log4go.Debug("Stopping fetcher")
+	f.done <- struct{}{}
+}
 
+// crawlNewHost host crawls a single host, or delays and returns if there was
+// nothing to crawl.
+// Returns false if it was signaled to quit and the routine should finish
+func (f *fetcher) crawlNewHost() bool {
+	select {
+	case <-f.quit:
+		return false
+	default:
+	}
+
+	f.host = f.fm.Datastore.ClaimNewHost()
+	if f.host == "" {
+		time.Sleep(time.Second)
+		return true
+	}
+	defer func() {
+		log4go.Info("Finished crawling %v, unclaiming", f.host)
+		f.fm.Datastore.UnclaimHost(f.host)
+	}()
+
+	if f.checkForBlacklisting(f.host) {
+		return true
+	}
+
+	f.fetchRobots(f.host)
+	f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
+	if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
+		f.crawldelay = f.robots.CrawlDelay
+	}
+	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
+
+	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
-			f.done <- struct{}{}
-			return
+			// Let the defer unclaim the host and the caller indicate that this
+			// goroutine is done
+			return false
 		default:
 		}
 
-		f.host = f.fm.Datastore.ClaimNewHost()
-		if f.host == "" {
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if f.checkForBlacklisting(f.host) {
-			continue
-		}
-
-		f.fetchRobots(f.host)
-		f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
-		if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
-			f.crawldelay = f.robots.CrawlDelay
-		}
-		log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
-
-		for link := range f.fm.Datastore.LinksForHost(f.host) {
-			//TODO: check <-f.quit and clean up appropriately
-
-			fr := &FetchResults{URL: link}
-
-			if f.robots != nil && !f.robots.Test(link.String()) {
-				log4go.Debug("Not fetching due to robots rules: %v", link)
-				fr.ExcludedByRobots = true
-				f.fm.Datastore.StoreURLFetchResults(fr)
-				continue
-			}
-
+		shouldDelay := f.fetchAndHandle(link)
+		if shouldDelay {
 			time.Sleep(f.crawldelay)
-
-			fr.FetchTime = time.Now()
-			fr.Response, fr.RedirectedFrom, fr.FetchError = f.fetch(link)
-			if fr.FetchError != nil {
-				log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
-				f.fm.Datastore.StoreURLFetchResults(fr)
-				continue
-			}
-			log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
-
-			ctype, ctypeOk := fr.Response.Header["Content-Type"]
-			if ctypeOk && len(ctype) > 0 {
-				media_type, _, err := mime.ParseMediaType(ctype[0])
-				if err != nil {
-					log4go.Error("Failed to parse mime header %q: %v", ctype[0], err)
-				} else {
-					fr.MimeType = media_type
-				}
-			}
-
-			canHandle := isHandleable(fr.Response, f.fm.acceptFormats)
-			if isHTML(fr.Response) {
-				log4go.Debug("Reading and parsing as HTML (%v)", link)
-
-				// backward compatibility demands we handle any html.
-				canHandle = true
-
-				//TODO: ReadAll is inefficient. We should use a properly sized
-				//		buffer here (determined by
-				//		Config.MaxHTTPContentSizeBytes or possibly
-				//		Content-Length of the response)
-				var body []byte
-				body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
-				if fr.FetchError != nil {
-					log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
-					f.fm.Datastore.StoreURLFetchResults(fr)
-					continue
-				}
-				fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
-
-				outlinks, noindex, _, err := parseHtml(body)
-				if err != nil {
-					log4go.Debug("error parsing HTML for page %v: %v", link, err)
-				} else {
-					if Config.HonorMetaNoindex && noindex {
-						canHandle = false
-					}
-
-					for _, outlink := range outlinks {
-						outlink.MakeAbsolute(link)
-						log4go.Fine("Parsed link: %v", outlink)
-						if shouldStoreParsedLink(outlink) {
-							f.fm.Datastore.StoreParsedURL(outlink, fr)
-						}
-					}
-				}
-			}
-
-			if canHandle {
-				f.fm.Handler.HandleResponse(fr)
-			} else {
-				ctype := strings.Join(fr.Response.Header["Content-Type"], ",")
-				log4go.Debug("Not handling url %v -- `Content-Type: %v`", link, ctype)
-			}
-
-			//TODO: Wrap the reader and check for read error here
-			log4go.Debug("Storing fetch results for %v", link)
-			f.fm.Datastore.StoreURLFetchResults(fr)
 		}
 	}
+	return true
+}
+
+// fetchAndHandle takes care of fetching and processing a URL beginning to end.
+// Returns true if it did actually perform a fetch (even if it wasn't
+// successful), indicating that crawl-delay should be observed.
+func (f *fetcher) fetchAndHandle(link *URL) bool {
+	fr := &FetchResults{URL: link}
+
+	if f.robots != nil && !f.robots.Test(link.String()) {
+		log4go.Debug("Not fetching due to robots rules: %v", link)
+		fr.ExcludedByRobots = true
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return false
+	}
+
+	fr.FetchTime = time.Now()
+	fr.Response, fr.RedirectedFrom, fr.FetchError = f.fetch(link)
+	if fr.FetchError != nil {
+		log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return true
+	}
+	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
+
+	fr.MimeType = getMimeType(fr.Response)
+
+	if isHTML(fr.Response) {
+		log4go.Fine("Reading and parsing as HTML (%v)", link)
+
+		//TODO: ReadAll is inefficient. We should use a properly sized
+		//		buffer here (determined by
+		//		Config.MaxHTTPContentSizeBytes or possibly
+		//		Content-Length of the response)
+		var body []byte
+		body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+		if fr.FetchError != nil {
+			log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
+			f.fm.Datastore.StoreURLFetchResults(fr)
+			return true
+		}
+
+		f.parseLinks(body, fr)
+
+		// Replace the response body so the handler can read it
+		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
+	}
+
+	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
+		f.fm.Handler.HandleResponse(fr)
+	}
+
+	//TODO: Wrap the reader and check for read error here
+	log4go.Fine("Storing fetch results for %v", link)
+	f.fm.Datastore.StoreURLFetchResults(fr)
+	return true
 }
 
 // stop signals a fetcher to stop and waits until completion.
@@ -468,6 +469,33 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	return res, redirectedFrom, nil
 }
 
+// parseLinks tries to parse the http response in the given FetchResults for
+// links and stores them in the datastore.
+func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
+	outlinks, noindex, nofollow, err := parseHtml(body)
+	if err != nil {
+		log4go.Debug("error parsing HTML for page %v: %v", fr.URL, err)
+		return
+	}
+
+	if noindex {
+		fr.MetaNoIndex = true
+		log4go.Fine("Page has noindex meta tag: %v", fr.URL)
+	}
+	if nofollow {
+		fr.MetaNoFollow = true
+		log4go.Fine("Page has nofollow meta tag: %v", fr.URL)
+	}
+
+	for _, outlink := range outlinks {
+		outlink.MakeAbsolute(fr.URL)
+		log4go.Fine("Parsed link: %v", outlink)
+		if shouldStoreParsedLink(outlink) {
+			f.fm.Datastore.StoreParsedURL(outlink, fr)
+		}
+	}
+}
+
 // checkForBlacklisting returns true if this site is blacklisted or should be
 // blacklisted. If we detect that this site should be blacklisted, this
 // function will call the datastore appropriately.
@@ -478,6 +506,8 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 // TODO: since different subdomains my resolve to different IPs, find a way to
 // check this for every HTTP fetch without extraneous connections or fetching
 // data we aren't going to care about
+// TODO: write back to the database that this domain has been blacklisted so we
+// don't just keep re-dispatching it
 func (f *fetcher) checkForBlacklisting(host string) bool {
 	t, ok := f.fm.Transport.(*http.Transport)
 	if !ok {
@@ -499,6 +529,18 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 		log4go.Debug("Host (%v) resolved to private IP address, blacklisting", host)
 		return true
 	}
+	return false
+}
+
+func (f *fetcher) isHandleable(r *http.Response) bool {
+	for _, ct := range r.Header["Content-Type"] {
+		matched, err := f.fm.acceptFormats.Match(ct)
+		if err == nil && matched {
+			return true
+		}
+	}
+	ctype := strings.Join(r.Header["Content-Type"], ",")
+	log4go.Fine("URL (%v) did not match accepted content types, had: %v", r.Request.URL, ctype)
 	return false
 }
 
@@ -535,8 +577,8 @@ func getIncludedTags() map[string]bool {
 //     (a) a list of `links` on the page
 //     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
 //     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
-func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
-	utf8Reader, err := charset.NewReader(bytes.NewReader(contents), "text/html")
+func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
+	utf8Reader, err := charset.NewReader(bytes.NewReader(body), "text/html")
 	if err != nil {
 		return
 	}
@@ -722,22 +764,27 @@ func parseAnchorAttrs(tokenizer *html.Tokenizer, links []*URL) []*URL {
 	}
 }
 
+// getMimeType attempts to get the mime type (i.e. "Content-Type") from the
+// response. Returns an empty string if unable to.
+func getMimeType(r *http.Response) string {
+	ctype, ctypeOk := r.Header["Content-Type"]
+	if ctypeOk && len(ctype) > 0 {
+		mediaType, _, err := mime.ParseMediaType(ctype[0])
+		if err != nil {
+			log4go.Debug("Failed to parse mime header %q: %v", ctype[0], err)
+		} else {
+			return mediaType
+		}
+	}
+	return ""
+}
+
 func isHTML(r *http.Response) bool {
 	if r == nil {
 		return false
 	}
 	for _, ct := range r.Header["Content-Type"] {
 		if strings.HasPrefix(ct, "text/html") {
-			return true
-		}
-	}
-	return false
-}
-
-func isHandleable(r *http.Response, mm *mimetools.Matcher) bool {
-	for _, ct := range r.Header["Content-Type"] {
-		matched, err := mm.Match(ct)
-		if err == nil && matched {
 			return true
 		}
 	}
