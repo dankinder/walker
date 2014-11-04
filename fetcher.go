@@ -601,7 +601,7 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 
 				case "embed":
 					if !metaNofollow {
-						links = parseObjectOrEmbed(tokenizer, links, false)
+						links = parseObjectOrEmbed(tokenizer, links, true)
 					}
 
 				case "iframe":
