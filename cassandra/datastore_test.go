@@ -11,10 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"code.google.com/p/log4go"
+
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/helpers"
 )
+
+func init() {
+	helpers.LoadTestConfig("test-walker.yaml")
+
+	// For tests it's useful to see more than the default INFO
+	log4go.AddFilter("stdout", log4go.DEBUG, log4go.NewConsoleLogWriter())
+}
 
 // getDS is a convenience function for getting a cassandra datastore and failing
 // if we couldn't
