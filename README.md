@@ -41,7 +41,7 @@ _Note_: the fetchers uses a pluggable *datastore* component to tell it what to c
 
 Walker comes with a friendly console accessible from the browser. It provides an easy way to add new links to your crawl and see information about what you have crawled so far.
 
-TODO: console screenshot
+![walker-console](https://cloud.githubusercontent.com/assets/5198575/4909655/a0dbc666-6475-11e4-87e5-726502ed2fe7.png)
 
 # Getting started
 
