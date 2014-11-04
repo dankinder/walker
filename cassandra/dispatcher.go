@@ -261,7 +261,8 @@ func (d *Dispatcher) generateSegment(domain string) error {
 			break
 		}
 	}
-	if finish {
+	// Check !start here because we don't want to push if we queried 0 links
+	if !start && finish {
 		cell_push(&previous)
 	}
 	if err := iter.Close(); err != nil {
