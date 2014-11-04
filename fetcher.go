@@ -291,6 +291,7 @@ func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
 	}
 
 	fullPat := strings.Join(list, "|")
+	log4go.Error("PETE aggregateRegex %q: %s", fullPat, fullPat)
 	re, err := regexp.Compile(fullPat)
 	if err != nil {
 		message := fmt.Sprintf("Bad regex in %s:", sourceName)
@@ -528,6 +529,38 @@ func (f *fetcher) rejectLink(u *URL) bool {
 		return true
 	}
 	return false
+
+	// Could also check extension here, possibly
+	for _, f := range Config.AcceptProtocols {
+		if u.Scheme == f {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldStoreParsedLink returns true if the argument URL should
+// be stored in datastore. The link can (currently) be rejected
+// because it's not in the AcceptProtocols, or if the path matches
+// exclude_link_patterns and doesn't match include_link_patterns
+func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
+	path := u.RequestURI()
+	log4go.Error("PETE path %v", path)
+	exclude := f.excludeLink != nil && f.excludeLink.MatchString(path)
+	log4go.Error("PETE exclude %v", exclude)
+	include := !exclude || (f.includeLink != nil && f.includeLink.MatchString(path))
+	log4go.Error("PETE include %v", include)
+	if exclude && !include {
+		return false
+	}
+
+	for _, f := range Config.AcceptProtocols {
+		if u.Scheme == f {
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseLinks tries to parse the http response in the given FetchResults for
@@ -549,12 +582,11 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 	}
 
 	for _, outlink := range outlinks {
-		if f.rejectLink(outlink) {
-			continue
-		}
 		outlink.MakeAbsolute(fr.URL)
-		log4go.Fine("Parsed link: %v", outlink)
-		if shouldStoreParsedLink(outlink) {
+		log4go.Error("PETE link desc: %v, %v", outlink, f.shouldStoreParsedLink(outlink))
+		if f.shouldStoreParsedLink(outlink) {
+			log4go.Error("PETE: Storing parsed link: %v", outlink)
+			log4go.Fine("Storing parsed link: %v", outlink)
 			f.fm.Datastore.StoreParsedURL(outlink, fr)
 		}
 	}
@@ -878,18 +910,6 @@ func isHTML(r *http.Response) bool {
 	}
 	for _, ct := range r.Header["Content-Type"] {
 		if strings.HasPrefix(ct, "text/html") {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStoreParsedLink returns true if the argument URL is an Accepted
-// Protocol
-func shouldStoreParsedLink(u *URL) bool {
-	// Could also check extension here, possibly
-	for _, f := range Config.AcceptProtocols {
-		if u.Scheme == f {
 			return true
 		}
 	}

@@ -615,7 +615,7 @@ func TestMetaNos(t *testing.T) {
 <meta name="ROBOTS" content="noindeX, nofoLLow">
 <title>No Links</title>
 </head>
-div id="menu">
+<div id="menu">
 	<a href="relative-dirX/">link</a>
 	<a href="relative-pageX/page.html">link</a>
 	<a href="/abs-relative-dirX/">link</a>
@@ -836,4 +836,97 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	for link := range expectedStores {
 		t.Errorf("Expected to encounter link %q, but didn't", link)
 	}
+}
+
+func TestPathInclusion(t *testing.T) {
+	origHonorNoindex := walker.Config.ExcludeLinkPatterns
+	origHonorNofollow := walker.Config.IncludeLinkPatterns
+	defer func() {
+		walker.Config.ExcludeLinkPatterns = origHonorNoindex
+		walker.Config.IncludeLinkPatterns = origHonorNofollow
+	}()
+	walker.Config.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
+	walker.Config.IncludeLinkPatterns = []string{`\.keep$`}
+
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<body>
+	<div id="menu">
+		<a href="/foo/bar.html">yes</a>
+		<a href="/foo/bar.mov">no</a>
+		<a href="/foo/mov.bar">yes</a>
+		<a href="/janky/page.html">no</a>
+		<a href="/foo/janky.html">no</a>
+		<a href="/foo/bang/baz.html">no</a>
+		<a href="/foo/bang/baz.keep">yes</a>
+		<a href="/root">no</a>
+		<a href="/root/more">yes</a>
+	</div>
+</body>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		helpers.Parse("http://t1.com/target.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
+		Body: html,
+	})
+	expectedPaths := map[string]bool{
+		"/foo/bar.html":      true,
+		"/foo/mov.bar":       true,
+		"/foo/bang/baz.keep": true,
+		"/root/more":         true,
+	}
+	for path := range expectedPaths {
+		rs.SetResponse(fmt.Sprintf("http://t1.com%s", path), &helpers.MockResponse{Status: 404})
+	}
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 2)
+	manager.Stop()
+
+	rs.Stop()
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			u := call.Arguments.Get(0).(*walker.URL)
+			if expectedPaths[u.RequestURI()] {
+				delete(expectedPaths, u.RequestURI())
+			} else {
+				t.Errorf("Unexected call to StoreParsedURL for link %v", u)
+			}
+		}
+	}
+
+	for path := range expectedPaths {
+		t.Errorf("StoreParsedURL not called for %v, but should have been", path)
+	}
+
 }
