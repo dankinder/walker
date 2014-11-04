@@ -747,3 +747,93 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 
 	ds.AssertExpectations(t)
 }
+
+func TestObjectEmbedIframeTags(t *testing.T) {
+	origHonorNoindex := walker.Config.HonorMetaNoindex
+	origHonorNofollow := walker.Config.HonorMetaNofollow
+	defer func() {
+		walker.Config.HonorMetaNoindex = origHonorNoindex
+		walker.Config.HonorMetaNofollow = origHonorNofollow
+	}()
+	walker.Config.HonorMetaNoindex = true
+	walker.Config.HonorMetaNofollow = true
+
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<body>
+	<object data="/object_data/page.html" />
+	<iframe src="/iframe_src/page.html"> </iframe>
+	<embed src="/embed_src/page.html" />
+	<iframe srcdoc="<a href=/iframe_srcdoc/page.html > Link </a>" />
+</body>
+</html>`
+
+	// The ifframe that looks like this
+	//    <iframe srcdoc="<a href = \"/iframe_srcdoc/page.html\" > Link </a>" />
+	// does not appear to be handled correctly by golang-html. The embedded quotes
+	// are failing. But the version I have above does work (even though it's wonky)
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		helpers.Parse("http://t1.com/target.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
+		Body: html,
+	})
+	rs.SetResponse("http://t1.com/object_data/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/iframe_srcdoc/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/iframe_src/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/embed_src/page.html", &helpers.MockResponse{Status: 404})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 2)
+	manager.Stop()
+
+	rs.Stop()
+
+	expectedStores := map[string]bool{
+		"http://t1.com/object_data/page.html":   true,
+		"http://t1.com/iframe_srcdoc/page.html": true,
+		"http://t1.com/iframe_src/page.html":    true,
+		"http://t1.com/embed_src/page.html":     true,
+	}
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			u := call.Arguments.Get(0).(*walker.URL)
+			if expectedStores[u.String()] {
+				delete(expectedStores, u.String())
+			}
+		}
+	}
+
+	for link := range expectedStores {
+		t.Errorf("Expected to encounter link %q, but didn't", link)
+	}
+}
