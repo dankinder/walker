@@ -143,6 +143,7 @@ cassandra:
 
 # Documentation
 
+- [The walker-user mailing list/google group](https://groups.google.com/forum/#!forum/walker-user)
 - [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
 - [FAQ](FAQ.md)
 - [contributing](contributing.md) (see about development, logging, and running tests)
