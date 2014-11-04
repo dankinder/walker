@@ -515,6 +515,8 @@ func getIncludedTags() map[string]bool {
 		"script": true,
 		"link":   true,
 		"img":    true,
+		"object": true,
+		"embed":  true,
 	}
 	for _, t := range Config.IgnoreTags {
 		delete(tags, t)
@@ -552,7 +554,6 @@ func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bo
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tagNameB, hasAttrs := tokenizer.TagName()
 			tagName := string(tagNameB)
-
 			if hasAttrs && tags[tagName] {
 				switch tagName {
 				case "a":
@@ -571,18 +572,16 @@ func parseHtml(contents []byte) (links []*URL, metaNoindex bool, metaNofollow bo
 					}
 
 				case "iframe":
-					docsrc, body, err2 := parseIframeAttrs(tokenizer)
-					if err2 != nil {
-						err = err2
+					var docsrc bool
+					var body string
+					docsrc, body, err = parseIframeAttrs(tokenizer)
+					if err != nil {
 						return
 					} else if docsrc {
-
 						var nlinks []*URL
 						var nNofollow bool
-						nlinks, _, nNofollow, err2 = parseHtml([]byte(body))
-
-						if err2 != nil {
-							err = err2
+						nlinks, _, nNofollow, err = parseHtml([]byte(body))
+						if err != nil {
 							return
 						}
 						if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
