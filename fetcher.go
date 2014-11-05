@@ -516,28 +516,6 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	return res, redirectedFrom, nil
 }
 
-// rejectLink checks all the fetcher filters and returns true
-// if the link in question should NOT be retained in the datastore
-func (f *fetcher) rejectLink(u *URL) bool {
-	path := u.RequestURI()
-	if f.excludeLink != nil && f.excludeLink.MatchString(path) {
-		if f.includeLink != nil && f.includeLink.MatchString(path) {
-			return false
-		}
-
-		return true
-	}
-	return false
-
-	// Could also check extension here, possibly
-	for _, f := range Config.AcceptProtocols {
-		if u.Scheme == f {
-			return true
-		}
-	}
-	return false
-}
-
 // shouldStoreParsedLink returns true if the argument URL should
 // be stored in datastore. The link can (currently) be rejected
 // because it's not in the AcceptProtocols, or if the path matches
