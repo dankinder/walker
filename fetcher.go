@@ -522,9 +522,9 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 // exclude_link_patterns and doesn't match include_link_patterns
 func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 	path := u.RequestURI()
-	exclude := f.excludeLink != nil && f.excludeLink.MatchString(path)
-	include := !exclude || (f.includeLink != nil && f.includeLink.MatchString(path))
-	if exclude && !include {
+	include := !(f.excludeLink != nil && f.excludeLink.MatchString(path)) ||
+		/*   */ (f.includeLink != nil && f.includeLink.MatchString(path))
+	if !include {
 		return false
 	}
 
