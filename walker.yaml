@@ -1,94 +1,96 @@
 # The Walker Configuration File
 #
-# Walker was made to run with sensible default values, so most configuration
-# keys are documented here but commented out. The values set here are the
-# defaults.
+# Every configurable Walker parameter is listed and documented here.
+#
+# Walker was made to run with sensible defaults. The values set here are the
+# defaults. If no walker.yaml file is provided, or if keys are left out, then
+# these values will be used.
 
 # Whether to dynamically add new-found domains (or their links) to the crawl (a
 # broad crawl) or discard them, assuming desired domains are manually seeded.
-#add_new_domains: false
+add_new_domains: false
 
 # The number of entries to keep in the cassandra datastore's LRU cache of
 # domains, preventing us from querying too frequently to see if we already have
 # them.
-#added_domains_cache_size: 20000
+added_domains_cache_size: 20000
 
 # Maximum number of entries to hold when we cache domain name resolutions
-#max_dns_cache_entries: 20000
+max_dns_cache_entries: 20000
 
 # Configure the User-Agent header
-#user_agent: Walker (http://github.com/iParadigms/walker)
+user_agent: Walker (http://github.com/iParadigms/walker)
 
 # Configure which formats this crawler Accepts
-#accept_formats: ["text/html", "text/*"]
+accept_formats: ["text/html", "text/*"]
 
 # Which link to accept based on protocol (a.k.a. schema)
-#accept_protocols: ["http", "https"]
+accept_protocols: ["http", "https"]
 
 # Crawl delay (in seconds) to use when unspecified by robots.txt
-#default_crawl_delay: 1
+default_crawl_delay: 1
 
 # Maximum size of http content
-#max_http_content_size_bytes
+max_http_content_size_bytes: 20971520 # 20MB
 
 # For the purpose of parsing out links for crawling, walker looks at the
 # following tags:
 #   - a, area, form, frame, iframe, script, link, img
 # It ignores several by default.
-#ignore_tags: [script, img, link]
+ignore_tags: [script, img, link]
 
 # The maximum number of links to parse from a page for further crawling.
-#max_links_per_page: 1000
+max_links_per_page: 1000
 
 # How many simultaneous fetchers will your crawlmanager run
-#num_simultaneous_fetchers: 10
+num_simultaneous_fetchers: 10
 
 # If true, walker will not crawl domains that resolve in private IP ranges
-#blacklist_private_ips: true
+blacklist_private_ips: true
 
 # The duration the the complete http-Get is allowed to run before being
 # canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
-#http_timeout: 30s
+http_timeout: 30s
 
 # If true, walker will honor the website authors 
 # <meta name="ROBOTS" content="noindex"> tags
-#honor_meta_noindex: true
+honor_meta_noindex: true
 
 # If true, walker will honor the website authors 
 # <meta name="ROBOTS" content="nofollow"> tags
-#honor_meta_nofollow: false
+honor_meta_nofollow: false
 
-## Dispatcher configuration
-#dispatcher:
-#    ## maximum number of links added to segments table per dispatch (must be >0)
-#    num_links_per_segment: 500
-#   
-#    ## refresh_percentage is the percentage of links added per dispatch that have already been crawled.
-#    ## So refresh_percentage = 25 means that 25% of the links added to segments on the next dispatch
-#    ## will be refreshed (i.e. already crawled) links. This value must be >= 0 and <= 100.
-#    refresh_percentage: 25
-#
-#    ## How many concurrent dispatching threads will be run at once (must be >0)
-#    num_concurrent_domains: 1
+# Dispatcher configuration
+dispatcher:
+    # maximum number of links added to segments table per dispatch (must be >0)
+    num_links_per_segment: 500
+   
+    # refresh_percentage is the percentage of links added per dispatch that have already been crawled.
+    # So refresh_percentage = 25 means that 25% of the links added to segments on the next dispatch
+    # will be refreshed (i.e. already crawled) links. This value must be >= 0 and <= 100.
+    refresh_percentage: 25
+
+    # How many concurrent dispatching threads will be run at once (must be >0)
+    num_concurrent_domains: 1
 
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object
 # (https://godoc.org/github.com/gocql/gocql#ClusterConfig).
 #
-# keyspace shouldn't generally need to be changed; it is mainly changed in
-# testing as an extra layer of safety.
-#
-# replication_factor is used when defining the keyspace.
-#cassandra:
-#    hosts: ["localhost"]
-#    keyspace: "walker"
-#    replication_factor: 3
-#    timeout: "2s"
+cassandra:
+    hosts: ["localhost"]
+    timeout: "2s"
 
-## Console specific config
-#console:
-#    port: 3000
-#    template_directory: console/templates
-#    public_folder: console/public
+    # keyspace shouldn't generally need to be changed; it is mainly changed in
+    # testing as an extra layer of safety.
+    keyspace: "walker"
 
+    # replication_factor is used when defining the initial keyspace.
+    replication_factor: 3
+
+# Console specific config
+console:
+    port: 3000
+    template_directory: console/templates
+    public_folder: console/public
 

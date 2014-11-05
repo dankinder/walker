@@ -1,13 +1,15 @@
 /*
-mimetools.Matcher allows matching against wildcard mediaTypes.
+Package mimetools provides functions for matching against media types
 
-Example:
-mm := mimetools.NewMatcher([]string{"text/*", "application/json"})
-mm.Match("text/html") // returns true, nil
-mm.Match("text/plain") //returns true, nil
-mm.Match("application/json") // returns true, nil
-mm.Match("application/vnd.ms-excel") // returns false, nil
+Also referred to ad MIME types, see http://en.wikipedia.org/wiki/Internet_media_type
 
+It primarily exports Matcher:
+
+	mm := mimetools.NewMatcher([]string{"text/*", "application/json"})
+	mm.Match("text/html") // returns true, nil
+	mm.Match("text/plain") //returns true, nil
+	mm.Match("application/json") // returns true, nil
+	mm.Match("application/vnd.ms-excel") // returns false, nil
 */
 package mimetools
 

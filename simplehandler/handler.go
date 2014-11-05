@@ -1,3 +1,6 @@
+/*
+Package simplehandler provides a basic walker handler implementation
+*/
 package simplehandler
 
 import (
@@ -10,10 +13,17 @@ import (
 	"code.google.com/p/log4go"
 )
 
-// Handler just writes returned pages as files locally, naming the
-// file after the URL of the request.
 type Handler struct{}
 
+// HandleResponse just writes returned pages as files locally, naming the file
+// after the URL of the request made.
+//
+// For example, when handling the response for
+// `http://test.com/amazing/stuff.html`, it will create the directory
+// `$PWD/test.com/amazing` and write the page contents (no headers or HTTP
+// data) to `$PWD/test.com/amazing/stuff.html`
+//
+// It skips pages that do not have a 2XX HTTP code.
 func (h *Handler) HandleResponse(fr *walker.FetchResults) {
 	if fr.ExcludedByRobots {
 		log4go.Debug("Excluded by robots.txt, ignoring url: %v", fr.URL)
