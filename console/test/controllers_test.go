@@ -214,10 +214,10 @@ func TestListDomainsWeb(t *testing.T) {
 	}
 	header := []string{
 		"Domain",
-		"LinksTotal",
-		"LinksQueued",
+		"Total Links",
+		"Links Dispatched",
 		"Excluded",
-		"TimeQueued",
+		"Last Claimed By Fetcher",
 	}
 	sub := doc.Find(".container table thead td")
 	if sub.Size() != len(header) {
@@ -326,13 +326,13 @@ func TestListLinksWeb(t *testing.T) {
 	//
 	domainKeys := []string{
 		"Domain",
-		"ExcludeReason",
-		"TimeQueued",
-		"UuidOfQueued",
-		"NumberLinksTotal",
-		"NumberLinksQueued",
-		"NumberLinksCrawled",
-		"NumberLinksUncrawled",
+		"Exclude Reason (if excluded)",
+		"Last Claimed By Fetcher",
+		"Current Fetcher Claim ID",
+		"Total Unique Links",
+		"Links Dispatched",
+		"Unique Links Crawled",
+		"Unique Links Not Yet Crawled",
 	}
 
 	sub = domainTable.Find("tr > td:nth-child(1)")
@@ -365,9 +365,9 @@ func TestListLinksWeb(t *testing.T) {
 	linksColHeaders := []string{
 		"Link",
 		"Status",
-		"Error",
-		"Excluded",
-		"Fetched",
+		"Error?",
+		"Excluded by robots.txt?",
+		"Last Fetch",
 	}
 
 	sub = linksTable.Find("thead th")
@@ -484,9 +484,9 @@ func TestListLinksSecondPage(t *testing.T) {
 	linksColHeaders := []string{
 		"Link",
 		"Status",
-		"Error",
-		"Excluded",
-		"Fetched",
+		"Error?",
+		"Excluded by robots.txt?",
+		"Last Fetch",
 	}
 	sub := linksTable.Find("thead th")
 	count := 0
