@@ -4,6 +4,14 @@ Walker
 An efficient, scalable, continuous crawler leveraging Go/Cassandra
 
 [![Build Status](https://travis-ci.org/iParadigms/walker.svg?branch=master)](https://travis-ci.org/iParadigms/walker)
+[![GoDoc](https://godoc.org/github.com/iParadigms/walker/test?status.svg)](https://godoc.org/github.com/iParadigms/walker/test)
+
+# Documentation
+- [The walker-user mailing list](https://groups.google.com/forum/#!forum/walker-user)
+- [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
+- [Travis CI](https://travis-ci.org/iParadigms/walker)
+- [FAQ](FAQ.md)
+- [contributing](contributing.md) (see about development, logging, and running tests)
 
 # Alpha Warning
 This project is a work in progress and not ready for production release. Much of the design described below is pending development. Stay tuned for an Alpha release.
@@ -33,7 +41,7 @@ _Note_: the fetchers uses a pluggable *datastore* component to tell it what to c
 
 Walker comes with a friendly console accessible from the browser. It provides an easy way to add new links to your crawl and see information about what you have crawled so far.
 
-TODO: console screenshot
+![walker-console](https://cloud.githubusercontent.com/assets/5198575/4909655/a0dbc666-6475-11e4-87e5-726502ed2fe7.png)
 
 # Getting started
 
@@ -66,7 +74,7 @@ In order to run walker and cassandra on your local machine, you may need to make
 
 ## Basic crawl
 
-Once you've build a `walker` binary, you can crawl with the default handler easily, which simply writes pages to a directory structure in `$PWD`.
+Once you've built a `walker` binary, you can crawl with the default handler easily, which simply writes pages to a directory structure in `$PWD`.
 
 ```sh
 # These assume walker is in your $PATH
@@ -80,7 +88,7 @@ walker help
 
 ## Writing your own handler
 
-In most cases you will want to use walker for some kind of processing. The easiest way is to create a new Go project that implements your own handler. You can still take advantage of walker's command-line interface if you don't need to change it. For example:
+In most cases you will want to use walker for some kind of processing. The easiest way is to create a new Go project that implements your own handler. You can still take advantage of walker's command-line interface. For example:
 
 ```go
 package main
@@ -140,13 +148,6 @@ cassandra:
     keyspace: "walker"
     replication_factor: 3
 ```
-
-# Documentation
-
-- [The walker-user mailing list/google group](https://groups.google.com/forum/#!forum/walker-user)
-- [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
-- [FAQ](FAQ.md)
-- [contributing](contributing.md) (see about development, logging, and running tests)
 
 # License
 

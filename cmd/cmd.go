@@ -1,28 +1,32 @@
-// cmd provides an easy interface for creating walker binaries that use their
-// own Handler, Datastore, or Dispatcher. A crawler that uses the default for
-// each of these requires simply:
-//
-//  func main() {
-//      cmd.Execute()
-//  }
-//
-// To create your own binary that uses walker's flags but has its own handler:
-//
-//  func main() {
-//      cmd.Handler(NewMyHandler())
-//      cmd.Execute()
-//  }
-//
-// Likewise if you want to set your own Datastore and Dispatcher:
-//
-//  func main() {
-//      cmd.DataStore(NewMyDatastore())
-//      cmd.Dispatcher(NewMyDatastore())
-//      cmd.Execute()
-//  }
-//
-// cmd.Execute() blocks until the program has completed (usually by
-// being shutdown gracefully via SIGINT).
+/*
+Package cmd provides access to build on the walker CLI
+
+This package makes it easy to create custom walker binaries that use their own
+Handler, Datastore, or Dispatcher. A crawler that uses the default for each of
+these requires simply:
+
+	func main() {
+		cmd.Execute()
+	}
+
+To create your own binary that uses walker's flags but has its own handler:
+
+	func main() {
+		cmd.Handler(NewMyHandler())
+		cmd.Execute()
+	}
+
+Likewise if you want to set your own Datastore and Dispatcher:
+
+	func main() {
+		cmd.DataStore(NewMyDatastore())
+		cmd.Dispatcher(NewMyDatastore())
+		cmd.Execute()
+	}
+
+cmd.Execute() blocks until the program has completed (usually by
+being shutdown gracefully via SIGINT).
+*/
 package cmd
 
 import (
@@ -41,6 +45,7 @@ import (
 //
 // P U B L I C
 //
+
 // Handler sets the global handler for this process
 func Handler(h walker.Handler) {
 	commander.Handler = h
@@ -64,6 +69,7 @@ func Execute() {
 //
 // P R I V A T E
 //
+
 var commander struct {
 	*cobra.Command
 	Handler    walker.Handler

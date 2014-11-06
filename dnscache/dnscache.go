@@ -1,3 +1,6 @@
+/*
+Package dnscache implements a Dial function that will cache DNS resolutions
+*/
 package dnscache
 
 import (
