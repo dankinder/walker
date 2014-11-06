@@ -441,7 +441,7 @@ func TestDispatcherBasic(t *testing.T) {
 
 		d := &Dispatcher{}
 		go d.StartDispatcher()
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 100)
 		d.StopDispatcher()
 
 		expectedResults := map[url.URL]bool{}
