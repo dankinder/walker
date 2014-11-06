@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+const defaultSleep time.Duration = time.Millisecond * 10
+
 const html_body string = `<!DOCTYPE html>
 <html>
 <head>
@@ -248,7 +250,7 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 1)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	rs.Stop()
 
@@ -284,7 +286,7 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Millisecond * 10)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	ds.AssertExpectations(t)
@@ -319,7 +321,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 1)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	rs.Stop()
 
@@ -370,7 +372,7 @@ func TestRedirects(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	if len(h.Calls) < 1 {
 		t.Fatalf("Expected to find calls made to handler, but didn't")
@@ -445,7 +447,7 @@ func TestHrefWithSpace(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	rs.Stop()
@@ -664,7 +666,7 @@ func TestMetaNos(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	rs.Stop()
@@ -724,7 +726,7 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Millisecond * 200)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	expectedCall := false
@@ -812,7 +814,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	rs.Stop()
@@ -909,7 +911,7 @@ func TestPathInclusion(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	rs.Stop()
