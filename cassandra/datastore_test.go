@@ -102,7 +102,8 @@ func TestDatastoreBasic(t *testing.T) {
 						VALUES (?, ?, ?, ?, ?)`
 
 	queries := []*gocql.Query{
-		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 0, true),
+		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 1, true),
+		db.Query(insertDomainInfo, "test2.com", gocql.UUID{}, 0, true),
 		db.Query(insertSegment, "test.com", "", "page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "page2.html", "http"),
 		db.Query(insertLink, "test.com", "", "page1.html", "http", walker.NotYetCrawled),
@@ -198,6 +199,11 @@ func TestNewDomainAdditions(t *testing.T) {
 	db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = 'test.com'`).Scan(&count)
 	if count != 0 {
 		t.Error("Expected test.com not to be added to domain_info")
+	}
+
+	db.Query(`SELECT COUNT(*) FROM links WHERE dom = 'test.com'`).Scan(&count)
+	if count != 0 {
+		t.Errorf("Expected parsed link not to be inserted for test.com, found %v", count)
 	}
 
 	walker.Config.AddNewDomains = true

@@ -26,8 +26,9 @@ type Datastore struct {
 	domains []string
 	mu      sync.Mutex
 
-	// A cache for domains we've already verified exist in domain_info
-	addedDomains *lrucache.LRUCache
+	// A cache for domains we've already verified do or do not exist in domain_info
+	// Cache key is TopLevelDomain+1, value is a bool (true if the domain exists)
+	domainCache *lrucache.LRUCache
 
 	// This is a unique UUID for the entire crawler.
 	crawlerUuid gocql.UUID
@@ -55,7 +56,7 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create cassandra datastore: %v", err)
 	}
-	ds.addedDomains = lrucache.New(walker.Config.AddedDomainsCacheSize)
+	ds.domainCache = lrucache.New(walker.Config.AddedDomainsCacheSize)
 
 	u, err := gocql.RandomUUID()
 	if err != nil {
@@ -305,38 +306,53 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 		return
 	}
 
-	if walker.Config.AddNewDomains {
-		ds.addDomainIfNew(dom)
+	exists := ds.hasDomain(dom)
+
+	if !exists && walker.Config.AddNewDomains {
+		log4go.Debug("Adding new domain to system: %v", dom)
+		ds.addDomain(dom)
+		exists = true
 	}
-	log4go.Fine("Inserting parsed URL: %v", u)
-	err = ds.db.Query(`INSERT INTO links (dom, subdom, path, proto, time)
-						VALUES (?, ?, ?, ?, ?)`,
-		dom, subdom, u.RequestURI(), u.Scheme, walker.NotYetCrawled).Exec()
-	if err != nil {
-		log4go.Error("failed inserting parsed url (%v) to cassandra, %v", u, err)
+
+	if exists {
+		log4go.Fine("Inserting parsed URL: %v", u)
+		err = ds.db.Query(`INSERT INTO links (dom, subdom, path, proto, time)
+							VALUES (?, ?, ?, ?, ?)`,
+			dom, subdom, u.RequestURI(), u.Scheme, walker.NotYetCrawled).Exec()
+		if err != nil {
+			log4go.Error("failed inserting parsed url (%v): %v", u, err)
+		}
 	}
 }
 
-// addDomainIfNew expects a toplevel domain, no subdomain
-func (ds *Datastore) addDomainIfNew(domain string) {
-	_, ok := ds.addedDomains.Get(domain)
+// hasDomain expects a TopLevelDomain+1 (no subdomain) and returns true if the
+// domain exists in the domain_info table
+func (ds *Datastore) hasDomain(dom string) bool {
+	exists, ok := ds.domainCache.Get(dom)
 	if ok {
-		return
+		return exists.(bool)
 	}
 	var count int
-	err := ds.db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = ?`, domain).Scan(&count)
+	err := ds.db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = ?`, dom).Scan(&count)
 	if err != nil {
-		log4go.Error("Failed to check if %v is in domain_info: %v", domain, err)
-		return // with error, assume we already have it and move on
+		log4go.Error("Failed to check if %v is in domain_info: %v", dom, err)
+		return false // with error, assume we don't have it
 	}
-	if count == 0 {
-		err := ds.db.Query(`INSERT INTO domain_info (dom, claim_tok, dispatched, priority)
-							VALUES (?, ?, ?, ?)`, domain, gocql.UUID{}, false, 0).Exec()
-		if err != nil {
-			log4go.Error("Failed to add new domain %v: %v", domain, err)
-		}
+	existsDB := (count == 1)
+	ds.domainCache.Set(dom, existsDB)
+	return existsDB
+}
+
+// addDomain adds the domain to the domain_info table if it does not exist.
+func (ds *Datastore) addDomain(dom string) {
+	err := ds.db.Query(`INSERT INTO domain_info (dom, claim_tok, dispatched, priority)
+						VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+		dom, gocql.UUID{}, false, 0).Exec()
+	if err != nil {
+		log4go.Error("Failed to add new dom %v: %v", dom, err)
+	} else {
+		ds.domainCache.Set(dom, true)
 	}
-	ds.addedDomains.Set(domain, nil)
 }
 
 func (ds *Datastore) getSegmentLinks(domain string) (links []*walker.URL, err error) {
