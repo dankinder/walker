@@ -523,7 +523,7 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 	path := u.RequestURI()
 	include := !(f.excludeLink != nil && f.excludeLink.MatchString(path)) ||
-		/*   */ (f.includeLink != nil && f.includeLink.MatchString(path))
+		(f.includeLink != nil && f.includeLink.MatchString(path))
 	if !include {
 		return false
 	}
