@@ -27,7 +27,7 @@ type Datastore struct {
 	mu      sync.Mutex
 
 	// A cache for domains we've already verified do or do not exist in domain_info
-	// Cache key is TopLevelDomain+1, value is a boolean
+	// Cache key is TopLevelDomain+1, value is a bool (true if the domain exists)
 	domainCache *lrucache.LRUCache
 
 	// This is a unique UUID for the entire crawler.
