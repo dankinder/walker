@@ -4,24 +4,22 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"strings"
-	"sync"
-
-	"github.com/iParadigms/walker/dnscache"
-	"github.com/iParadigms/walker/mimetools"
-
-	"github.com/temoto/robotstxt.go"
-
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"code.google.com/p/go.net/html"
 	"code.google.com/p/go.net/html/charset"
 	"code.google.com/p/go.net/publicsuffix"
 	"code.google.com/p/log4go"
+	"github.com/iParadigms/walker/dnscache"
+	"github.com/iParadigms/walker/mimetools"
+	"github.com/temoto/robotstxt.go"
 )
 
 // NotYetCrawled is a convenience for time.Unix(0, 0), used as a crawl time in
@@ -282,6 +280,38 @@ type fetcher struct {
 	// the fetcher may need to clean up (ex. unclaim the current host) after
 	// reading from quit
 	done chan struct{}
+
+	excludeLink *regexp.Regexp
+	includeLink *regexp.Regexp
+}
+
+func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+
+	fullPat := strings.Join(list, "|")
+	re, err := regexp.Compile(fullPat)
+	if err != nil {
+		message := fmt.Sprintf("Bad regex in %s:", sourceName)
+		found := false
+		for _, p := range list {
+			_, e := regexp.Compile(p)
+			if e != nil {
+				found = true
+				message += "\n\t'"
+				message += p
+				message += "'"
+			}
+		}
+		if !found {
+			message += "\n\t--UNKNOWN PATTERN--"
+		}
+
+		return nil, fmt.Errorf("%v", message)
+	}
+
+	return re, nil
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
@@ -299,6 +329,23 @@ func newFetcher(fm *FetchManager) *fetcher {
 	}
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})
+
+	if len(Config.ExcludeLinkPatterns) > 0 {
+		f.excludeLink, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+		if err != nil {
+			// This shouldn't happen b/c it's already been checked when loading config
+			panic(err)
+		}
+	}
+
+	if len(Config.IncludeLinkPatterns) > 0 {
+		f.includeLink, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+		if err != nil {
+			// This shouldn't happen b/c it's already been checked when loading config
+			panic(err)
+		}
+	}
+
 	return f
 }
 
@@ -469,6 +516,27 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	return res, redirectedFrom, nil
 }
 
+// shouldStoreParsedLink returns true if the argument URL should
+// be stored in datastore. The link can (currently) be rejected
+// because it's not in the AcceptProtocols, or if the path matches
+// exclude_link_patterns and doesn't match include_link_patterns
+func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
+	path := u.RequestURI()
+	include := !(f.excludeLink != nil && f.excludeLink.MatchString(path)) ||
+		(f.includeLink != nil && f.includeLink.MatchString(path))
+	if !include {
+		return false
+	}
+
+	for _, f := range Config.AcceptProtocols {
+		if u.Scheme == f {
+			return true
+		}
+	}
+
+	return false
+}
+
 // parseLinks tries to parse the http response in the given FetchResults for
 // links and stores them in the datastore.
 func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
@@ -489,8 +557,8 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 
 	for _, outlink := range outlinks {
 		outlink.MakeAbsolute(fr.URL)
-		log4go.Fine("Parsed link: %v", outlink)
-		if shouldStoreParsedLink(outlink) {
+		if f.shouldStoreParsedLink(outlink) {
+			log4go.Fine("Storing parsed link: %v", outlink)
 			f.fm.Datastore.StoreParsedURL(outlink, fr)
 		}
 	}
@@ -814,18 +882,6 @@ func isHTML(r *http.Response) bool {
 	}
 	for _, ct := range r.Header["Content-Type"] {
 		if strings.HasPrefix(ct, "text/html") {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStoreParsedLink returns true if the argument URL is an Accepted
-// Protocol
-func shouldStoreParsedLink(u *URL) bool {
-	// Could also check extension here, possibly
-	for _, f := range Config.AcceptProtocols {
-		if u.Scheme == f {
 			return true
 		}
 	}

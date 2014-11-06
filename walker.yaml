@@ -60,6 +60,14 @@ honor_meta_noindex: true
 # <meta name="ROBOTS" content="nofollow"> tags
 honor_meta_nofollow: false
 
+# A list of regex patterns to exclude from the crawl. If a link matches a
+# pattern in this list, but not one in the include_link_patterns
+# list, than it is excluded.
+exclude_link_patterns: []
+
+# A list of regex patterns that override excludes listed in exclude_link_patterns
+include_link_patterns: []
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)
