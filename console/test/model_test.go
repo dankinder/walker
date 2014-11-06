@@ -206,6 +206,16 @@ var testDomain = console.DomainInfo{
 	UuidOfQueued:         gocql.UUID{},
 }
 
+var excludedDomain = console.DomainInfo{
+	Domain:               "excluded.com",
+	NumberLinksTotal:     0,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	ExcludeReason:        "Reason for exclusion",
+	TimeQueued:           walker.NotYetCrawled,
+	UuidOfQueued:         gocql.UUID{},
+}
+
 type updatedInDb struct {
 	link   string
 	domain string
@@ -311,6 +321,16 @@ func getDs(t *testing.T) *console.CqlModel {
 		}
 	}
 
+	{
+		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) VALUES (?, ?, 0, true, ?)`
+		dom := fmt.Sprintf("exclude.com")
+		reason := fmt.Sprintf("Reason for exclusion")
+		err := db.Query(insertDomainInfoExcluded, dom, walker.NotYetCrawled, reason).Exec()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	//
 	// Need to record the order that the test.com urls come off on
 	//
@@ -407,6 +427,7 @@ func TestListDomains(t *testing.T) {
 				bazDomain,
 				fooDomain,
 				barDomain,
+				excludedDomain,
 				testDomain,
 			},
 		},
@@ -426,6 +447,7 @@ func TestListDomains(t *testing.T) {
 			limit: LIM,
 			expected: []console.DomainInfo{
 				barDomain,
+				excludedDomain,
 				testDomain,
 			},
 		},

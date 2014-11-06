@@ -275,21 +275,30 @@ func (ds *CqlModel) listDomainsImpl(seed string, limit int, working bool) ([]Dom
 
 	var itr *gocql.Iter
 	if seed == "" && !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info LIMIT ?", limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info LIMIT ?", limit).Iter()
 	} else if seed == "" {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE dispatched = true LIMIT ?", limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true LIMIT ?", limit).Iter()
 	} else if !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 	} else { //working==true AND seed != ""
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE dispatched = true AND TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true AND TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 	}
 
 	var dinfos []DomainInfo
-	var domain string
+	var domain, exclude_reason string
 	var claim_tok gocql.UUID
 	var claim_time time.Time
-	for itr.Scan(&domain, &claim_tok, &claim_time) {
-		dinfos = append(dinfos, DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time})
+	var excluded bool
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
+		reason := ""
+		if exclude_reason != "" {
+			reason = exclude_reason
+		} else if excluded {
+			// This should just be a backstop in case someone doesn't set exclude_reason.
+			reason = "Exclusion marked"
+		}
+
+		dinfos = append(dinfos, DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason})
 	}
 	err := itr.Close()
 	if err != nil {
@@ -317,15 +326,25 @@ func (ds *CqlModel) ListWorkingDomains(seedDomain string, limit int) ([]DomainIn
 //		itr = db.Query("SELECT domain, claim_tok, claim_time FROM domain_info WHERE dispatched = true AND TOKEN(domain) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 func (ds *CqlModel) FindDomain(domain string) (*DomainInfo, error) {
 	db := ds.Db
-	itr := db.Query("SELECT claim_tok, claim_time FROM domain_info WHERE dom = ?", domain).Iter()
+	itr := db.Query("SELECT claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dom = ?", domain).Iter()
 	var claim_tok gocql.UUID
 	var claim_time time.Time
-	if !itr.Scan(&claim_tok, &claim_time) {
+	var excluded bool
+	var exclude_reason string
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
 		err := itr.Close()
 		return nil, err
 	}
 
-	dinfo := &DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time}
+	reason := ""
+	if exclude_reason != "" {
+		reason = exclude_reason
+	} else if excluded {
+		// This should just be a backstop in case someone doesn't set exclude_reason.
+		reason = "Exclusion marked"
+	}
+
+	dinfo := &DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason}
 	err := itr.Close()
 	if err != nil {
 		return dinfo, err
