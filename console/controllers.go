@@ -312,7 +312,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	excludeTag := "Exclude"
-	excludeColor := "lightblue"
+	excludeColor := "green"
 	excludeLink := fmt.Sprintf("/excludeToggle/%s/ex", domain)
 	if dinfo.ExcludeReason != "" {
 		excludeTag = "Unexclude"
