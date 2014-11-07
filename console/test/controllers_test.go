@@ -355,8 +355,8 @@ func TestListLinksWeb(t *testing.T) {
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
-	if thirdColSize != 0 {
-		t.Fatalf("[.container table tr > td:nth-child(3)] Wrong size got %d, expected %s", thirdColSize, 0)
+	if thirdColSize != len(domainKeys) {
+		t.Fatalf("[.container table tr > td:nth-child(3)] Wrong size got %d, expected %d", thirdColSize, 0)
 	}
 
 	//
@@ -407,26 +407,26 @@ func TestListLinksWeb(t *testing.T) {
 		"Previous",
 		"Next",
 	}
-	sub = doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
+	sub = doc.Find(".container .row > a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn")
 	})
 	if sub.Size() != len(buttons) {
-		t.Fatalf("[.container a <buttons>] Size mismatch got %d, expected %d", sub.Size(), len(buttons))
+		t.Fatalf("[.container .row > a <buttons>] Size mismatch got %d, expected %d", sub.Size(), len(buttons))
 	}
 	count = 0
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != buttons[count] {
-			t.Fatalf("[.container a <buttons>] Button text mismatch got '%s', expected '%s'", text, buttons[count])
+			t.Fatalf("[.container .row > a <buttons>] Button text mismatch got '%s', expected '%s'", text, buttons[count])
 		}
 
 		if text == "Previous" {
 			if !sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed button disable for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button disable for %s", text)
 			}
 		} else {
 			if sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed button undisabled for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button undisabled for %s", text)
 			}
 		}
 
