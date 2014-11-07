@@ -223,7 +223,12 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	errList := DS.InsertLinks(links, "")
+	excludeReason := ""
+	if len(req.Form["exclude"]) > 0 {
+		excludeReason = "Manual exclude"
+	}
+
+	errList := DS.InsertLinks(links, excludeReason)
 	if len(errList) != 0 {
 		for _, e := range errList {
 			errs = append(errs, e.Error())

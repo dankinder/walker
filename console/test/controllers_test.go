@@ -906,7 +906,6 @@ func TestAddLinks(t *testing.T) {
 
 	form := doc.Find(".container form")
 	textarea := form.Find("textarea")
-	input := form.Find("input")
 	if textarea.Size() != 1 {
 		t.Fatalf("[.container form textarea] Size mismatch got %d, expected 1", textarea.Size())
 	}
@@ -920,14 +919,26 @@ func TestAddLinks(t *testing.T) {
 		}
 	}
 
+	input := form.Find("input[type=submit]")
 	if input.Size() != 1 {
-		t.Fatalf("[.container form input] Size mismatch got %d, expected 1", input.Size())
+		t.Fatalf("[.container form input[type=submit]] Size mismatch got %d, expected 1", input.Size())
 	}
 	typ, typOk := input.Attr("type")
 	if !typOk {
-		t.Fatalf("[.container form input] Failed to find type attribute")
+		t.Fatalf("[.container form input[type=submit]] Failed to find type attribute")
 	} else if typ != "submit" {
-		t.Fatalf("[.container form input] Bad type got %s, expected submit", typ)
+		t.Fatalf("[.container form input[type=submit]] Bad type got %s, expected submit", typ)
+	}
+
+	input = form.Find("input[type=checkbox]")
+	if input.Size() != 1 {
+		t.Fatalf("[.container form input[type=checkbox]] Size mismatch got %d, expected 1", input.Size())
+	}
+	typ, typOk = input.Attr("type")
+	if !typOk {
+		t.Fatalf("[.container form input[type=checkbox]] Failed to find type attribute")
+	} else if typ != "checkbox" {
+		t.Fatalf("[.container form input[type=checkbox]] Bad type got %s, expected checkbox", typ)
 	}
 
 	//
