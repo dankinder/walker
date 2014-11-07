@@ -432,6 +432,20 @@ func TestListLinksWeb(t *testing.T) {
 
 		count++
 	})
+
+	sub = doc.Find(".container .console-table a").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return sel.HasClass("btn")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[.container .console-table a] Size mismatch got %d, expected %d", sub.Size(), 1)
+	}
+
+	if strings.TrimSpace(sub.Text()) != "Exclude" {
+		t.Errorf("[.container .console-table a] Text mismatch got %q, expected %q",
+			strings.TrimSpace(sub.Text()), "Excluded")
+	}
+
 }
 
 func TestListLinksSecondPage(t *testing.T) {
