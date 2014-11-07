@@ -5,7 +5,10 @@
     <textarea name="links" placeholder="Enter links: one per line" 
         cols=140 rows=8>{{if .HasText}}{{.Text}}{{end}}</textarea><br>
 
-    <div class="center-block">
-        <input type="submit" value="Submit" />
+    <div class="row">
+        <div class="col-xs-4">
+            <input class="wide-button" type="submit" value="Submit" />
+        </div>
+        <div class="col-xs-8"> </div>
     </div>
 </form>
