@@ -325,7 +325,7 @@ func getDs(t *testing.T) *console.CqlModel {
 	{
 		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) VALUES (?, ?, 0, true, ?)`
 		dom := fmt.Sprintf("exclude.com")
-		reason := fmt.Sprintf("Reason for exclusion")
+		reason := "Reason for exclusion"
 		err := db.Query(insertDomainInfoExcluded, dom, walker.NotYetCrawled, reason).Exec()
 		if err != nil {
 			panic(err)
@@ -947,27 +947,31 @@ func TestInsertExcludedLinks(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		if test.omittest {
-			continue
-		}
+	// FYI: by iterating twice, we follow two different code paths through
+	// addDomainIfNew in model.go
+	for iterate := 0; iterate < 2; iterate++ {
+		for _, test := range tests {
+			if test.omittest {
+				continue
+			}
 
-		added := test.updated[0]
-		toadd := []string{added.link}
-		errList := store.InsertLinks(toadd, added.excludeDomainReason)
-		if len(errList) != 0 {
-			t.Errorf("InsertExcludedLinks for tag %s direct error %v", test.tag, errList)
-			continue
-		}
+			added := test.updated[0]
+			toadd := []string{added.link}
+			errList := store.InsertLinks(toadd, added.excludeDomainReason)
+			if len(errList) != 0 {
+				t.Errorf("InsertExcludedLinks for tag %s direct error %v", test.tag, errList)
+				continue
+			}
 
-		dinfo, err := store.FindDomain(added.domain)
-		if err != nil {
-			t.Errorf("InsertExcludedLinks:FindDomain for tag %s direct error %v", test.tag, err)
-		} else if dinfo == nil {
-			t.Errorf("InsertExcludedLinks:FindDomain for tag %s didn't find domain %s", test.tag, added.domain)
-		} else if dinfo.ExcludeReason != added.excludeDomainReason {
-			t.Errorf("InsertExcludedLinks:FindDomain for tag %s ExcludeReason mismatch: got %q, expected %q",
-				test.tag, dinfo.ExcludeReason, added.excludeDomainReason)
+			dinfo, err := store.FindDomain(added.domain)
+			if err != nil {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s direct error %v", test.tag, err)
+			} else if dinfo == nil {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s didn't find domain %s", test.tag, added.domain)
+			} else if dinfo.ExcludeReason != added.excludeDomainReason {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s ExcludeReason mismatch: got %q, expected %q",
+					test.tag, dinfo.ExcludeReason, added.excludeDomainReason)
+			}
 		}
 	}
 }
