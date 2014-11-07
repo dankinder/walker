@@ -1,12 +1,51 @@
 <h2>Add Links</h2>
 
+<!-- This styling makes the checkbox bigger -->
+<!-- http://stackoverflow.com/questions/3911993/css-adjusting-checkbox-size -->
+<style type="text/css"> 
+  input[type="checkbox"] {
+    /* Scaled Checkboxes */
+    {{$SCALE:=2.2}}
+    {{$TRANS:="-2px"}}
+    transform:         scale({{$SCALE}}) translateY( {{$TRANS}} );         /* FF 16+, IE 10+ */
+    -webkit-transform: scale({{$SCALE}}) translateY( {{$TRANS}} ); /* Chrome, Safari 3.5+, Opera 15+ */
+    -ms-transform:     scale({{$SCALE}}) translateY( {{$TRANS}} );     /* legacy: IE 9+ */
+    -moz-transform:    scale({{$SCALE}}) translateY( {{$TRANS}} );    /* legacy: FF 3.5+ */
+    -o-transform:      scale({{$SCALE}}) translateY( {{$TRANS}} );      /* legacy: Opera 10.5 */
+
+    margin-right: 0px;
+    margin-top: 34px;
+  }
+
+    input[type=submit] {
+        width: 90%; 
+        height: 30px; 
+        margin-top: 31px;
+    }
+
+    h3 {
+        text-align: left; 
+        margin-left: 16px; 
+        /*margin-right: 0px;*/ 
+        margin-top: 30px;
+    }
+</style>
+
 <form role="form" action="/add" method="post">
     <!-- don't mess with the spacing for this text area. -->
     <textarea name="links" placeholder="Enter links: one per line" 
         cols=140 rows=8>{{if .HasText}}{{.Text}}{{end}}</textarea><br>
 
-    <div class="center-block">
-        <input type="submit" value="Submit" />
+    <div class=row>
+        <div class="col-xs-4">   
+            <input type="submit" value="Submit" />
+        </div>
+        <div class="col-xs-2"> 
+        </div>
+        <div class="col-xs-4"> 
+            <input type="checkbox" name="exclude" value="exclude">
+            <label for="exclude"> <h3 style=""> Add links excluded </h3> </label>
+        </div>
     </div>
 </form>
 

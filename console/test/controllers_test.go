@@ -443,7 +443,7 @@ func TestListLinksWeb(t *testing.T) {
 
 	if strings.TrimSpace(sub.Text()) != "Exclude" {
 		t.Errorf("[.container .console-table a] Text mismatch got %q, expected %q",
-			strings.TrimSpace(sub.Text()), "Excluded")
+			strings.TrimSpace(sub.Text()), "Exclude")
 	}
 
 }
