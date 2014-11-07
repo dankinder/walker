@@ -33,6 +33,7 @@ func Routes() []Route {
 		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
+		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
 	}
 }
 
@@ -305,6 +306,15 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		historyLinks = append(historyLinks, path)
 	}
 
+	excludeTag := "Exclude"
+	excludeColor := "lightblue"
+	excludeLink := fmt.Sprintf("/excludeToggle/%s/ex", domain)
+	if dinfo.ExcludeReason != "" {
+		excludeTag = "Unexclude"
+		excludeColor = "red"
+		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
+	}
+
 	mp := map[string]interface{}{
 		"Dinfo":           dinfo,
 		"NumberCrawled":   dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
@@ -315,6 +325,10 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"NextButtonClass": nextButtonClass,
 		"PrevButtonClass": prevButtonClass,
 		"HistoryLinks":    historyLinks,
+
+		"ExcludeTag":   excludeTag,
+		"ExcludeColor": excludeColor,
+		"ExcludeLink":  excludeLink,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -432,6 +446,37 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
+}
+
+func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	domain := vars["domain"]
+	direction := vars["direction"]
+	if domain == "" || direction == "" {
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+	var exclude bool
+	var reason string
+	switch direction {
+	case "ex":
+		exclude = true
+		reason = "Manual exclude"
+	case "un":
+		exclude = false
+		reason = ""
+	default:
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+
+	err := DS.UpdateDomainExclude(domain, exclude, reason)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
 }
 
 func assureScheme(url string) (string, error) {

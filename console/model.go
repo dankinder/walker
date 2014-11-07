@@ -87,6 +87,9 @@ type Model interface {
 
 	// Find a link
 	FindLink(link string) (*LinkInfo, error)
+
+	// Change the exclusion on a domain
+	UpdateDomainExclude(domain string, exclude bool, reason string) error
 }
 
 var DS Model
@@ -621,3 +624,20 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 		return &linfos[0], nil
 	}
 }
+
+func (ds *CqlModel) UpdateDomainExclude(domain string, exclude bool, reason string) error {
+	db := ds.Db
+	query := `UPDATE domain_info 
+			  SET 
+				  excluded = ?,
+				  exclude_reason = ?
+			  WHERE 
+				  dom = ?`
+	if !exclude {
+		reason = ""
+	}
+	err := db.Query(query, exclude, reason, domain).Exec()
+	return err
+}
+
+// comment

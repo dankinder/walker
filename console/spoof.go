@@ -79,6 +79,7 @@ func spoofDataLong() {
 	rand.Seed(42)
 
 	insertDomainInfo := `INSERT INTO domain_info (dom, priority) VALUES (?, 0)`
+	insertDomainInfoExcluded := `INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 0, true, ?)`
 	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, priority) VALUES (?, ?, ?, 0)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -98,6 +99,15 @@ func spoofDataLong() {
 			excluded = true
 		}
 		err = db.Query(insertLink, domain, "subd", "/page1.html", "http", crawlTime, status, "", excluded).Exec()
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		domain := fmt.Sprintf("e%d.com", i)
+		reason := fmt.Sprintf("Reason #%d", i)
+		err := db.Query(insertDomainInfoExcluded, domain, reason).Exec()
 		if err != nil {
 			panic(err)
 		}
