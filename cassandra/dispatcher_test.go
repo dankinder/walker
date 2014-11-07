@@ -505,11 +505,11 @@ func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 }
 
 func TestMinLinkRefreshTime(t *testing.T) {
-	origMinLinkRefreshTime := walker.Config.MinLinkRefreshTime
+	origMinLinkRefreshTime := walker.Config.Dispatcher.MinLinkRefreshTime
 	defer func() {
-		walker.Config.MinLinkRefreshTime = origMinLinkRefreshTime
+		walker.Config.Dispatcher.MinLinkRefreshTime = origMinLinkRefreshTime
 	}()
-	walker.Config.MinLinkRefreshTime = "49h"
+	walker.Config.Dispatcher.MinLinkRefreshTime = "49h"
 
 	var now = time.Now()
 	var tests = []DispatcherTest{

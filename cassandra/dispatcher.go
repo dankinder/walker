@@ -51,7 +51,7 @@ func (d *Dispatcher) StartDispatcher() error {
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
 
-	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.MinLinkRefreshTime)
+	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
 		// This shouldn't happen since MinLinkRefreshTime is parsed during config
 		// load.
