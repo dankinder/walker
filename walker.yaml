@@ -68,6 +68,11 @@ exclude_link_patterns: []
 # A list of regex patterns that override excludes listed in exclude_link_patterns
 include_link_patterns: []
 
+# A duration specifying the minimum amount of time that must pass between re-crawling 
+# a specific link. Examples: 100ms, 4us, 0s, 7h. [NOTE: hour, 'h', is the largest time 
+# unit supported]
+min_link_refresh_time: 0s
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)

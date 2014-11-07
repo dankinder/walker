@@ -52,6 +52,7 @@ type WalkerConfig struct {
 	HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
 	ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
 	IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
+	MinLinkRefreshTime      string   `yaml:"min_link_refresh_time"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -129,6 +130,7 @@ func SetDefaultConfig() {
 	Config.HonorMetaNofollow = false
 	Config.ExcludeLinkPatterns = nil
 	Config.IncludeLinkPatterns = nil
+	Config.MinLinkRefreshTime = "0s"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -182,6 +184,11 @@ func assertConfigInvariants() error {
 	_, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
 	if err != nil {
 		errs = append(errs, err.Error())
+	}
+
+	_, err = time.ParseDuration(Config.MinLinkRefreshTime)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("MinLinkRefreshTime failed to parse: %v", err))
 	}
 
 	if len(errs) > 0 {
