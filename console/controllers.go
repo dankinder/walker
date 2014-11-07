@@ -223,7 +223,7 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	errList := DS.InsertLinks(links)
+	errList := DS.InsertLinks(links, "")
 	if len(errList) != 0 {
 		for _, e := range errList {
 			errs = append(errs, e.Error())

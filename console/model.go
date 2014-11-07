@@ -67,8 +67,8 @@ type Model interface {
 	// Close the data store after you're done with it
 	Close()
 
-	// InsertLinks queues a set of URLS to be crawled
-	InsertLinks(links []string) []error
+	// InsertLinks queues a set of URLS to be crawled. If excludeReason
+	InsertLinks(links []string, excludeDomainReason string) []error
 
 	// Find a specific domain
 	FindDomain(domain string) (*DomainInfo, error)
@@ -116,7 +116,7 @@ func (ds *CqlModel) Close() {
 }
 
 //NOTE: part of this is cribbed from walker.datastore.go. Code share?
-func (ds *CqlModel) addDomainIfNew(domain string) error {
+func (ds *CqlModel) addDomainIfNew(domain string, excludeDomainReason string) error {
 	var count int
 	err := ds.Db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = ?`, domain).Scan(&count)
 	if err != nil {
@@ -124,10 +124,17 @@ func (ds *CqlModel) addDomainIfNew(domain string) error {
 	}
 
 	if count == 0 {
-		err := ds.Db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
-		if err != nil {
-			return fmt.Errorf("insert; %v", err)
+		if excludeDomainReason == "" {
+			err = ds.Db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
+		} else {
+			err = ds.Db.Query(`INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 0, true, ?)`, domain, excludeDomainReason).Exec()
 		}
+	} else if excludeDomainReason != "" {
+		err = ds.Db.Query(`UPDATE domain_info SET excluded = ?, exclude_reason = ? WHERE dom = ?`, true, excludeDomainReason, domain).Exec()
+	}
+
+	if err != nil {
+		return fmt.Errorf("insert; %v", err)
 	}
 
 	return nil
@@ -135,7 +142,7 @@ func (ds *CqlModel) addDomainIfNew(domain string) error {
 
 //NOTE: InsertLinks should try to insert as much information as possible
 //return errors for things it can't handle
-func (ds *CqlModel) InsertLinks(links []string) []error {
+func (ds *CqlModel) InsertLinks(links []string, excludeDomainReason string) []error {
 	//
 	// Collect domains
 	//
@@ -185,7 +192,7 @@ func (ds *CqlModel) InsertLinks(links []string) []error {
 		}
 
 		if !seen[d] {
-			err := ds.addDomainIfNew(d)
+			err := ds.addDomainIfNew(d, excludeDomainReason)
 			if err != nil {
 				errList = append(errList, fmt.Errorf("%v # addDomainIfNew: %v", link, err))
 				continue
