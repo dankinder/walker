@@ -503,3 +503,106 @@ func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 		t.Errorf("`dispatched` flag set to true when no links existed")
 	}
 }
+
+func TestMinLinkRefreshTime(t *testing.T) {
+	origMinLinkRefreshTime := walker.Config.MinLinkRefreshTime
+	defer func() {
+		walker.Config.MinLinkRefreshTime = origMinLinkRefreshTime
+	}()
+	walker.Config.MinLinkRefreshTime = "49h"
+
+	var now = time.Now()
+	var tests = []DispatcherTest{
+		DispatcherTest{
+			Tag: "BasicTest",
+
+			ExistingDomainInfos: []ExistingDomainInfo{
+				{Dom: "test.com"},
+			},
+
+			ExistingLinks: []ExistingLink{
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+					LastCrawled: now.AddDate(0, 0, -1)}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page2.html"),
+					LastCrawled: now.AddDate(0, 0, -2)}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page3.html"),
+					LastCrawled: now.AddDate(0, 0, -3)}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page4.html"),
+					LastCrawled: now.AddDate(0, 0, -4)}, Status: -1},
+			},
+
+			ExpectedSegmentLinks: []walker.URL{
+				{URL: helpers.UrlParse("http://test.com/page3.html"),
+					LastCrawled: now.AddDate(0, 0, -3)},
+				{URL: helpers.UrlParse("http://test.com/page4.html"),
+					LastCrawled: now.AddDate(0, 0, -4)},
+			},
+		},
+	}
+
+	var q *gocql.Query
+	for _, dt := range tests {
+		db := GetTestDB() // runs between tests to reset the db
+
+		for _, edi := range dt.ExistingDomainInfos {
+			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
+							VALUES (?, ?, ?, ?, ?)`,
+				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
+			}
+		}
+
+		for _, el := range dt.ExistingLinks {
+			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
+			if el.Status == -1 {
+				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, getnow)
+								VALUES (?, ?, ?, ?, ?, ?)`,
+					dom,
+					subdom,
+					el.URL.RequestURI(),
+					el.URL.Scheme,
+					el.URL.LastCrawled,
+					el.GetNow)
+			} else {
+				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, stat, getnow)
+								VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					dom,
+					subdom,
+					el.URL.RequestURI(),
+					el.URL.Scheme,
+					el.URL.LastCrawled,
+					el.Status,
+					el.GetNow)
+			}
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)
+			}
+		}
+
+		d := &Dispatcher{}
+		go d.StartDispatcher()
+		time.Sleep(time.Millisecond * 100)
+		d.StopDispatcher()
+
+		expectedResults := map[url.URL]bool{}
+		for _, esl := range dt.ExpectedSegmentLinks {
+			expectedResults[*esl.URL] = true
+		}
+
+		results := map[url.URL]bool{}
+		iter := db.Query(`SELECT dom, subdom, path, proto
+							FROM segments WHERE dom = 'test.com'`).Iter()
+		var linkdomain, subdomain, path, protocol string
+		for iter.Scan(&linkdomain, &subdomain, &path, &protocol) {
+			u, _ := walker.CreateURL(linkdomain, subdomain, path, protocol, walker.NotYetCrawled)
+			results[*u.URL] = true
+		}
+		if !reflect.DeepEqual(results, expectedResults) {
+			t.Errorf("For tag %q expected results in segments: %v\nBut got: %v",
+				dt.Tag, expectedResults, results)
+		}
+
+	}
+
+}
