@@ -5,6 +5,7 @@
 package console
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -87,6 +88,10 @@ type Model interface {
 
 	// Find a link
 	FindLink(link string) (*LinkInfo, error)
+
+	// Find a link given exact domain/subdomain, and a regex to select path .
+	// At most limit results will be returned.
+	FindLinkPattern(domain string, subdomain string, pathRegex string, limit int) ([]LinkInfo, error)
 }
 
 var DS Model
@@ -371,13 +376,28 @@ type rememberTimes struct {
 }
 
 //collectLinkInfos populates a []LinkInfo list given a cassandra iterator
-func (ds *CqlModel) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int) ([]LinkInfo, error) {
+func (ds *CqlModel) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkFunc func([]byte) bool) ([]LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
 	var status int
-
+	var buffer bytes.Buffer
 	for itr.Scan(&domain, &subdomain, &path, &protocol, &crawlTime, &status, &anerror, &robotsExcluded) {
+		if linkFunc != nil {
+			buffer.Reset()
+			buffer.Write([]byte(protocol))
+			buffer.Write([]byte("://"))
+			if len(subdomain) > 0 {
+				buffer.Write([]byte(subdomain))
+				buffer.Write([]byte("."))
+			}
+			buffer.Write([]byte(domain))
+			buffer.Write([]byte("/"))
+			buffer.Write([]byte(path))
+			if !linkFunc(buffer.Bytes()) {
+				continue
+			}
+		}
 
 		u, err := walker.CreateURL(domain, subdomain, path, protocol, crawlTime)
 		if err != nil {
@@ -490,7 +510,7 @@ func (ds *CqlModel) ListLinks(domain string, seedUrl string, limit int) ([]LinkI
 	var err error
 	for _, qt := range table {
 		itr := db.Query(qt.query, qt.args...).Iter()
-		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, limit)
+		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, limit, nil)
 		if err != nil {
 			return linfos, err
 		}
@@ -585,7 +605,7 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 
 	itr := db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
 	rtimes := map[string]rememberTimes{}
-	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1)
+	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil)
 	if err != nil {
 		itr.Close()
 		return nil, err
@@ -601,4 +621,15 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 	} else {
 		return &linfos[0], nil
 	}
+}
+
+func (ds *CqlModel) FindLinkPattern(domain string, subdomain string, pathRegex string, limit int) ([]LinkInfo, error) {
+	// db := ds.Db
+	// query := `SELECT path, proto, time, stat, err, robot_ex
+	//              FROM links
+	//              WHERE
+	//              	dom = ? AND
+	//                subdom = ?`
+	return nil, nil
+
 }
