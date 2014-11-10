@@ -374,7 +374,13 @@ type rememberTimes struct {
 	ind int
 }
 
-//collectLinkInfos populates a []LinkInfo list given a cassandra iterator
+//collectLinkInfos populates a []LinkInfo list given a cassandra iterator. Arguments are described as:
+// (a) linfos is the list of LinkInfo's to build on
+// (b) rtimes is scratch space used to filter most recent link
+// (c) itr is a gocql.Iter instance to be read
+// (d) limit is the max length of linfos
+// (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [This is used
+//     to implement filterRegex on ListLinks]
 func (ds *CqlModel) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkAccept func(string) bool) ([]LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
