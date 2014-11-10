@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"code.google.com/p/log4go"
@@ -31,6 +32,8 @@ func Routes() []Route {
 		Route{Path: "/add/", Controller: AddLinkIndexController},
 		Route{Path: "/links/{domain}", Controller: LinksController},
 		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
+		Route{Path: "/links2/{domain}/{filterRegex}", Controller: LinksController},
+		Route{Path: "/links/{domain}/{seedUrl}/{filterRegex}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
@@ -259,6 +262,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("User failed to specify domain for linksController"))
 		return
 	}
+
 	dinfo, err := DS.FindDomain(domain)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("FindDomain: %v", err))
@@ -281,13 +285,26 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	} else {
 		ss, err := decode32(seedUrl)
 		if err != nil {
-			replyServerError(w, fmt.Errorf("QueryUnescape: %v", err))
+			replyServerError(w, fmt.Errorf("decode32: %v", err))
 			return
 		}
 		seedUrl = ss
 	}
 
-	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, "")
+	filterRegex := vars["filterRegex"]
+	filterUrlSuffix := ""
+	filterRegexSuffix := ""
+	if filterRegex != "" {
+		filterUrlSuffix = "/" + filterRegex
+		filterRegex, err = decode32(filterRegex)
+		if err != nil {
+			replyServerError(w, fmt.Errorf("decode32 error: %v", err))
+			return
+		}
+		filterRegexSuffix = fmt.Sprintf("(filtered by /%s/)", filterRegex)
+	}
+
+	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, filterRegex)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("ListLinks: %v", err))
 		return
@@ -307,12 +324,16 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	mp := map[string]interface{}{
-		"Dinfo":           dinfo,
-		"NumberCrawled":   dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
-		"HasHeader":       needHeader,
-		"HasLinks":        len(linfos) > 0,
-		"Linfos":          linfos,
-		"NextSeedUrl":     nextSeedUrl,
+		"Dinfo":         dinfo,
+		"NumberCrawled": dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
+		"HasHeader":     needHeader,
+		"HasLinks":      len(linfos) > 0,
+		"Linfos":        linfos,
+
+		"NextSeedUrl":       nextSeedUrl,
+		"FilterUrlSuffix":   filterUrlSuffix,
+		"FilterRegexSuffix": filterRegexSuffix,
+
 		"NextButtonClass": nextButtonClass,
 		"PrevButtonClass": prevButtonClass,
 		"HistoryLinks":    historyLinks,
@@ -436,8 +457,40 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 }
 
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {
-	mp := map[string]interface{}{}
-	Render.HTML(w, http.StatusOK, "filterLinks", mp)
+	if req.Method != "POST" {
+		mp := map[string]interface{}{}
+		Render.HTML(w, http.StatusOK, "filterLinks", mp)
+		return
+	}
+
+	err := req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	domain, domainOk := req.Form["domain"]
+	regex, regexOk := req.Form["regex"]
+	if !domainOk || !regexOk {
+		err = fmt.Errorf("Form input was ill formed")
+		replyServerError(w, err)
+		return
+	}
+
+	_, err = regexp.Compile(regex[0])
+	if err != nil {
+		err = fmt.Errorf("Failed to compile regex %q: %v", regex[0], err)
+		mp := map[string]interface{}{
+			"HasErrorMessage": true,
+			"ErrorMessage":    []string{err.Error()},
+		}
+		Render.HTML(w, http.StatusOK, "filterLinks", mp)
+		return
+	}
+
+	url := fmt.Sprintf("/links2/%s/%s", domain[0], encode32(regex[0]))
+	http.Redirect(w, req, url, http.StatusSeeOther)
+	return
 }
 
 func assureScheme(url string) (string, error) {

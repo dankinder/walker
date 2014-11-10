@@ -60,7 +60,7 @@
         {{if .AltTitle}}
             <h2> Searched for links </h2>
         {{else}}
-            <h2> Links for domain {{.Dinfo.Domain}} </h2>
+            <h2> Links for domain {{.Dinfo.Domain}} {{.FilterRegexSuffix}}</h2>
         {{end}}
         <table class="console-table table table-condensed table-striped">
             <thead>
@@ -93,7 +93,7 @@
 
             <div class="col-xs-1"></div>
 
-            <a href="/links/{{.Dinfo.Domain}}/{{.NextSeedUrl}}" class="col-xs-3 btn btn-info btn-large {{.NextButtonClass}}">
+            <a href="/links/{{.Dinfo.Domain}}/{{.NextSeedUrl}}{{.FilterUrlSuffix}}" class="col-xs-3 btn btn-info btn-large {{.NextButtonClass}}">
                       <i class="icon-white icon-forward"></i> Next </a>
 
         </div>
@@ -101,7 +101,7 @@
 
 {{else}}
     <div class="row">
-        <h2> No links for domain {{.Dinfo.Domain}} </h2>
+        <h2> No links for domain {{.Dinfo.Domain}} {{.FilterRegexSuffix}}</h2>
     </div>
 {{end}}
 
