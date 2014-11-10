@@ -709,7 +709,7 @@ func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) [
 		if !isEmbed {
 			label = "parseObjectAttrs"
 		}
-		log4go.Error("%s encountered an error: %v", label, err)
+		log4go.Debug("%s encountered an error: %v", label, err)
 	} else {
 		links = append(links, ln)
 	}
