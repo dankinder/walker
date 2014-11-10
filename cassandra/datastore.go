@@ -328,7 +328,7 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 // UnclaimAll iterates domains to unclaim them. Crawlers will unclaim domains
 // by themselves, but this is used in case crawlers crash or are killed and
 // have left domains claimed.
-func (ds *CassandraDatastore) UnclaimAll() error {
+func (ds *Datastore) UnclaimAll() error {
 	iter := ds.db.Query(`SELECT dom FROM domain_info WHERE dispatched = true`).Iter()
 	var dom string
 	for iter.Scan(&dom) {

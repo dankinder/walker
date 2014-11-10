@@ -151,6 +151,14 @@ func ReadConfigFile(path string) error {
 	return readConfig()
 }
 
+// MustReadConfigFile calls ReadConfigFile and panics on error.
+func MustReadConfigFile(path string) {
+	err := ReadConfigFile(path)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
 func assertConfigInvariants() error {
 	var errs []string
 	dis := &Config.Dispatcher
