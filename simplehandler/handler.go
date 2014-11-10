@@ -1,29 +1,30 @@
-package walker
+/*
+Package simplehandler provides a basic walker handler implementation
+*/
+package simplehandler
 
 import (
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/iParadigms/walker"
+
 	"code.google.com/p/log4go"
 )
 
-// Handler defines the interface for objects that will be set as handlers on a
-// FetchManager.
-type Handler interface {
-	// HandleResponse will be called by fetchers as they make requests.
-	// Handlers can do whatever they want with responses. HandleResponse will
-	// be called as long as the request successfully reached the remote server
-	// and got an HTTP code. This means there should never be a FetchError set
-	// on the FetchResults.
-	HandleResponse(res *FetchResults)
-}
+type Handler struct{}
 
-// SimpleWriterHandler just writes returned pages as files locally, naming the
-// file after the URL of the request.
-type SimpleWriterHandler struct{}
-
-func (h *SimpleWriterHandler) HandleResponse(fr *FetchResults) {
+// HandleResponse just writes returned pages as files locally, naming the file
+// after the URL of the request made.
+//
+// For example, when handling the response for
+// `http://test.com/amazing/stuff.html`, it will create the directory
+// `$PWD/test.com/amazing` and write the page contents (no headers or HTTP
+// data) to `$PWD/test.com/amazing/stuff.html`
+//
+// It skips pages that do not have a 2XX HTTP code.
+func (h *Handler) HandleResponse(fr *walker.FetchResults) {
 	if fr.ExcludedByRobots {
 		log4go.Debug("Excluded by robots.txt, ignoring url: %v", fr.URL)
 		return

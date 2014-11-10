@@ -1,3 +1,32 @@
+/*
+Package cmd provides access to build on the walker CLI
+
+This package makes it easy to create custom walker binaries that use their own
+Handler, Datastore, or Dispatcher. A crawler that uses the default for each of
+these requires simply:
+
+	func main() {
+		cmd.Execute()
+	}
+
+To create your own binary that uses walker's flags but has its own handler:
+
+	func main() {
+		cmd.Handler(NewMyHandler())
+		cmd.Execute()
+	}
+
+Likewise if you want to set your own Datastore and Dispatcher:
+
+	func main() {
+		cmd.DataStore(NewMyDatastore())
+		cmd.Dispatcher(NewMyDatastore())
+		cmd.Execute()
+	}
+
+cmd.Execute() blocks until the program has completed (usually by
+being shutdown gracefully via SIGINT).
+*/
 package cmd
 
 import (
@@ -7,39 +36,16 @@ import (
 	"syscall"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
+	"github.com/iParadigms/walker/simplehandler"
 	"github.com/spf13/cobra"
 )
-
-// cmd provides an easy interface for creating walker binaries that use their
-// own Handler, Datastore, or Dispatcher. A crawler that uses the default for
-// each of these requires simply:
-//
-//  func main() {
-//      cmd.Execute()
-//  }
-//
-// To create your own binary that uses walker's flags but has its own handler:
-//
-//  func main() {
-//      cmd.Handler(NewMyHandler())
-//      cmd.Execute()
-//  }
-//
-// Likewise if you want to set your own Datastore and Dispatcher:
-//
-//  func main() {
-//      cmd.DataStore(NewMyDatastore())
-//      cmd.Dispatcher(NewMyDatastore())
-//      cmd.Execute()
-//  }
-//
-// cmd.Execute() blocks until the program has completed (usually by
-// being shutdown gracefully via SIGINT).
 
 //
 // P U B L I C
 //
+
 // Handler sets the global handler for this process
 func Handler(h walker.Handler) {
 	commander.Handler = h
@@ -63,6 +69,7 @@ func Execute() {
 //
 // P R I V A T E
 //
+
 var commander struct {
 	*cobra.Command
 	Handler    walker.Handler
@@ -100,16 +107,16 @@ func init() {
 			readConfig()
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			if commander.Handler == nil {
-				commander.Handler = &walker.SimpleWriterHandler{}
+				commander.Handler = &simplehandler.Handler{}
 			}
 
 			manager := &walker.FetchManager{
@@ -151,16 +158,16 @@ func init() {
 			readConfig()
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			if commander.Handler == nil {
-				commander.Handler = &walker.SimpleWriterHandler{}
+				commander.Handler = &simplehandler.Handler{}
 			}
 
 			manager := &walker.FetchManager{
@@ -185,7 +192,7 @@ func init() {
 			readConfig()
 
 			if commander.Dispatcher == nil {
-				commander.Dispatcher = &walker.CassandraDispatcher{}
+				commander.Dispatcher = &cassandra.Dispatcher{}
 			}
 
 			go func() {
@@ -231,7 +238,7 @@ crawl, regardless of the add_new_domains configuration setting.`,
 			}
 
 			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
+				ds, err := cassandra.NewDatastore()
 				if err != nil {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
@@ -268,10 +275,7 @@ Useful for something like:
 			}
 			defer out.Close()
 
-			schema, err := walker.GetCassandraSchema()
-			if err != nil {
-				panic(err.Error())
-			}
+			schema := cassandra.GetSchema()
 			fmt.Fprint(out, schema)
 		},
 	}

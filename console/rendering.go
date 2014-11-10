@@ -1,15 +1,17 @@
+package console
+
 /*
 	This file contains functionality related to rendering templates
 */
-package console
 
 import (
 	"html/template"
 	"net/http"
 	"time"
 
-	"code.google.com/p/log4go"
 	"encoding/base32"
+
+	"code.google.com/p/log4go"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
 	"github.com/unrolled/render"

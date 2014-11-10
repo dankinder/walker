@@ -2,13 +2,13 @@
 <div style="width: 80%;" class="row">
     <h2>List of Domains</h2>
 
-    <table class="console-table table table-striped table-condensed table-bordered">
+    <table class="console-table table table-striped table-condensed">
         <thead> 
-          <td class="col-xs-5"> Domain </td>
-          <td class="col-xs-1" style="text-align: center;"> LinksTotal </td>
-          <td class="col-xs-1" style="text-align: center;"> LinksQueued </td>
-          <td class="col-xs-2" style="text-align: center;"> Excluded </td>
-          <td class="col-xs-3" style="text-align: center;"> TimeQueued </td>
+          <td class="col-xs-4"> Domain </td>
+          <td class="col-xs-2" style="text-align: center;"> Total Links </td>
+          <td class="col-xs-2" style="text-align: center;"> Links Dispatched </td>
+          <td class="col-xs-1" style="text-align: center;"> Excluded </td>
+          <td class="col-xs-3" style="text-align: center;"> Last Claimed By Fetcher </td>
         </thead>
         <tbody>
         {{range .Domains}}

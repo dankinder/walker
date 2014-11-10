@@ -1,13 +1,13 @@
 
 .console-table {
-    border: 3px solid;
+    font-size: 110%;
 
 
 }
 
 .table-striped > tbody > tr:nth-child(odd) > td,
 .table-striped > tbody > tr:nth-child(odd) > th {
-  background-color: wheat;
+  background-color: #EBFFFF;
 }
 
 .error-li {

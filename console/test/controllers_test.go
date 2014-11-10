@@ -17,24 +17,18 @@ import (
 )
 
 //
-// Config
-//
-func modifyConfigControllers() {
-	walker.Config.Cassandra.Keyspace = "walker_controllers"
-	walker.Config.Cassandra.Hosts = []string{"localhost"}
-	walker.Config.Cassandra.ReplicationFactor = 1
-	walker.Config.Console.TemplateDirectory = "../templates"
-}
-
-//
-// Generate Fixtures
+// Fixtures
 //
 func spoofData() {
 	if console.DS != nil {
 		console.DS.Close()
 		console.DS = nil
 	}
-	modifyConfigControllers()
+
+	err := walker.ReadConfigFile("test-walker.yaml")
+	if err != nil {
+		panic(err)
+	}
 
 	console.SpoofData()
 	ds, err := console.NewCqlModel()
@@ -220,10 +214,10 @@ func TestListDomainsWeb(t *testing.T) {
 	}
 	header := []string{
 		"Domain",
-		"LinksTotal",
-		"LinksQueued",
+		"Total Links",
+		"Links Dispatched",
 		"Excluded",
-		"TimeQueued",
+		"Last Claimed By Fetcher",
 	}
 	sub := doc.Find(".container table thead td")
 	if sub.Size() != len(header) {
@@ -332,11 +326,13 @@ func TestListLinksWeb(t *testing.T) {
 	//
 	domainKeys := []string{
 		"Domain",
-		"ExcludeReason",
-		"TimeQueued",
-		"UuidOfQueued",
-		"NumberLinksTotal",
-		"NumberLinksQueued",
+		"Exclude Reason (if excluded)",
+		"Last Claimed By Fetcher",
+		"Current Fetcher Claim ID",
+		"Total Unique Links",
+		"Links Dispatched",
+		"Unique Links Crawled",
+		"Unique Links Not Yet Crawled",
 	}
 
 	sub = domainTable.Find("tr > td:nth-child(1)")
@@ -354,8 +350,8 @@ func TestListLinksWeb(t *testing.T) {
 	})
 
 	secondColSize := domainTable.Find("tr > td:nth-child(2)").Size()
-	if secondColSize != 6 {
-		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %s", secondColSize, 6)
+	if secondColSize != len(domainKeys) {
+		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %s", secondColSize, len(domainKeys))
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
@@ -369,9 +365,9 @@ func TestListLinksWeb(t *testing.T) {
 	linksColHeaders := []string{
 		"Link",
 		"Status",
-		"Error",
-		"Excluded",
-		"Fetched",
+		"Error?",
+		"Excluded by robots.txt?",
+		"Last Fetch",
 	}
 
 	sub = linksTable.Find("thead th")
@@ -488,9 +484,9 @@ func TestListLinksSecondPage(t *testing.T) {
 	linksColHeaders := []string{
 		"Link",
 		"Status",
-		"Error",
-		"Excluded",
-		"Fetched",
+		"Error?",
+		"Excluded by robots.txt?",
+		"Last Fetch",
 	}
 	sub := linksTable.Find("thead th")
 	count := 0

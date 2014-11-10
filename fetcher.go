@@ -4,22 +4,22 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"strings"
-	"sync"
-
-	"github.com/iParadigms/walker/mimetools"
-
-	"github.com/temoto/robotstxt.go"
-
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"code.google.com/p/go.net/html"
 	"code.google.com/p/go.net/html/charset"
 	"code.google.com/p/go.net/publicsuffix"
 	"code.google.com/p/log4go"
+	"github.com/iParadigms/walker/dnscache"
+	"github.com/iParadigms/walker/mimetools"
+	"github.com/temoto/robotstxt.go"
 )
 
 // NotYetCrawled is a convenience for time.Unix(0, 0), used as a crawl time in
@@ -60,6 +60,17 @@ type FetchResults struct {
 	// True if we did not request this link because it is excluded by
 	// robots.txt rules
 	ExcludedByRobots bool
+
+	// True if the page was marked as 'noindex' via a <meta> tag. Whether it
+	// was crawled depends on the honor_meta_noindex configuration parameter
+	MetaNoIndex bool
+
+	// True if the page was marked as 'nofollow' via a <meta> tag. Whether it
+	// was crawled depends on the honor_meta_nofollow configuration parameter
+	MetaNoFollow bool
+
+	// The Content-Type of the fetched page.
+	MimeType string
 }
 
 // URL is the walker URL object, which embeds *url.URL but has extra data and
@@ -200,13 +211,19 @@ func (fm *FetchManager) Start() {
 	fm.started = true
 
 	if fm.Transport == nil {
+		timeout, err := time.ParseDuration(Config.HttpTimeout)
+		if err != nil {
+			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+			panic(err)
+		}
+
 		// Set fm.Transport == http.DefaultTransport, but create a new one; we
 		// want to override Dial but don't want to globally override it in
 		// http.DefaultTransport.
 		fm.Transport = &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
-				Timeout:   30 * time.Second,
+				Timeout:   timeout,
 				KeepAlive: 30 * time.Second,
 			}).Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
@@ -214,7 +231,7 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = DNSCachingDial(t.Dial, Config.MaxDNSCacheEntries)
+		t.Dial = dnscache.Dial(t.Dial, Config.MaxDNSCacheEntries)
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
@@ -263,123 +280,186 @@ type fetcher struct {
 	// the fetcher may need to clean up (ex. unclaim the current host) after
 	// reading from quit
 	done chan struct{}
+
+	excludeLink *regexp.Regexp
+	includeLink *regexp.Regexp
+}
+
+func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+
+	fullPat := strings.Join(list, "|")
+	re, err := regexp.Compile(fullPat)
+	if err != nil {
+		message := fmt.Sprintf("Bad regex in %s:", sourceName)
+		found := false
+		for _, p := range list {
+			_, e := regexp.Compile(p)
+			if e != nil {
+				found = true
+				message += "\n\t'"
+				message += p
+				message += "'"
+			}
+		}
+		if !found {
+			message += "\n\t--UNKNOWN PATTERN--"
+		}
+
+		return nil, fmt.Errorf("%v", message)
+	}
+
+	return re, nil
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
+	timeout, err := time.ParseDuration(Config.HttpTimeout)
+	if err != nil {
+		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+		panic(err)
+	}
+
 	f := new(fetcher)
 	f.fm = fm
 	f.httpclient = &http.Client{
 		Transport: fm.Transport,
+		Timeout:   timeout,
 	}
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})
+
+	if len(Config.ExcludeLinkPatterns) > 0 {
+		f.excludeLink, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+		if err != nil {
+			// This shouldn't happen b/c it's already been checked when loading config
+			panic(err)
+		}
+	}
+
+	if len(Config.IncludeLinkPatterns) > 0 {
+		f.includeLink, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+		if err != nil {
+			// This shouldn't happen b/c it's already been checked when loading config
+			panic(err)
+		}
+	}
+
 	return f
 }
 
 // start blocks until the fetcher has completed by being told to quit.
 func (f *fetcher) start() {
 	log4go.Debug("Starting new fetcher")
-	for {
-		if f.host != "" {
-			//TODO: ensure that this unclaim will happen... probably want the
-			//logic below in a function where the Unclaim is deferred
-			log4go.Info("Finished crawling %v, unclaiming", f.host)
-			f.fm.Datastore.UnclaimHost(f.host)
-		}
+	for f.crawlNewHost() {
+		// Crawl until told to stop...
+	}
+	log4go.Debug("Stopping fetcher")
+	f.done <- struct{}{}
+}
 
+// crawlNewHost host crawls a single host, or delays and returns if there was
+// nothing to crawl.
+// Returns false if it was signaled to quit and the routine should finish
+func (f *fetcher) crawlNewHost() bool {
+	select {
+	case <-f.quit:
+		return false
+	default:
+	}
+
+	f.host = f.fm.Datastore.ClaimNewHost()
+	if f.host == "" {
+		time.Sleep(time.Second)
+		return true
+	}
+	defer func() {
+		log4go.Info("Finished crawling %v, unclaiming", f.host)
+		f.fm.Datastore.UnclaimHost(f.host)
+	}()
+
+	if f.checkForBlacklisting(f.host) {
+		return true
+	}
+
+	f.fetchRobots(f.host)
+	f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
+	if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
+		f.crawldelay = f.robots.CrawlDelay
+	}
+	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
+
+	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
-			f.done <- struct{}{}
-			return
+			// Let the defer unclaim the host and the caller indicate that this
+			// goroutine is done
+			return false
 		default:
 		}
 
-		f.host = f.fm.Datastore.ClaimNewHost()
-		if f.host == "" {
-			time.Sleep(time.Second)
-			continue
-		}
-
-		if f.checkForBlacklisting(f.host) {
-			continue
-		}
-
-		f.fetchRobots(f.host)
-		f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
-		if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
-			f.crawldelay = f.robots.CrawlDelay
-		}
-		log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
-
-		for link := range f.fm.Datastore.LinksForHost(f.host) {
-			//TODO: check <-f.quit and clean up appropriately
-
-			fr := &FetchResults{URL: link}
-
-			if f.robots != nil && !f.robots.Test(link.String()) {
-				log4go.Debug("Not fetching due to robots rules: %v", link)
-				fr.ExcludedByRobots = true
-				f.fm.Datastore.StoreURLFetchResults(fr)
-				continue
-			}
-
+		shouldDelay := f.fetchAndHandle(link)
+		if shouldDelay {
 			time.Sleep(f.crawldelay)
-
-			fr.FetchTime = time.Now()
-			fr.Response, fr.RedirectedFrom, fr.FetchError = f.fetch(link)
-			if fr.FetchError != nil {
-				log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
-				f.fm.Datastore.StoreURLFetchResults(fr)
-				continue
-			}
-			log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
-
-			canSearch := isHTML(fr.Response)
-			if canSearch {
-				log4go.Debug("Reading and parsing as HTML (%v)", link)
-
-				//TODO: ReadAll is inefficient. We should use a properly sized
-				//		buffer here (determined by
-				//		Config.MaxHTTPContentSizeBytes or possibly
-				//		Content-Length of the response)
-				var body []byte
-				body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
-				if fr.FetchError != nil {
-					log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
-					f.fm.Datastore.StoreURLFetchResults(fr)
-					continue
-				}
-				fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
-
-				outlinks, err := getLinks(body)
-				if err != nil {
-					log4go.Debug("error parsing HTML for page %v: %v", link, err)
-				} else {
-					for _, outlink := range outlinks {
-						outlink.MakeAbsolute(link)
-						log4go.Fine("Parsed link: %v", outlink)
-						if shouldStore(outlink) {
-							f.fm.Datastore.StoreParsedURL(outlink, fr)
-						}
-					}
-				}
-			}
-
-			// handle any doc that we searched or that is in our AcceptFormats
-			// list
-			canHandle := isHandleable(fr.Response, f.fm.acceptFormats)
-			if canSearch || canHandle {
-				f.fm.Handler.HandleResponse(fr)
-			} else {
-				ctype := strings.Join(fr.Response.Header["Content-Type"], ",")
-				log4go.Debug("Not handling url %v -- `Content-Type: %v`", link, ctype)
-			}
-
-			//TODO: Wrap the reader and check for read error here
-			log4go.Debug("Storing fetch results for %v", link)
-			f.fm.Datastore.StoreURLFetchResults(fr)
 		}
 	}
+	return true
+}
+
+// fetchAndHandle takes care of fetching and processing a URL beginning to end.
+// Returns true if it did actually perform a fetch (even if it wasn't
+// successful), indicating that crawl-delay should be observed.
+func (f *fetcher) fetchAndHandle(link *URL) bool {
+	fr := &FetchResults{URL: link}
+
+	if f.robots != nil && !f.robots.Test(link.String()) {
+		log4go.Debug("Not fetching due to robots rules: %v", link)
+		fr.ExcludedByRobots = true
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return false
+	}
+
+	fr.FetchTime = time.Now()
+	fr.Response, fr.RedirectedFrom, fr.FetchError = f.fetch(link)
+	if fr.FetchError != nil {
+		log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return true
+	}
+	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
+
+	fr.MimeType = getMimeType(fr.Response)
+
+	if isHTML(fr.Response) {
+		log4go.Fine("Reading and parsing as HTML (%v)", link)
+
+		//TODO: ReadAll is inefficient. We should use a properly sized
+		//		buffer here (determined by
+		//		Config.MaxHTTPContentSizeBytes or possibly
+		//		Content-Length of the response)
+		var body []byte
+		body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+		if fr.FetchError != nil {
+			log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
+			f.fm.Datastore.StoreURLFetchResults(fr)
+			return true
+		}
+
+		f.parseLinks(body, fr)
+
+		// Replace the response body so the handler can read it
+		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
+	}
+
+	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
+		f.fm.Handler.HandleResponse(fr)
+	}
+
+	//TODO: Wrap the reader and check for read error here
+	log4go.Fine("Storing fetch results for %v", link)
+	f.fm.Datastore.StoreURLFetchResults(fr)
+	return true
 }
 
 // stop signals a fetcher to stop and waits until completion.
@@ -436,12 +516,66 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	return res, redirectedFrom, nil
 }
 
+// shouldStoreParsedLink returns true if the argument URL should
+// be stored in datastore. The link can (currently) be rejected
+// because it's not in the AcceptProtocols, or if the path matches
+// exclude_link_patterns and doesn't match include_link_patterns
+func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
+	path := u.RequestURI()
+	include := !(f.excludeLink != nil && f.excludeLink.MatchString(path)) ||
+		(f.includeLink != nil && f.includeLink.MatchString(path))
+	if !include {
+		return false
+	}
+
+	for _, f := range Config.AcceptProtocols {
+		if u.Scheme == f {
+			return true
+		}
+	}
+
+	return false
+}
+
+// parseLinks tries to parse the http response in the given FetchResults for
+// links and stores them in the datastore.
+func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
+	outlinks, noindex, nofollow, err := parseHtml(body)
+	if err != nil {
+		log4go.Debug("error parsing HTML for page %v: %v", fr.URL, err)
+		return
+	}
+
+	if noindex {
+		fr.MetaNoIndex = true
+		log4go.Fine("Page has noindex meta tag: %v", fr.URL)
+	}
+	if nofollow {
+		fr.MetaNoFollow = true
+		log4go.Fine("Page has nofollow meta tag: %v", fr.URL)
+	}
+
+	for _, outlink := range outlinks {
+		outlink.MakeAbsolute(fr.URL)
+		if f.shouldStoreParsedLink(outlink) {
+			log4go.Fine("Storing parsed link: %v", outlink)
+			f.fm.Datastore.StoreParsedURL(outlink, fr)
+		}
+	}
+}
+
 // checkForBlacklisting returns true if this site is blacklisted or should be
 // blacklisted. If we detect that this site should be blacklisted, this
 // function will call the datastore appropriately.
 //
 // One example of blacklisting is detection of IP addresses that resolve to
 // localhost or other bad IP ranges.
+//
+// TODO: since different subdomains my resolve to different IPs, find a way to
+// check this for every HTTP fetch without extraneous connections or fetching
+// data we aren't going to care about
+// TODO: write back to the database that this domain has been blacklisted so we
+// don't just keep re-dispatching it
 func (f *fetcher) checkForBlacklisting(host string) bool {
 	t, ok := f.fm.Transport.(*http.Transport)
 	if !ok {
@@ -452,50 +586,30 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 
 	conn, err := t.Dial("tcp", net.JoinHostPort(host, "80"))
 	if err != nil {
-		//TODO: blacklist this domain in the datastore as couldn't connect;
-		//maybe try a few times
-		log4go.Debug("Could not connect to host (%v, %v), blacklisting", host, err)
-		return true
+		// Don't simply blacklist because we couldn't connect; the TLD+1 may
+		// not work but subdomains may work
+		log4go.Debug("Could not connect to host (%v, %v) to check blacklisting", host, err)
+		return false
 	}
 	defer conn.Close()
 
 	if Config.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
-		//TODO: mark this domain as blacklisted  in the datastore for resolving
-		//to a private IP
 		log4go.Debug("Host (%v) resolved to private IP address, blacklisting", host)
 		return true
 	}
 	return false
 }
 
-// getLinks parses the response for links, doing it's best with bad HTML.
-func getLinks(contents []byte) ([]*URL, error) {
-	utf8Reader, err := charset.NewReader(bytes.NewReader(contents), "text/html")
-	if err != nil {
-		return nil, err
-	}
-	tokenizer := html.NewTokenizer(utf8Reader)
-
-	var links []*URL
-	tags := getIncludedTags()
-
-	for {
-		tokenType := tokenizer.Next()
-		switch tokenType {
-		case html.ErrorToken:
-			//TODO: should use tokenizer.Err() to see if this is io.EOF
-			//		(meaning success) or an actual error
-			return links, nil
-		case html.StartTagToken:
-
-			tagName, hasAttrs := tokenizer.TagName()
-			if hasAttrs && tags[string(tagName)] {
-				links = parseAnchorAttrs(tokenizer, links)
-			}
+func (f *fetcher) isHandleable(r *http.Response) bool {
+	for _, ct := range r.Header["Content-Type"] {
+		matched, err := f.fm.acceptFormats.Match(ct)
+		if err == nil && matched {
+			return true
 		}
 	}
-
-	return links, nil
+	ctype := strings.Join(r.Header["Content-Type"], ",")
+	log4go.Fine("URL (%v) did not match accepted content types, had: %v", r.Request.URL, ctype)
+	return false
 }
 
 // getIncludedTags gets a map of tags we should check for outlinks. It uses
@@ -511,11 +625,220 @@ func getIncludedTags() map[string]bool {
 		"script": true,
 		"link":   true,
 		"img":    true,
+		"object": true,
+		"embed":  true,
 	}
 	for _, t := range Config.IgnoreTags {
 		delete(tags, t)
 	}
+
+	tags["meta"] = true
 	return tags
+}
+
+// parseHtml processes the html stored in content.
+// It returns:
+//     (a) a list of `links` on the page
+//     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
+//     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
+func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
+	utf8Reader, err := charset.NewReader(bytes.NewReader(body), "text/html")
+	if err != nil {
+		return
+	}
+	tokenizer := html.NewTokenizer(utf8Reader)
+
+	tags := getIncludedTags()
+
+	for {
+		tokenType := tokenizer.Next()
+		switch tokenType {
+		case html.ErrorToken:
+			//TODO: should use tokenizer.Err() to see if this is io.EOF
+			//		(meaning success) or an actual error
+			return
+		case html.StartTagToken, html.SelfClosingTagToken:
+			tagNameB, hasAttrs := tokenizer.TagName()
+			tagName := string(tagNameB)
+			if hasAttrs && tags[tagName] {
+				switch tagName {
+				case "a":
+					if !metaNofollow {
+						links = parseAnchorAttrs(tokenizer, links)
+					}
+
+				case "embed":
+					if !metaNofollow {
+						links = parseObjectOrEmbed(tokenizer, links, true)
+					}
+
+				case "iframe":
+					links = parseIframe(tokenizer, links, metaNofollow)
+
+				case "meta":
+					isRobots, index, follow := parseMetaAttrs(tokenizer)
+					if isRobots {
+						metaNoindex = metaNoindex || index
+						metaNofollow = metaNofollow || follow
+					}
+
+				case "object":
+					if !metaNofollow {
+						links = parseObjectOrEmbed(tokenizer, links, false)
+					}
+
+				}
+			}
+		}
+	}
+
+	return
+}
+
+func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
+	var ln *URL
+	var err error
+	if isEmbed {
+		ln, err = parseEmbedAttrs(tokenizer)
+	} else {
+		ln, err = parseObjectAttrs(tokenizer)
+	}
+
+	if err != nil {
+		label := "parseEmbedAttrs"
+		if !isEmbed {
+			label = "parseObjectAttrs"
+		}
+		log4go.Error("%s encountered an error: %v", label, err)
+	} else {
+		links = append(links, ln)
+	}
+
+	return links
+}
+
+// parseIframe takes 3 arguments
+// (a) tokenizer
+// (b) list of links already collected
+// (c) a flag indicating if the parser is currently in a nofollow state
+// and returns a possibly extended list of links.
+func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) (links []*URL) {
+	links = in_links
+	docsrc, body, err := parseIframeAttrs(tokenizer)
+	if err != nil {
+		return
+	} else if docsrc {
+		var nlinks []*URL
+		var nNofollow bool
+		nlinks, _, nNofollow, err = parseHtml([]byte(body))
+		if err != nil {
+			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
+			return
+		}
+		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
+			links = append(links, nlinks...)
+		}
+	} else { //!docsrc
+		if !metaNofollow {
+			var u *URL
+			u, err = ParseURL(body)
+			if err != nil {
+				log4go.Error("parseEmbed failed to parse src: %v", err)
+				return
+			}
+			links = append(links, u)
+		}
+	}
+
+	return
+}
+
+// A set of words used by the parse* routines below
+var contentWordBytes = []byte("content")
+var dataWordBytes = []byte("data")
+var nameWordBytes = []byte("name")
+var noindexWordBytes = []byte("noindex")
+var nofollowWordBytes = []byte("nofollow")
+var robotsWordBytes = []byte("robots")
+var srcWordBytes = []byte("src")
+var srcdocWordBytes = []byte("srcdoc")
+
+func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, nameWordBytes) == 0 {
+			name := bytes.ToLower(val)
+			isRobots = bytes.Compare(name, robotsWordBytes) == 0
+		} else if bytes.Compare(key, contentWordBytes) == 0 {
+			content := bytes.ToLower(val)
+			// This will match ill-formatted contents like "noindexnofollow",
+			// but I don't expect that to be a big deal.
+			noIndex = bytes.Contains(content, noindexWordBytes)
+			noFollow = bytes.Contains(content, nofollowWordBytes)
+		}
+		if !moreAttr {
+			break
+		}
+	}
+	return
+}
+
+// parse object tag attributes
+func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, dataWordBytes) == 0 {
+			return ParseURL(string(val))
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	return nil, fmt.Errorf("Failed to find data attribute in object tag")
+}
+
+// parse embed tag attributes
+func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, srcWordBytes) == 0 {
+			return ParseURL(string(val))
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	return nil, fmt.Errorf("Failed to find src attribute in embed tag")
+}
+
+// parseIframeAttrs parses iframe attributes. An iframe can have a src attribute, which
+// holds a url to an second document. An iframe can also have a srcdoc attribute which
+// include html inline in a string. The method below returns 3 results
+// (a) a boolean indicating if the iframe had a srcdoc attribute (true means srcdoc, false
+//     means src)
+// (b) the body of whichever src or srcdoc attribute was read
+// (c) any errors that arise during processing.
+func parseIframeAttrs(tokenizer *html.Tokenizer) (srcdoc bool, body string, err error) {
+	for {
+		key, val, moreAttr := tokenizer.TagAttr()
+		if bytes.Compare(key, srcWordBytes) == 0 {
+			srcdoc = false
+			body = string(val)
+			return
+		} else if bytes.Compare(key, srcdocWordBytes) == 0 {
+			srcdoc = true
+			body = string(val)
+			return
+		}
+
+		if !moreAttr {
+			break
+		}
+	}
+	err = fmt.Errorf("Failed to find src or srcdoc attribute in iframe tag")
+	return
 }
 
 // parseAnchorAttrs iterates over all of the attributes in the current anchor token.
@@ -538,33 +861,27 @@ func parseAnchorAttrs(tokenizer *html.Tokenizer, links []*URL) []*URL {
 	}
 }
 
+// getMimeType attempts to get the mime type (i.e. "Content-Type") from the
+// response. Returns an empty string if unable to.
+func getMimeType(r *http.Response) string {
+	ctype, ctypeOk := r.Header["Content-Type"]
+	if ctypeOk && len(ctype) > 0 {
+		mediaType, _, err := mime.ParseMediaType(ctype[0])
+		if err != nil {
+			log4go.Debug("Failed to parse mime header %q: %v", ctype[0], err)
+		} else {
+			return mediaType
+		}
+	}
+	return ""
+}
+
 func isHTML(r *http.Response) bool {
 	if r == nil {
 		return false
 	}
 	for _, ct := range r.Header["Content-Type"] {
 		if strings.HasPrefix(ct, "text/html") {
-			return true
-		}
-	}
-	return false
-}
-
-func isHandleable(r *http.Response, mm *mimetools.Matcher) bool {
-	for _, ct := range r.Header["Content-Type"] {
-		matched, err := mm.Match(ct)
-		if err == nil && matched {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStore determines if a link should be stored as a parsed link.
-func shouldStore(u *URL) bool {
-	// Could also check extension here, possibly
-	for _, f := range Config.AcceptProtocols {
-		if u.Scheme == f {
 			return true
 		}
 	}

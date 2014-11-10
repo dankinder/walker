@@ -15,33 +15,44 @@
                 </tr>
                 
                 <tr>
-                    <td> ExcludeReason </td>
+                    <td> Exclude Reason (if excluded) </td>
                     <td>  {{.Dinfo.ExcludeReason}} </td>
                 </tr>
                 
                 <tr>
-                    <td> TimeQueued </td>
+                    <td> Last Claimed By Fetcher </td>
                     <td>  {{ftime2 .Dinfo.TimeQueued}} </td>
                 </tr>
                 
                 <tr>
-                    <td> UuidOfQueued </td>
+                    <td> Current Fetcher Claim ID </td>
                     <td>  {{fuuid .Dinfo.UuidOfQueued}} </td>
                 </tr>
                 
                 <tr>
-                    <td> NumberLinksTotal </td>
+                    <td> Total Unique Links </td>
                     <td>  {{.Dinfo.NumberLinksTotal}} </td>
                 </tr>
                 
                 <tr>
-                    <td> NumberLinksQueued </td>
+                    <td> Links Dispatched </td>
                     <td>  {{.Dinfo.NumberLinksQueued}} </td>
                 </tr>
+
+                <tr>
+                    <td> Unique Links Crawled </td>
+                    <td>  {{.NumberCrawled}} </td>
+                </tr>
+
+                <tr>
+                    <td> Unique Links Not Yet Crawled </td>
+                    <td>  {{.Dinfo.NumberLinksUncrawled}} </td>
+                </tr>
+
             </table>
         </div>
     </div>
-    <br><br><br>
+    <br>
 {{end}}
 
 {{if .HasLinks}}
@@ -51,13 +62,13 @@
         {{else}}
             <h2> Links for domain {{.Dinfo.Domain}} </h2>
         {{end}}
-        <table class="console-table table table-striped table-condensed table-bordered ">
+        <table class="console-table table table-condensed table-striped">
             <thead>
                 <th class="col-xs-4"> Link </th>
                 <th class="col-xs-1"> Status </th>
-                <th class="col-xs-1"> Error </th>
-                <th class="col-xs-1"> Excluded </th>
-                <th class="col-xs-2"> Fetched </th>
+                <th class="col-xs-1"> Error? </th>
+                <th class="col-xs-1"> Excluded by robots.txt? </th>
+                <th class="col-xs-2"> Last Fetch </th>
             </thead>
             <tbody>
                 {{range $i, $linfo := .Linfos}}

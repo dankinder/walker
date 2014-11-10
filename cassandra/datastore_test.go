@@ -1,6 +1,6 @@
 // +build cassandra
 
-package test
+package cassandra
 
 import (
 	"fmt"
@@ -8,53 +8,29 @@ import (
 	"net/url"
 	"reflect"
 	"sync"
-
 	"testing"
 	"time"
 
+	"code.google.com/p/log4go"
+
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/helpers"
 )
 
-var initdb sync.Once
+func init() {
+	helpers.LoadTestConfig("test-walker.yaml")
 
-// getDB ensures a walker database is set up and empty, returning a db session
-func getDB(t *testing.T) *gocql.Session {
-	initdb.Do(func() {
-		err := walker.CreateCassandraSchema()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
-	})
-
-	if walker.Config.Cassandra.Keyspace != "walker_test" {
-		t.Fatal("Running tests requires using the walker_test keyspace")
-		return nil
-	}
-	config := walker.GetCassandraConfig()
-	db, err := config.CreateSession()
-	if err != nil {
-		t.Fatalf("Could not connect to local cassandra db: %v", err)
-		return nil
-	}
-
-	tables := []string{"links", "segments", "domain_info"}
-	for _, table := range tables {
-		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
-		if err != nil {
-			t.Fatalf("Failed to truncate table %v: %v", table, err)
-		}
-	}
-
-	return db
+	// For tests it's useful to see more than the default INFO
+	log4go.AddFilter("stdout", log4go.DEBUG, log4go.NewConsoleLogWriter())
 }
 
-// getDS is a convenience function for getting a CassandraDatastore and failing
+// getDS is a convenience function for getting a cassandra datastore and failing
 // if we couldn't
-func getDS(t *testing.T) *walker.CassandraDatastore {
-	ds, err := walker.NewCassandraDatastore()
+func getDS(t *testing.T) *Datastore {
+	ds, err := NewDatastore()
 	if err != nil {
-		t.Fatalf("Failed to create CassandraDatastore: %v", err)
+		t.Fatalf("Failed to create Datastore: %v", err)
 	}
 	return ds
 }
@@ -67,7 +43,7 @@ var page2URL *walker.URL
 var page2Fetch *walker.FetchResults
 
 func init() {
-	page1URL = parse("http://test.com/page1.html")
+	page1URL = helpers.Parse("http://test.com/page1.html")
 	page1Fetch = &walker.FetchResults{
 		URL:       page1URL,
 		FetchTime: time.Now(),
@@ -89,7 +65,7 @@ func init() {
 			},
 		},
 	}
-	page2URL = parse("http://test.com/page2.html")
+	page2URL = helpers.Parse("http://test.com/page2.html")
 	page2Fetch = &walker.FetchResults{
 		URL:       page2URL,
 		FetchTime: time.Now(),
@@ -115,7 +91,7 @@ func init() {
 }
 
 func TestDatastoreBasic(t *testing.T) {
-	db := getDB(t)
+	db := GetTestDB()
 	ds := getDS(t)
 
 	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
@@ -126,7 +102,8 @@ func TestDatastoreBasic(t *testing.T) {
 						VALUES (?, ?, ?, ?, ?)`
 
 	queries := []*gocql.Query{
-		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 0, true),
+		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 1, true),
+		db.Query(insertDomainInfo, "test2.com", gocql.UUID{}, 0, true),
 		db.Query(insertSegment, "test.com", "", "page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "page2.html", "http"),
 		db.Query(insertLink, "test.com", "", "page1.html", "http", walker.NotYetCrawled),
@@ -180,8 +157,8 @@ func TestDatastoreBasic(t *testing.T) {
 			expectedResults, results)
 	}
 
-	ds.StoreParsedURL(parse("http://test2.com/page1-1.html"), page1Fetch)
-	ds.StoreParsedURL(parse("http://test2.com/page2-1.html"), page2Fetch)
+	ds.StoreParsedURL(helpers.Parse("http://test2.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(helpers.Parse("http://test2.com/page2-1.html"), page2Fetch)
 
 	var count int
 	db.Query(`SELECT COUNT(*) FROM links WHERE dom = 'test2.com'`).Scan(&count)
@@ -209,14 +186,14 @@ func TestDatastoreBasic(t *testing.T) {
 }
 
 func TestNewDomainAdditions(t *testing.T) {
-	db := getDB(t)
+	db := GetTestDB()
 	ds := getDS(t)
 
 	origAddNewDomains := walker.Config.AddNewDomains
 	defer func() { walker.Config.AddNewDomains = origAddNewDomains }()
 
 	walker.Config.AddNewDomains = false
-	ds.StoreParsedURL(parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
 
 	var count int
 	db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = 'test.com'`).Scan(&count)
@@ -224,8 +201,13 @@ func TestNewDomainAdditions(t *testing.T) {
 		t.Error("Expected test.com not to be added to domain_info")
 	}
 
+	db.Query(`SELECT COUNT(*) FROM links WHERE dom = 'test.com'`).Scan(&count)
+	if count != 0 {
+		t.Errorf("Expected parsed link not to be inserted for test.com, found %v", count)
+	}
+
 	walker.Config.AddNewDomains = true
-	ds.StoreParsedURL(parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
 
 	err := db.Query(`SELECT COUNT(*) FROM domain_info
 						WHERE dom = 'test.com'
@@ -240,7 +222,7 @@ func TestNewDomainAdditions(t *testing.T) {
 	}
 
 	db.Query(`DELETE FROM domain_info WHERE dom = 'test.com'`).Exec()
-	ds.StoreParsedURL(parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
 	db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = 'test.com'`).Scan(&count)
 	if count != 0 {
 		t.Error("Expected test.com not to be added to domain_info due to cache")
@@ -263,6 +245,7 @@ type LinksExpectation struct {
 	FetchError       string
 	ExcludedByRobots bool
 	Status           int
+	MimeType         string
 }
 
 var StoreURLExpectations []StoreURLExpectation
@@ -271,7 +254,7 @@ func init() {
 	StoreURLExpectations = []StoreURLExpectation{
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       parse("http://test.com/page1.html"),
+				URL:       helpers.Parse("http://test.com/page1.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -279,6 +262,7 @@ func init() {
 						Host: "test.com",
 					},
 				},
+				MimeType: "text/html; charset=ISO-8859-4",
 			},
 			Expected: &LinksExpectation{
 				Domain:    "test.com",
@@ -286,15 +270,17 @@ func init() {
 				Protocol:  "http",
 				CrawlTime: time.Unix(0, 0),
 				Status:    200,
+				MimeType:  "text/html; charset=ISO-8859-4",
 			},
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       parse("http://test.com/page2.html?var1=abc&var2=def"),
+				URL:       helpers.Parse("http://test.com/page2.html?var1=abc&var2=def"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
 				},
+				MimeType: "foo/bar",
 			},
 			Expected: &LinksExpectation{
 				Domain:    "test.com",
@@ -302,11 +288,12 @@ func init() {
 				Protocol:  "http",
 				CrawlTime: time.Unix(0, 0),
 				Status:    200,
+				MimeType:  "foo/bar",
 			},
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:              parse("http://test.com/page3.html"),
+				URL:              helpers.Parse("http://test.com/page3.html"),
 				ExcludedByRobots: true,
 			},
 			Expected: &LinksExpectation{
@@ -319,7 +306,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       parse("http://test.com/page4.html"),
+				URL:       helpers.Parse("http://test.com/page4.html"),
 				FetchTime: time.Unix(1234, 5678),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -335,7 +322,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       parse("https://test.com/page5.html"),
+				URL:       helpers.Parse("https://test.com/page5.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -351,7 +338,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       parse("https://sub.dom1.test.com/page5.html"),
+				URL:       helpers.Parse("https://sub.dom1.test.com/page5.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -370,7 +357,7 @@ func init() {
 }
 
 func TestStoreURLFetchResults(t *testing.T) {
-	db := getDB(t)
+	db := GetTestDB()
 	ds := getDS(t)
 
 	for _, tcase := range StoreURLExpectations {
@@ -379,14 +366,14 @@ func TestStoreURLFetchResults(t *testing.T) {
 
 		actual := &LinksExpectation{}
 		err := db.Query(
-			`SELECT err, robot_ex, stat FROM links
+			`SELECT err, robot_ex, stat, mime FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
 			exp.Domain,
 			exp.Subdomain,
 			exp.Path,
 			exp.Protocol,
 			//exp.CrawlTime,
-		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status)
+		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType)
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
@@ -401,6 +388,10 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if exp.Status != actual.Status {
 			t.Errorf("Expected stat: %v\nBut got: %v\nFor input: %+v",
 				exp.Status, actual.Status, tcase.Input)
+		}
+		if exp.MimeType != actual.MimeType {
+			t.Errorf("Expected mime: %v\nBut got: %v\nFor input: %+v",
+				exp.MimeType, actual.MimeType, tcase.Input)
 		}
 	}
 }
@@ -481,7 +472,7 @@ func TestURLTLD(t *testing.T) {
 }
 
 func TestAddingRedirects(t *testing.T) {
-	db := getDB(t)
+	db := GetTestDB()
 	ds := getDS(t)
 
 	link := func(index int) string {
@@ -489,8 +480,8 @@ func TestAddingRedirects(t *testing.T) {
 	}
 
 	fr := walker.FetchResults{
-		URL:            parse(link(1)),
-		RedirectedFrom: []*walker.URL{parse(link(2)), parse(link(3))},
+		URL:            helpers.Parse(link(1)),
+		RedirectedFrom: []*walker.URL{helpers.Parse(link(2)), helpers.Parse(link(3))},
 		FetchTime:      time.Unix(0, 0),
 	}
 
@@ -506,7 +497,7 @@ func TestAddingRedirects(t *testing.T) {
 	}
 
 	for _, exp := range expected {
-		url := parse(exp.link)
+		url := helpers.Parse(exp.link)
 
 		dom, subdom, _ := url.TLDPlusOneAndSubdomain()
 		itr := db.Query("SELECT redto_url FROM links WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?",
@@ -570,5 +561,113 @@ func TestUnclaimAll(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("test.com has not been correctly undispatched in domain_info after unclaim all")
+	}
+}
+
+func TestClaimHostConcurrency(t *testing.T) {
+	numInstances := 10
+	numDomain := 1000
+
+	db := GetTestDB()
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, 00000000-0000-0000-0000-000000000000, true, 0)`
+	for i := 0; i < numDomain; i++ {
+		err := db.Query(insertDomainInfo, fmt.Sprintf("d%d.com", i)).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert domain d%d.com", i)
+		}
+	}
+	db.Close()
+
+	var startWg, finishWg sync.WaitGroup
+	var hosts [][]string = make([][]string, numInstances)
+	for i := 0; i < numInstances; i++ {
+		finishWg.Add(1)
+		startWg.Add(1)
+		go func(index int) {
+			ds := getDS(t)
+			startWg.Done()
+			startWg.Wait()
+			var h []string
+			for {
+				host := ds.ClaimNewHost()
+				if host == "" {
+					break
+				}
+				h = append(h, host)
+			}
+			hosts[index] = h
+			ds.Close()
+			finishWg.Done()
+		}(i)
+	}
+	finishWg.Wait()
+
+	allDomains := map[string]bool{}
+	for _, hlist := range hosts {
+		for _, host := range hlist {
+			if allDomains[host] {
+				t.Fatalf("Double counted domain %s", host)
+			}
+			allDomains[host] = true
+		}
+	}
+	for i := 0; i < numDomain; i++ {
+		host := fmt.Sprintf("d%d.com", i)
+		if !allDomains[host] {
+			t.Fatalf("Failed to claim domain %s", host)
+		}
+	}
+}
+
+func TestDomainPriority(t *testing.T) {
+	// Implementation note: each domain that is added in the first part of this
+	// test is added with a priority selected from AllowedPriorities. And that
+	// priority is encoded into the domain name. Then in the second part of
+	// this test, domains are pulled out in ClaimNewHost order, and the
+	// priority of each domain is parsed out of the domain name. Because the
+	// priority is embedded in the domain name, it's easy to test that the
+	// domains come out in priority order.
+
+	numPrios := 25
+	db := GetTestDB()
+	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
+	for i := 0; i < numPrios; i++ {
+		for _, priority := range AllowedPriorities {
+			err := db.Query(insertDomainInfo, fmt.Sprintf("d%dLL%d.com", i, priority), priority).Exec()
+			if err != nil {
+				t.Fatalf("Failed to insert domain d%d.com", i)
+			}
+		}
+	}
+	db.Close()
+	ds := getDS(t)
+	var allHosts []string
+	for {
+		host := ds.ClaimNewHost()
+		if host == "" {
+			break
+		}
+		allHosts = append(allHosts, host)
+	}
+	ds.Close()
+
+	expectedAllHostsLength := len(AllowedPriorities) * numPrios
+	if len(allHosts) != expectedAllHostsLength {
+		t.Fatalf("allHosts length mismatch: got %d, expected %d", len(allHosts), expectedAllHostsLength)
+	}
+
+	highestPriority := AllowedPriorities[0] + 1
+	for _, host := range allHosts {
+		var prio, index int
+		n, err := fmt.Sscanf(host, "d%dLL%d.com", &index, &prio)
+		if n != 2 || err != nil {
+			t.Fatalf("Sscanf failed unexpectedly: %d, %v", n, err)
+		}
+
+		if prio > highestPriority {
+			t.Fatalf("Found domain %q out of order: prio = %d, highestPriority = %d", host, prio, highestPriority)
+		}
+
+		highestPriority = prio
 	}
 }

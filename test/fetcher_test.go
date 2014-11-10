@@ -4,14 +4,18 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/helpers"
 	"github.com/stretchr/testify/mock"
 )
+
+const defaultSleep time.Duration = time.Millisecond * 10
 
 const html_body string = `<!DOCTYPE html>
 <html>
@@ -58,34 +62,38 @@ const html_test_links string = `<!DOCTYPE html>
 </div>
 </html>`
 
+func init() {
+	helpers.LoadTestConfig("test-walker.yaml")
+}
+
 func TestBasicFetchManagerRun(t *testing.T) {
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("norobots.com").Once()
 	ds.On("LinksForHost", "norobots.com").Return([]*walker.URL{
-		parse("http://norobots.com/page1.html"),
-		parse("http://norobots.com/page2.html"),
-		parse("http://norobots.com/page3.html"),
+		helpers.Parse("http://norobots.com/page1.html"),
+		helpers.Parse("http://norobots.com/page2.html"),
+		helpers.Parse("http://norobots.com/page3.html"),
 	})
 	ds.On("UnclaimHost", "norobots.com").Return()
 
 	ds.On("ClaimNewHost").Return("robotsdelay1.com").Once()
 	ds.On("LinksForHost", "robotsdelay1.com").Return([]*walker.URL{
-		parse("http://robotsdelay1.com/page4.html"),
-		parse("http://robotsdelay1.com/page5.html"),
+		helpers.Parse("http://robotsdelay1.com/page4.html"),
+		helpers.Parse("http://robotsdelay1.com/page5.html"),
 	})
 	ds.On("UnclaimHost", "robotsdelay1.com").Return()
 
 	ds.On("ClaimNewHost").Return("accept.com").Once()
 	ds.On("LinksForHost", "accept.com").Return([]*walker.URL{
-		parse("http://accept.com/accept_html.html"),
-		parse("http://accept.com/accept_text.txt"),
-		parse("http://accept.com/donthandle"),
+		helpers.Parse("http://accept.com/accept_html.html"),
+		helpers.Parse("http://accept.com/accept_text.txt"),
+		helpers.Parse("http://accept.com/donthandle"),
 	})
 	ds.On("UnclaimHost", "accept.com").Return()
 
 	ds.On("ClaimNewHost").Return("linktests.com").Once()
 	ds.On("LinksForHost", "linktests.com").Return([]*walker.URL{
-		parse("http://linktests.com/links/test.html"),
+		helpers.Parse("http://linktests.com/links/test.html"),
 	})
 	ds.On("UnclaimHost", "linktests.com").Return()
 
@@ -98,40 +106,40 @@ func TestBasicFetchManagerRun(t *testing.T) {
 		mock.AnythingOfType("*walker.URL"),
 		mock.AnythingOfType("*walker.FetchResults")).Return()
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 	h.On("HandleResponse", mock.Anything).Return()
 
-	rs, err := NewMockRemoteServer()
+	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs.SetResponse("http://norobots.com/robots.txt", &MockResponse{Status: 404})
-	rs.SetResponse("http://norobots.com/page1.html", &MockResponse{
+	rs.SetResponse("http://norobots.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://norobots.com/page1.html", &helpers.MockResponse{
 		Body: html_body,
 	})
-	rs.SetResponse("http://robotsdelay1.com/robots.txt", &MockResponse{
+	rs.SetResponse("http://robotsdelay1.com/robots.txt", &helpers.MockResponse{
 		Body: "User-agent: *\nCrawl-delay: 1\n",
 	})
 
 	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
-	rs.SetResponse("http://accept.com/robots.txt", &MockResponse{Status: 404})
-	rs.SetResponse("http://accept.com/accept_html.html", &MockResponse{
-		ContentType: "text/html",
+	rs.SetResponse("http://accept.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://accept.com/accept_html.html", &helpers.MockResponse{
+		ContentType: "text/html; charset=ISO-8859-4",
 		Body:        html_body_nolinks,
 	})
-	rs.SetResponse("http://accept.com/accept_text.txt", &MockResponse{
+	rs.SetResponse("http://accept.com/accept_text.txt", &helpers.MockResponse{
 		ContentType: "text/plain",
 	})
-	rs.SetResponse("http://accept.com/donthandle", &MockResponse{
+	rs.SetResponse("http://accept.com/donthandle", &helpers.MockResponse{
 		ContentType: "foo/bar",
 	})
-	rs.SetResponse("http://linktests.com/links/test.html", &MockResponse{
+	rs.SetResponse("http://linktests.com/links/test.html", &helpers.MockResponse{
 		Body: html_test_links,
 	})
 	manager := &walker.FetchManager{
 		Datastore: ds,
 		Handler:   h,
-		Transport: GetFakeTransport(),
+		Transport: helpers.GetFakeTransport(),
 	}
 
 	go manager.Start()
@@ -171,8 +179,15 @@ func TestBasicFetchManagerRun(t *testing.T) {
 	}
 
 	// Link tests to ensure we resolve URLs to proper absolute forms
+	expectedMimesFound := map[string]string{
+		"http://accept.com/donthandle":       "foo/bar",
+		"http://accept.com/accept_text.txt":  "text/plain",
+		"http://accept.com/accept_html.html": "text/html",
+	}
+
 	for _, call := range ds.Calls {
-		if call.Method == "StoreParsedURL" {
+		switch call.Method {
+		case "StoreParsedURL":
 			u := call.Arguments.Get(0).(*walker.URL)
 			fr := call.Arguments.Get(1).(*walker.FetchResults)
 			if fr.URL.String() != "http://linktests.com/links/test.html" {
@@ -189,7 +204,22 @@ func TestBasicFetchManagerRun(t *testing.T) {
 			default:
 				t.Errorf("StoreParsedURL call we didn't expect: %v", u)
 			}
+
+		case "StoreURLFetchResults":
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			link := fr.URL.String()
+			mime, mimeOk := expectedMimesFound[link]
+			if mimeOk {
+				delete(expectedMimesFound, link)
+				if fr.MimeType != mime {
+					t.Errorf("StoreURLFetchResults for link %v, got mime type %q, expected %q",
+						link, fr.MimeType, mime)
+				}
+			}
 		}
+	}
+	for link := range expectedMimesFound {
+		t.Errorf("StoreURLFetchResults expected to find mime type for link %v, but didn't", link)
 	}
 
 	ds.AssertExpectations(t)
@@ -201,14 +231,14 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = true
 
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("private.com").Once()
 	ds.On("UnclaimHost", "private.com").Return()
 	ds.On("ClaimNewHost").Return("")
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 
-	rs, err := NewMockRemoteServer()
+	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,11 +246,11 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	manager := &walker.FetchManager{
 		Datastore: ds,
 		Handler:   h,
-		Transport: GetFakeTransport(),
+		Transport: helpers.GetFakeTransport(),
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 1)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	rs.Stop()
 
@@ -233,24 +263,54 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	ds.AssertNotCalled(t, "LinksForHost", "private.com")
 }
 
+func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
+	orig := walker.Config.BlacklistPrivateIPs
+	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
+	walker.Config.BlacklistPrivateIPs = true
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a1234567890bcde.com").Once()
+	ds.On("LinksForHost", "a1234567890bcde.com").Return([]*walker.URL{
+		helpers.Parse("http://a1234567890bcde.com/"),
+	})
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("UnclaimHost", "a1234567890bcde.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	h := &helpers.MockHandler{}
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(defaultSleep)
+	manager.Stop()
+
+	ds.AssertExpectations(t)
+	h.AssertExpectations(t)
+}
+
 func TestFetcherCreatesTransport(t *testing.T) {
 	orig := walker.Config.BlacklistPrivateIPs
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = false
 
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("localhost.localdomain").Once()
 	ds.On("LinksForHost", "localhost.localdomain").Return([]*walker.URL{
-		parse("http://localhost.localdomain/"),
+		helpers.Parse("http://localhost.localdomain/"),
 	})
 	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	ds.On("UnclaimHost", "localhost.localdomain").Return()
 	ds.On("ClaimNewHost").Return("")
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 	h.On("HandleResponse", mock.Anything).Return()
 
-	rs, err := NewMockRemoteServer()
+	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +321,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 1)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	rs.Stop()
 
@@ -285,24 +345,24 @@ func TestRedirects(t *testing.T) {
 		return fmt.Sprintf("http://sub.dom.com/page%d.html", index)
 	}
 
-	roundTriper := mapRoundTrip{
-		responses: map[string]*http.Response{
-			link(1): response307(link(2)),
-			link(2): response307(link(3)),
-			link(3): response200(),
+	roundTriper := helpers.MapRoundTrip{
+		Responses: map[string]*http.Response{
+			link(1): helpers.Response307(link(2)),
+			link(2): helpers.Response307(link(3)),
+			link(3): helpers.Response200(),
 		},
 	}
 
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("dom.com").Once()
 	ds.On("LinksForHost", "dom.com").Return([]*walker.URL{
-		parse(link(1)),
+		helpers.Parse(link(1)),
 	})
 	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	ds.On("UnclaimHost", "dom.com").Return()
 	ds.On("ClaimNewHost").Return("")
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 	h.On("HandleResponse", mock.Anything).Return()
 
 	manager := &walker.FetchManager{
@@ -312,7 +372,7 @@ func TestRedirects(t *testing.T) {
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 	if len(h.Calls) < 1 {
 		t.Fatalf("Expected to find calls made to handler, but didn't")
@@ -337,7 +397,6 @@ func TestRedirects(t *testing.T) {
 }
 
 func TestHrefWithSpace(t *testing.T) {
-
 	testPage := "http://t.com/page1.html"
 	const html_with_href_space = `<!DOCTYPE html>
 <html>
@@ -356,10 +415,10 @@ func TestHrefWithSpace(t *testing.T) {
 </div>
 </html>`
 
-	ds := &MockDatastore{}
+	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("t.com").Once()
 	ds.On("LinksForHost", "t.com").Return([]*walker.URL{
-		parse(testPage),
+		helpers.Parse(testPage),
 	})
 	ds.On("UnclaimHost", "t.com").Return()
 	ds.On("ClaimNewHost").Return("")
@@ -369,14 +428,14 @@ func TestHrefWithSpace(t *testing.T) {
 		mock.AnythingOfType("*walker.URL"),
 		mock.AnythingOfType("*walker.FetchResults")).Return()
 
-	h := &MockHandler{}
+	h := &helpers.MockHandler{}
 	h.On("HandleResponse", mock.Anything).Return()
 
-	rs, err := NewMockRemoteServer()
+	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs.SetResponse(testPage, &MockResponse{
+	rs.SetResponse(testPage, &helpers.MockResponse{
 		ContentType: "text/html",
 		Body:        html_with_href_space,
 	})
@@ -384,11 +443,11 @@ func TestHrefWithSpace(t *testing.T) {
 	manager := &walker.FetchManager{
 		Datastore: ds,
 		Handler:   h,
-		Transport: GetFakeTransport(),
+		Transport: helpers.GetFakeTransport(),
 	}
 
 	go manager.Start()
-	time.Sleep(time.Second * 2)
+	time.Sleep(defaultSleep)
 	manager.Stop()
 
 	rs.Stop()
@@ -434,4 +493,442 @@ func TestHrefWithSpace(t *testing.T) {
 
 	ds.AssertExpectations(t)
 	h.AssertExpectations(t)
+}
+
+func TestHttpTimeout(t *testing.T) {
+	origTimeout := walker.Config.HttpTimeout
+	walker.Config.HttpTimeout = "200ms"
+	defer func() {
+		walker.Config.HttpTimeout = origTimeout
+	}()
+
+	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
+
+		ds := &helpers.MockDatastore{}
+		ds.On("ClaimNewHost").Return("t1.com").Once()
+		ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+			helpers.Parse("http://t1.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t1.com").Return()
+
+		ds.On("ClaimNewHost").Return("t2.com").Once()
+		ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
+			helpers.Parse("http://t2.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t2.com").Return()
+
+		ds.On("ClaimNewHost").Return("t3.com").Once()
+		ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
+			helpers.Parse("http://t3.com/page1.html"),
+		})
+		ds.On("UnclaimHost", "t3.com").Return()
+
+		ds.On("ClaimNewHost").Return("")
+
+		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+		ds.On("StoreParsedURL",
+			mock.AnythingOfType("*walker.URL"),
+			mock.AnythingOfType("*walker.FetchResults")).Return()
+
+		h := &helpers.MockHandler{}
+		h.On("HandleResponse", mock.Anything).Return()
+
+		var transport *helpers.CancelTrackingTransport
+		var closer io.Closer
+		if timeoutType == "wontConnect" {
+			transport, closer = helpers.GetWontConnectTransport()
+		} else {
+			transport, closer = helpers.GetStallingReadTransport()
+		}
+
+		manager := &walker.FetchManager{
+			Datastore: ds,
+			Handler:   h,
+			Transport: transport,
+		}
+
+		go manager.Start()
+		time.Sleep(time.Second * 2)
+		manager.Stop()
+		closer.Close()
+
+		canceled := map[string]bool{}
+		for k := range transport.Canceled {
+			canceled[k] = true
+		}
+
+		expected := map[string]bool{
+			"http://t1.com/page1.html": true,
+			"http://t2.com/page1.html": true,
+			"http://t3.com/page1.html": true,
+		}
+
+		for k := range expected {
+			if !canceled[k] {
+				t.Errorf("For timeoutType %q Expected to find canceled http get for %q, but didn't", timeoutType, k)
+			}
+		}
+
+		if len(h.Calls) > 0 {
+			t.Fatalf("For timeoutType %q Fetcher shouldn't have been able to connect, but did", timeoutType)
+		}
+	}
+}
+
+func TestMetaNos(t *testing.T) {
+	origHonorNoindex := walker.Config.HonorMetaNoindex
+	origHonorNofollow := walker.Config.HonorMetaNofollow
+	defer func() {
+		walker.Config.HonorMetaNoindex = origHonorNoindex
+		walker.Config.HonorMetaNofollow = origHonorNofollow
+	}()
+	walker.Config.HonorMetaNoindex = true
+	walker.Config.HonorMetaNofollow = true
+
+	const nofollowHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="ROBOTS" content="NoFollow">
+<title>No Links</title>
+</head>
+<div id="menu">
+	<a href="relative-dir/">link</a>
+	<a href="relative-page/page.html">link</a>
+	<a href="/abs-relative-dir/">link</a>
+	<a href="/abs-relative-page/page.html">link</a>
+	<a href="https://other.org/abs-dir/">link</a>
+	<a href="https://other.org/abs-page/page.html">link</a>
+</div>
+</html>`
+
+	const noindexHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="ROBOTS" content="noindex">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+</html>`
+
+	const bothHtml string = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="ROBOTS" content="noindeX, nofoLLow">
+<title>No Links</title>
+</head>
+<div id="menu">
+	<a href="relative-dirX/">link</a>
+	<a href="relative-pageX/page.html">link</a>
+	<a href="/abs-relative-dirX/">link</a>
+	<a href="/abs-relative-pageX/page.html">link</a>
+	<a href="https://other.org/abs-dirX/">link</a>
+	<a href="https://other.org/abs-pageX/page.html">link</a>
+</div>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		helpers.Parse("http://t1.com/nofollow.html"),
+		helpers.Parse("http://t1.com/noindex.html"),
+		helpers.Parse("http://t1.com/both.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/nofollow.html", &helpers.MockResponse{
+		Body: nofollowHtml,
+	})
+	rs.SetResponse("http://t1.com/noindex.html", &helpers.MockResponse{
+		Body: noindexHtml,
+	})
+	rs.SetResponse("http://t1.com/both.html", &helpers.MockResponse{
+		Body: bothHtml,
+	})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(defaultSleep)
+	manager.Stop()
+
+	rs.Stop()
+
+	// Did the fetcher honor noindex (if noindex is set
+	// the handler shouldn't be called)
+	callCount := 0
+	for _, call := range h.Calls {
+		fr := call.Arguments.Get(0).(*walker.FetchResults)
+		link := fr.URL.String()
+		switch link {
+		case "http://t1.com/nofollow.html":
+			callCount++
+		default:
+			t.Errorf("Fetcher did not honor noindex in meta link = %s", link)
+		}
+	}
+	if callCount != 1 {
+		t.Errorf("Expected call to handler for nofollow.html, but didn't get it")
+	}
+
+	// Did the fetcher honor nofollow (if nofollow is set fetcher
+	// shouldn't follow any links)
+	callCount = 0
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			callCount++
+		}
+	}
+	if callCount != 0 {
+		t.Errorf("Fetcher did not honor nofollow in meta: expected 0 callCount, found %d", callCount)
+	}
+}
+
+func TestFetchManagerFastShutdown(t *testing.T) {
+	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
+	defer func() {
+		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
+	}()
+	walker.Config.DefaultCrawlDelay = 1
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("test.com").Once()
+	ds.On("LinksForHost", "test.com").Return([]*walker.URL{
+		helpers.Parse("http://test.com/page1.html"),
+		helpers.Parse("http://test.com/page2.html"),
+	})
+	ds.On("UnclaimHost", "test.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   &helpers.MockHandler{},
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(defaultSleep)
+	manager.Stop()
+
+	expectedCall := false
+	for _, call := range ds.Calls {
+		switch call.Method {
+		case "StoreURLFetchResults":
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			link := fr.URL.String()
+			switch link {
+			case "http://test.com/page1.html":
+				expectedCall = true
+			default:
+				t.Errorf("Got unexpected StoreURLFetchResults call for %v", link)
+			}
+		}
+	}
+	if !expectedCall {
+		t.Errorf("Did not get expected StoreURLFetchResults call for http://test.com/page1.html")
+	}
+
+	ds.AssertExpectations(t)
+}
+
+func TestObjectEmbedIframeTags(t *testing.T) {
+	origHonorNoindex := walker.Config.HonorMetaNoindex
+	origHonorNofollow := walker.Config.HonorMetaNofollow
+	defer func() {
+		walker.Config.HonorMetaNoindex = origHonorNoindex
+		walker.Config.HonorMetaNofollow = origHonorNofollow
+	}()
+	walker.Config.HonorMetaNoindex = true
+	walker.Config.HonorMetaNofollow = true
+
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<body>
+	<object data="/object_data/page.html" />
+	<iframe src="/iframe_src/page.html"> </iframe>
+	<embed src="/embed_src/page.html" />
+	<iframe srcdoc="<a href=/iframe_srcdoc/page.html > Link </a>" />
+</body>
+</html>`
+
+	// The ifframe that looks like this
+	//    <iframe srcdoc="<a href = \"/iframe_srcdoc/page.html\" > Link </a>" />
+	// does not appear to be handled correctly by golang-html. The embedded quotes
+	// are failing. But the version I have above does work (even though it's wonky)
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		helpers.Parse("http://t1.com/target.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
+		Body: html,
+	})
+	rs.SetResponse("http://t1.com/object_data/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/iframe_srcdoc/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/iframe_src/page.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://t1.com/embed_src/page.html", &helpers.MockResponse{Status: 404})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(defaultSleep)
+	manager.Stop()
+
+	rs.Stop()
+
+	expectedStores := map[string]bool{
+		"http://t1.com/object_data/page.html":   true,
+		"http://t1.com/iframe_srcdoc/page.html": true,
+		"http://t1.com/iframe_src/page.html":    true,
+		"http://t1.com/embed_src/page.html":     true,
+	}
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			u := call.Arguments.Get(0).(*walker.URL)
+			if expectedStores[u.String()] {
+				delete(expectedStores, u.String())
+			}
+		}
+	}
+
+	for link := range expectedStores {
+		t.Errorf("Expected to encounter link %q, but didn't", link)
+	}
+}
+
+func TestPathInclusion(t *testing.T) {
+	origHonorNoindex := walker.Config.ExcludeLinkPatterns
+	origHonorNofollow := walker.Config.IncludeLinkPatterns
+	defer func() {
+		walker.Config.ExcludeLinkPatterns = origHonorNoindex
+		walker.Config.IncludeLinkPatterns = origHonorNofollow
+	}()
+	walker.Config.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
+	walker.Config.IncludeLinkPatterns = []string{`\.keep$`}
+
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<body>
+	<div id="menu">
+		<a href="/foo/bar.html">yes</a>
+		<a href="/foo/bar.mov">no</a>
+		<a href="/foo/mov.bar">yes</a>
+		<a href="/janky/page.html">no</a>
+		<a href="/foo/janky.html">no</a>
+		<a href="/foo/bang/baz.html">no</a>
+		<a href="/foo/bang/baz.keep">yes</a>
+		<a href="/root">no</a>
+		<a href="/root/more">yes</a>
+	</div>
+</body>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("t1.com").Once()
+	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		helpers.Parse("http://t1.com/target.html"),
+	})
+	ds.On("UnclaimHost", "t1.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
+		Body: html,
+	})
+	expectedPaths := map[string]bool{
+		"/foo/bar.html":      true,
+		"/foo/mov.bar":       true,
+		"/foo/bang/baz.keep": true,
+		"/root/more":         true,
+	}
+	for path := range expectedPaths {
+		rs.SetResponse(fmt.Sprintf("http://t1.com%s", path), &helpers.MockResponse{Status: 404})
+	}
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(defaultSleep)
+	manager.Stop()
+
+	rs.Stop()
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreParsedURL" {
+			u := call.Arguments.Get(0).(*walker.URL)
+			if expectedPaths[u.RequestURI()] {
+				delete(expectedPaths, u.RequestURI())
+			} else {
+				t.Errorf("Unexected call to StoreParsedURL for link %v", u)
+			}
+		}
+	}
+
+	for path := range expectedPaths {
+		t.Errorf("StoreParsedURL not called for %v, but should have been", path)
+	}
+
 }

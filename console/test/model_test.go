@@ -3,12 +3,12 @@ package test
 import (
 	"fmt"
 	"sync"
-
 	"testing"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
 )
 
@@ -16,9 +16,11 @@ import (
 // Config alteration right up front
 //
 func modifyConfigDataSource() {
-	walker.Config.Cassandra.Keyspace = "walker_test_model"
-	walker.Config.Cassandra.Hosts = []string{"localhost"}
-	walker.Config.Cassandra.ReplicationFactor = 1
+	source := "test-walker.yaml"
+	err := walker.ReadConfigFile(source)
+	if err != nil {
+		panic(err)
+	}
 }
 
 //
@@ -171,33 +173,37 @@ func timeClose(l time.Time, r time.Time) bool {
 
 //Shared Domain Information
 var bazDomain = console.DomainInfo{
-	Domain:            "baz.com",
-	NumberLinksTotal:  1,
-	NumberLinksQueued: 1,
-	TimeQueued:        testTime,
-	UuidOfQueued:      bazUuid,
+	Domain:               "baz.com",
+	NumberLinksTotal:     1,
+	NumberLinksQueued:    1,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           testTime,
+	UuidOfQueued:         bazUuid,
 }
 
 var fooDomain = console.DomainInfo{
-	Domain:            "foo.com",
-	NumberLinksTotal:  2,
-	NumberLinksQueued: 0,
-	TimeQueued:        walker.NotYetCrawled,
+	Domain:               "foo.com",
+	NumberLinksTotal:     2,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           walker.NotYetCrawled,
 }
 
 var barDomain = console.DomainInfo{
-	Domain:            "bar.com",
-	NumberLinksTotal:  0,
-	NumberLinksQueued: 0,
-	TimeQueued:        walker.NotYetCrawled,
+	Domain:               "bar.com",
+	NumberLinksTotal:     0,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	TimeQueued:           walker.NotYetCrawled,
 }
 
 var testDomain = console.DomainInfo{
-	Domain:            "test.com",
-	NumberLinksTotal:  8,
-	NumberLinksQueued: 2,
-	TimeQueued:        testTime,
-	UuidOfQueued:      gocql.UUID{},
+	Domain:               "test.com",
+	NumberLinksTotal:     8,
+	NumberLinksQueued:    2,
+	NumberLinksUncrawled: 8,
+	TimeQueued:           testTime,
+	UuidOfQueued:         gocql.UUID{},
 }
 
 type updatedInDb struct {
@@ -235,7 +241,7 @@ func getDs(t *testing.T) *console.CqlModel {
 		if err != nil {
 			panic(fmt.Errorf("Failed to drop %s keyspace: %v", walker.Config.Cassandra.Keyspace, err))
 		}
-		err = walker.CreateCassandraSchema()
+		err = cassandra.CreateSchema()
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
@@ -263,11 +269,10 @@ func getDs(t *testing.T) *console.CqlModel {
 	//
 	// Insert some data
 	//
-	insertDomainInfo := `INSERT INTO domain_info (dom) VALUES (?)`
-	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched) VALUES (?, ?, ?, true)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 0)`
+	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 0)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-
 	queries := []*gocql.Query{
 		db.Query(insertDomainToCrawl, "test.com", gocql.UUID{}, testTime),
 		db.Query(insertLink, "test.com", "", "/page1.html", "http", walker.NotYetCrawled, 200, "", false),
@@ -283,11 +288,11 @@ func getDs(t *testing.T) *console.CqlModel {
 		db.Query(insertSegment, "test.com", "", "/page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "/page2.html", "http"),
 
-		db.Query(insertDomainInfo, "foo.com"),
+		db.Query(insertDomainInfo, "foo.com", walker.NotYetCrawled),
 		db.Query(insertLink, "foo.com", "sub", "/page1.html", "http", fooTime, 200, "", false),
 		db.Query(insertLink, "foo.com", "sub", "/page2.html", "http", fooTime, 200, "", false),
 
-		db.Query(insertDomainInfo, "bar.com"),
+		db.Query(insertDomainInfo, "bar.com", walker.NotYetCrawled),
 
 		db.Query(insertDomainToCrawl, "baz.com", bazUuid, testTime),
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[0].CrawlTime, 200, "", false),
@@ -364,7 +369,6 @@ func getDs(t *testing.T) *console.CqlModel {
 		if err != nil {
 			panic(err)
 		}
-
 		if domain == "baz.com" {
 			foundBaz = true
 			break
@@ -372,12 +376,12 @@ func getDs(t *testing.T) *console.CqlModel {
 
 		beforeBazComLink = url
 	}
-	if !foundBaz {
-		panic("Unable to find domain before baz.com")
-	}
 	err = itr.Close()
 	if err != nil {
 		panic(fmt.Errorf("beforeBazCom link iterator error: %v", err))
+	}
+	if !foundBaz {
+		panic("Unable to find domain before baz.com")
 	}
 	if beforeBazComLink == nil {
 		bazSeed = ""
@@ -460,6 +464,9 @@ func TestListDomains(t *testing.T) {
 			if got.NumberLinksQueued != exp.NumberLinksQueued {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksQueued mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
 			}
+			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
+			}
 			if !timeClose(got.TimeQueued, exp.TimeQueued) {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' TimeQueued mismatch got %v, expected %v", got.Domain, test.tag, got.TimeQueued, exp.TimeQueued)
 			}
@@ -525,6 +532,9 @@ func TestFindDomain(t *testing.T) {
 		}
 		if got.NumberLinksQueued != exp.NumberLinksQueued {
 			t.Errorf("FindDomain %s NumberLinksQueued mismatch got %v, expected %v", test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
+		}
+		if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+			t.Errorf("FindDomain with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 		}
 		if !timeClose(got.TimeQueued, exp.TimeQueued) {
 			t.Errorf("FindDomain %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)
@@ -594,6 +604,9 @@ func TestListWorkingDomains(t *testing.T) {
 			}
 			if got.NumberLinksQueued != exp.NumberLinksQueued {
 				t.Errorf("ListWorkingDomains %s NumberLinksQueued mismatch got %v, expected %v", test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
+			}
+			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
+				t.Errorf("ListWorkingDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 			}
 			if !timeClose(got.TimeQueued, exp.TimeQueued) {
 				t.Errorf("ListWorkingDomains %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)

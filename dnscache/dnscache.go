@@ -1,4 +1,7 @@
-package walker
+/*
+Package dnscache implements a Dial function that will cache DNS resolutions
+*/
+package dnscache
 
 import (
 	"net"
@@ -15,20 +18,21 @@ import (
 //    likely usecase will be to retry a few times (in which case we don't want
 //    caching) and then not bother crawling this host at all
 
-// DNSCachingDial wraps the given dial function with Caching of DNS
-// resolutions. When a hostname is found in the cache it will call the provided
-// dial with the IP address instead of the hostname, so no DNS lookup need be
-// performed. It will also cache DNS failures.
+// Dial wraps the given dial function with Caching of DNS resolutions. When a
+// hostname is found in the cache it will call the provided dial with the IP
+// address instead of the hostname, so no DNS lookup need be performed. It will
+// also cache DNS failures.
 //
-func DNSCachingDial(dial func(network, addr string) (net.Conn, error), maxEntries int) func(network, addr string) (net.Conn, error) {
-	if dial == nil {
-		dial = net.Dial
+// If the given wrappedDial is nil, net.Dial will be automatically used.
+func Dial(wrappedDial func(network, addr string) (net.Conn, error), maxEntries int) func(network, addr string) (net.Conn, error) {
+	if wrappedDial == nil {
+		wrappedDial = net.Dial
 	}
 	c := &dnsCache{
-		wrappedDial: dial,
+		wrappedDial: wrappedDial,
 		cache:       lrucache.New(maxEntries),
 	}
-	return c.dial
+	return c.cachingDial
 }
 
 // dnsCache wraps a net.Dial-type function with it's own version that will
@@ -46,7 +50,7 @@ type hostrecord struct {
 	lastQuery   time.Time
 }
 
-func (c *dnsCache) dial(network, addr string) (net.Conn, error) {
+func (c *dnsCache) cachingDial(network, addr string) (net.Conn, error) {
 	mapEntryName := network + addr
 	c.mu.RLock()
 	if entry, ok := c.cache.Get(mapEntryName); ok {

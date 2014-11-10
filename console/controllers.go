@@ -307,6 +307,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 
 	mp := map[string]interface{}{
 		"Dinfo":           dinfo,
+		"NumberCrawled":   dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
 		"HasHeader":       needHeader,
 		"HasLinks":        len(linfos) > 0,
 		"Linfos":          linfos,
