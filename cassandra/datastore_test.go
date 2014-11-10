@@ -524,7 +524,7 @@ func TestAddingRedirects(t *testing.T) {
 }
 
 func TestUnclaimAll(t *testing.T) {
-	db := getDB(t)
+	db := GetTestDB()
 	ds := getDS(t)
 
 	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
