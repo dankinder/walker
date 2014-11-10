@@ -35,6 +35,8 @@ type Dispatcher struct {
 	// synchronizes generators that are currently working, so we can wait for
 	// them to finish before we start a new domain iteration
 	generatingWG sync.WaitGroup
+
+	minRecrawlDelta time.Duration
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -48,6 +50,13 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
+
+	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
+	if err != nil {
+		// This shouldn't happen since MinLinkRefreshTime is parsed during config
+		// load.
+		panic(err)
+	}
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
@@ -211,6 +220,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 
 	// cell push will push the argument cell onto one of the three link-lists.
 	// logs failure if CreateURL fails.
+	var now = time.Now()
 	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
 	cell_push := func(c *cell) {
 		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
@@ -226,8 +236,12 @@ func (d *Dispatcher) generateSegment(domain string) error {
 				uncrawledLinks = append(uncrawledLinks, u)
 			}
 		} else {
-			heap.Push(&crawledLinks, u)
+			// Was this link crawled less than MinLinkRefreshTime?
+			if c.crawl_time.Add(d.minRecrawlDelta).Before(now) {
+				heap.Push(&crawledLinks, u)
+			}
 		}
+
 		return
 	}
 

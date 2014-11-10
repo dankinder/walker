@@ -57,6 +57,7 @@ type WalkerConfig struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
 		RefreshPercentage    float64 `yaml:"refresh_percentage"`
 		NumConcurrentDomains int     `yaml:"num_concurrent_domains"`
+		MinLinkRefreshTime   string  `yaml:"min_link_refresh_time"`
 	} `yaml:"dispatcher"`
 
 	// TODO: consider these config items
@@ -133,6 +134,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
 	Config.Dispatcher.NumConcurrentDomains = 1
+	Config.Dispatcher.MinLinkRefreshTime = "0s"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
@@ -182,6 +184,11 @@ func assertConfigInvariants() error {
 	_, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
 	if err != nil {
 		errs = append(errs, err.Error())
+	}
+
+	_, err = time.ParseDuration(Config.Dispatcher.MinLinkRefreshTime)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
 	}
 
 	if len(errs) > 0 {

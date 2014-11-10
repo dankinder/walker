@@ -81,6 +81,11 @@ dispatcher:
     # How many concurrent dispatching threads will be run at once (must be >0)
     num_concurrent_domains: 1
 
+    # A duration specifying the minimum amount of time that must pass between re-crawling 
+    # a specific link. Examples: 100ms, 4us, 0s, 7h. [NOTE: hour, 'h', is the largest time 
+    # unit supported]
+    min_link_refresh_time: 0s
+
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object
 # (https://godoc.org/github.com/gocql/gocql#ClusterConfig).
