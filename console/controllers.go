@@ -324,19 +324,17 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	mp := map[string]interface{}{
-		"Dinfo":         dinfo,
-		"NumberCrawled": dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
-		"HasHeader":     needHeader,
-		"HasLinks":      len(linfos) > 0,
-		"Linfos":        linfos,
-
+		"Dinfo":             dinfo,
+		"NumberCrawled":     dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
+		"HasHeader":         needHeader,
+		"HasLinks":          len(linfos) > 0,
+		"Linfos":            linfos,
 		"NextSeedUrl":       nextSeedUrl,
 		"FilterUrlSuffix":   filterUrlSuffix,
 		"FilterRegexSuffix": filterRegexSuffix,
-
-		"NextButtonClass": nextButtonClass,
-		"PrevButtonClass": prevButtonClass,
-		"HistoryLinks":    historyLinks,
+		"NextButtonClass":   nextButtonClass,
+		"PrevButtonClass":   prevButtonClass,
+		"HistoryLinks":      historyLinks,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -458,7 +456,10 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
-		mp := map[string]interface{}{}
+		mp := map[string]interface{}{
+			"InputDomainValue": "",
+			"InputRegexValue":  "",
+		}
 		Render.HTML(w, http.StatusOK, "filterLinks", mp)
 		return
 	}
@@ -477,12 +478,31 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	dinfo, err := DS.FindDomain(domain[0])
+	if dinfo == nil || err != nil {
+		reason := "Domain not found"
+		if err != nil {
+			reason = err.Error()
+		}
+		estring := fmt.Sprintf("Failed to find domain %q: %v", domain[0], reason)
+		mp := map[string]interface{}{
+			"HasErrorMessage":  true,
+			"ErrorMessage":     []string{estring},
+			"InputDomainValue": domain[0],
+			"InputRegexValue":  regex[0],
+		}
+		Render.HTML(w, http.StatusOK, "filterLinks", mp)
+		return
+	}
+
 	_, err = regexp.Compile(regex[0])
 	if err != nil {
 		err = fmt.Errorf("Failed to compile regex %q: %v", regex[0], err)
 		mp := map[string]interface{}{
-			"HasErrorMessage": true,
-			"ErrorMessage":    []string{err.Error()},
+			"HasErrorMessage":  true,
+			"ErrorMessage":     []string{err.Error()},
+			"InputDomainValue": domain[0],
+			"InputRegexValue":  regex[0],
 		}
 		Render.HTML(w, http.StatusOK, "filterLinks", mp)
 		return
