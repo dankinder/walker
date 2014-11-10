@@ -288,42 +288,5 @@ Useful for something like:
 	}
 	walkerCommand.AddCommand(consoleCommand)
 
-	cleandbCommand := &cobra.Command{
-		Use:   "cleandb",
-		Short: "Reset dispatched domains to undispatched state",
-		//TODO: auto-reset domain segments based on claim time and
-		//		remove/deprecate this command
-		Long: `If a crawler has claimed a domain and crashed, it will prevent
-crawling that domain until it is manually unclaimed. This tool deletes all
-generated segments and resets all domains to the undispatched state
-(CassandraDatastore only).
-`,
-		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
-
-			if commander.Datastore == nil {
-				ds, err := walker.NewCassandraDatastore()
-				if err != nil {
-					fatalf("Failed creating Cassandra datastore: %v", err)
-				}
-				commander.Datastore = ds
-			}
-
-			unclaimer, ok := commander.Datastore.(interface {
-				UnclaimAll() error
-			})
-			if !ok {
-				fmt.Print("Cannot cleandb with a datastore that does not implement UnclaimAll")
-				return
-			}
-
-			err := unclaimer.UnclaimAll()
-			if err != nil {
-				panic(err.Error())
-			}
-		},
-	}
-	walkerCommand.AddCommand(cleandbCommand)
-
 	commander.Command = walkerCommand
 }

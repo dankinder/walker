@@ -191,16 +191,3 @@ func TestSchemaCommand(t *testing.T) {
 		t.Fatalf("test.cql has unexpected contents: %v", f)
 	}
 }
-
-func TestCleandbCommand(t *testing.T) {
-	datastore := &MockDatastore{}
-	datastore.On("UnclaimAll").Return(nil)
-	cmd.Datastore(datastore)
-
-	orig := os.Args
-	defer func() { os.Args = orig }()
-	os.Args = []string{os.Args[0], "cleandb"}
-	cmd.Execute()
-
-	datastore.AssertExpectations(t)
-}
