@@ -67,7 +67,10 @@ type Model interface {
 	// Close the data store after you're done with it
 	Close()
 
-	// InsertLinks queues a set of URLS to be crawled. If excludeReason
+	// InsertLinks queues a set of URLS to be crawled. If excludeDomainReason
+	// is a non-empty string, then all the domains (TLD+1) of the links list
+	// will be added/set as excluded with the exclude reason set to
+	// excludeDomainReason.
 	InsertLinks(links []string, excludeDomainReason string) []error
 
 	// Find a specific domain
