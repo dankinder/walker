@@ -33,6 +33,7 @@ func Routes() []Route {
 		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
+		Route{Path: "/filterLinks", Controller: FilterLinksController},
 	}
 }
 
@@ -432,6 +433,11 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
+}
+
+func FilterLinksController(w http.ResponseWriter, req *http.Request) {
+	mp := map[string]interface{}{}
+	Render.HTML(w, http.StatusOK, "filterLinks", mp)
 }
 
 func assureScheme(url string) (string, error) {

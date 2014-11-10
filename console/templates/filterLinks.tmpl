@@ -1,0 +1,51 @@
+<style>
+.outline {
+    border: 1px solid black;
+    border-radius: 10px;
+}
+
+.box input {
+    width: 100%;
+    margin: 20px;
+}
+
+.button-box input {
+    width: 50%;
+    margin: 20px;
+}
+</style>
+
+<h2>Filter Links</h2>
+
+<div class="outline">
+
+    <form role="form" action="/findLinks" method="post">
+
+        <div class="row">
+            <div style="text-align: right" class="col-xs-2">
+                <h3> Domain </h3>
+            </div>
+            <div class="box col-xs-8">
+                <input type="text" name="domain" placeholder="Enter domain of sought links" value="">
+            </div>
+        </div>
+
+        <div class="row">
+            <div style="text-align: right" class="col-xs-2">
+                <h3> Link Regex </h3>
+            </div>
+            <div class="box col-xs-8">
+                <input type="text" name="regex" placeholder="Enter regex to use as link filter" value="">
+            </div>
+        </div>
+
+         <div class="row">
+            <div class="col-xs-2"></div>
+
+            <div class="button-box col-xs-8">
+                <input type="submit" value="Submit" />
+            </div>
+
+         </div>    
+    </form>
+</div>
