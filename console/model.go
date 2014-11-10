@@ -91,10 +91,6 @@ type Model interface {
 
 	// Find a link
 	FindLink(link string) (*LinkInfo, error)
-
-	// Find a link given exact domain/subdomain, and a regex to select path .
-	// At most limit results will be returned.
-	FindLinkPattern(domain string, subdomain string, pathRegex string, limit int) ([]LinkInfo, error)
 }
 
 var DS Model
@@ -623,15 +619,4 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 	} else {
 		return &linfos[0], nil
 	}
-}
-
-func (ds *CqlModel) FindLinkPattern(domain string, subdomain string, pathRegex string, limit int) ([]LinkInfo, error) {
-	// db := ds.Db
-	// query := `SELECT path, proto, time, stat, err, robot_ex
-	//              FROM links
-	//              WHERE
-	//              	dom = ? AND
-	//                subdom = ?`
-	return nil, nil
-
 }
