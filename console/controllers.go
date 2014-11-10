@@ -286,7 +286,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		seedUrl = ss
 	}
 
-	linfos, err := DS.ListLinks(domain, seedUrl, windowLength)
+	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, "")
 	if err != nil {
 		replyServerError(w, fmt.Errorf("ListLinks: %v", err))
 		return

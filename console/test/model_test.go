@@ -689,7 +689,7 @@ func TestListLinks(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit)
+		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -872,7 +872,7 @@ func TestInsertLinks(t *testing.T) {
 
 		allDomains := []string{}
 		for domain, exp := range expect {
-			linfos, err := store.ListLinks(domain, console.DontSeedUrl, LIM)
+			linfos, err := store.ListLinks(domain, console.DontSeedUrl, LIM, "")
 			if err != nil {
 				t.Errorf("InsertLinks:ListLinks for tag %s direct error %v", test.tag, err)
 			}
@@ -926,7 +926,7 @@ func TestCloseToLimitBug(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit)
+		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
