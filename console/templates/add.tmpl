@@ -3,26 +3,26 @@
 <!-- This styling makes the checkbox bigger, and orients the h3 text  -->
 <!-- http://stackoverflow.com/questions/3911993/css-adjusting-checkbox-size -->
 <style type="text/css"> 
-  input[type="checkbox"] {
-    /* Scaled Checkboxes */
-    {{$SCALE:=2.2}}
-    {{$TRANS:="-2px"}}
-    transform:         scale({{$SCALE}}) translateY( {{$TRANS}} );         /* FF 16+, IE 10+ */
-    -webkit-transform: scale({{$SCALE}}) translateY( {{$TRANS}} ); /* Chrome, Safari 3.5+, Opera 15+ */
-    -ms-transform:     scale({{$SCALE}}) translateY( {{$TRANS}} );     /* legacy: IE 9+ */
-    -moz-transform:    scale({{$SCALE}}) translateY( {{$TRANS}} );    /* legacy: FF 3.5+ */
-    -o-transform:      scale({{$SCALE}}) translateY( {{$TRANS}} );      /* legacy: Opera 10.5 */
+    input[type="checkbox"] {
+        /* Scaled Checkboxes */
+        {{$SCALE:=2.2}}
+        {{$TRANS:="-2px"}}
+        transform:         scale({{$SCALE}}) translateY( {{$TRANS}} );         /* FF 16+, IE 10+ */
+        -webkit-transform: scale({{$SCALE}}) translateY( {{$TRANS}} ); /* Chrome, Safari 3.5+, Opera 15+ */
+        -ms-transform:     scale({{$SCALE}}) translateY( {{$TRANS}} );     /* legacy: IE 9+ */
+        -moz-transform:    scale({{$SCALE}}) translateY( {{$TRANS}} );    /* legacy: FF 3.5+ */
+        -o-transform:      scale({{$SCALE}}) translateY( {{$TRANS}} );      /* legacy: Opera 10.5 */
 
-    margin-right: 0px;
-    margin-top: 34px;
-  }
+        margin-right: 0px;
+        margin-top: 34px;
+   }
 
-    h3 {
+    .checkbox-label {
         text-align: left; 
-        margin-left: 16px; 
-        /*margin-right: 0px;*/ 
+        margin-left: 16px;         
         margin-top: 30px;
     }
+    
 </style>
 
 <form role="form" action="/add" method="post">
@@ -38,7 +38,7 @@
         </div>
         <div class="col-xs-4"> 
             <input type="checkbox" name="exclude" value="exclude">
-            <label for="exclude"> <h3 style=""> Add domains excluded </h3> </label>
+            <label for="exclude"> <h3 class="checkbox-label"> Add domains excluded </h3> </label>
         </div>
     </div>
 </form>
