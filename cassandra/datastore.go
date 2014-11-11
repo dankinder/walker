@@ -235,6 +235,7 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		dbfield{"path", url.RequestURI()},
 		dbfield{"proto", url.Scheme},
 		dbfield{"time", fr.FetchTime},
+		dbfield{"fnv", fr.FnvFingerprint},
 	}
 
 	if fr.FetchError != nil {
@@ -475,10 +476,10 @@ CREATE TABLE {{.Keyspace}}.links (
 	-- mime type, also known as Content-Type (ex. "text/html")
 	mime text,
 
-	---- Items yet to be added to walker
+	-- fnv fingerprint, a hash of the page contents for identity comparison
+	fnv bigint,
 
-	-- fingerprint, a hash of the page contents for identity comparison
-	--fp bigint,
+	---- Items yet to be added to walker
 
 	-- structure fingerprint, a hash of the page structure only (defined as:
 	-- html tags only, all contents and attributes stripped)

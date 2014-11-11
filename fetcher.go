@@ -3,6 +3,7 @@ package walker
 import (
 	"bytes"
 	"fmt"
+	"hash/fnv"
 	"io/ioutil"
 	"mime"
 	"net"
@@ -71,6 +72,9 @@ type FetchResults struct {
 
 	// The Content-Type of the fetched page.
 	MimeType string
+
+	// Fingerprint computed with fnv algorithm (see hash/fnv in standard library)
+	FnvFingerprint uint64
 }
 
 // URL is the walker URL object, which embeds *url.URL but has extra data and
@@ -455,20 +459,30 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 
 	fr.MimeType = getMimeType(fr.Response)
 
+	//
+	// Nab the body of the request, and compute fingerprint
+	//
+	//TODO: ReadAll is inefficient. We should use a properly sized
+	//		buffer here (determined by
+	//		Config.MaxHTTPContentSizeBytes or possibly
+	//		Content-Length of the response)
+	var body []byte
+	body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+	if fr.FetchError != nil {
+		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return true
+	}
+
+	fnv := fnv.New64()
+	fnv.Write(body)
+	fr.FnvFingerprint = fnv.Sum64()
+
+	//
+	// Handle html
+	//
 	if isHTML(fr.Response) {
 		log4go.Fine("Reading and parsing as HTML (%v)", link)
-
-		//TODO: ReadAll is inefficient. We should use a properly sized
-		//		buffer here (determined by
-		//		Config.MaxHTTPContentSizeBytes or possibly
-		//		Content-Length of the response)
-		var body []byte
-		body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
-		if fr.FetchError != nil {
-			log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
-			f.fm.Datastore.StoreURLFetchResults(fr)
-			return true
-		}
 
 		f.parseLinks(body, fr)
 
@@ -476,6 +490,9 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 	}
 
+	//
+	// Call generic handler
+	//
 	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
 		f.fm.Handler.HandleResponse(fr)
 	}
