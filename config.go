@@ -204,7 +204,7 @@ func assertConfigInvariants() error {
 	}
 
 	if def > max {
-		errs = append(errs, "Consistency problem: MaxCrawlDelay < DefaultCrawlDealy")
+		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
 	}
 
 	if len(errs) > 0 {

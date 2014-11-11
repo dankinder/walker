@@ -402,7 +402,7 @@ func (f *fetcher) crawlNewHost() bool {
 	// Determine crawlDelay
 	//
 	f.fetchRobots(f.host)
-	def := f.fm.defCrawlDelay // we know def < max as asserted in assertConfigInvariants
+	def := f.fm.defCrawlDelay // we know def <= max as asserted in assertConfigInvariants
 	max := f.fm.maxCrawlDelay
 	f.crawldelay = def
 	if f.robots != nil {
@@ -414,7 +414,6 @@ func (f *fetcher) crawlNewHost() bool {
 				f.crawldelay = max
 			}
 		}
-
 	}
 	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
 

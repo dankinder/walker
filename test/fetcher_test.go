@@ -706,7 +706,7 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 	defer func() {
 		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
 	}()
-	walker.Config.DefaultCrawlDelay = 1
+	walker.Config.DefaultCrawlDelay = "1s"
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("test.com").Once()
