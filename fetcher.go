@@ -473,26 +473,21 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 		f.fm.Datastore.StoreURLFetchResults(fr)
 		return true
 	}
+	// Replace the response body so the handler can read it
+	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 
 	fnv := fnv.New64()
 	fnv.Write(body)
 	fr.FnvFingerprint = fnv.Sum64()
 
 	//
-	// Handle html
+	// Handle html and generic handlers
 	//
 	if isHTML(fr.Response) {
 		log4go.Fine("Reading and parsing as HTML (%v)", link)
-
 		f.parseLinks(body, fr)
-
-		// Replace the response body so the handler can read it
-		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 	}
 
-	//
-	// Call generic handler
-	//
 	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
 		f.fm.Handler.HandleResponse(fr)
 	}

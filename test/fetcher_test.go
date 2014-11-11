@@ -4,6 +4,7 @@ package test
 
 import (
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -1015,6 +1016,88 @@ func TestMaxCrawlDealy(t *testing.T) {
 	}
 
 	for path := range expectedPages {
+		t.Errorf("Didn't find expected page %q in mock data store", path)
+	}
+
+}
+
+func TestFnvFingerprint(t *testing.T) {
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a.com").Once()
+	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
+		helpers.Parse("http://a.com/page1.html"),
+	})
+	ds.On("UnclaimHost", "a.com").Return()
+
+	// This last call will make ClaimNewHost return "" on each subsequent call,
+	// which will put the fetcher to sleep.
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{
+		Body: html,
+	})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+
+	fnv := fnv.New64()
+	fnv.Write([]byte(html))
+	fp := fnv.Sum64()
+
+	expectedFps := map[string]uint64{
+		"/page1.html": fp,
+	}
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreURLFetchResults" {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			path := fr.URL.RequestURI()
+			expFp, expFpOk := expectedFps[path]
+			if !expFpOk {
+				t.Errorf("Path mistmatch, didn't find path %q in expectedFps", path)
+				continue
+			}
+
+			if expFp != fr.FnvFingerprint {
+				t.Errorf("Fingerprint mistmatch, got %x, expected %x", fr.FnvFingerprint, expFp)
+			}
+
+			delete(expectedFps, path)
+		}
+	}
+
+	for path := range expectedFps {
 		t.Errorf("Didn't find expected page %q in mock data store", path)
 	}
 
