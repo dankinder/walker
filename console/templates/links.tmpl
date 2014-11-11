@@ -1,52 +1,65 @@
 
 {{if .HasHeader}}
     <div class="row">
-        <div class="col-xs-6">
+        <div class="col-xs-8">
             <h2> Domain information for {{.Dinfo.Domain}} </h2>
-            <table class="console-table table table-striped table-condensed table-bordered ">
+            <table class="console-table table table-striped table-condensed">
                 <tr>
-                    <th> Field </th>
-                    <th> Value </th>
+                    <th class="col-xs-3"> Field </th>
+                    <th class="col-xs-4"> Value </th>
+                    <th class="col-xs-1"> &nbsp; </th> 
                 </tr>
                 
                 <tr>
                     <td> Domain </td>
                     <td>  {{.Dinfo.Domain}} </td>
+                    <td> &nbsp; </td>
                 </tr>
                 
                 <tr>
                     <td> Exclude Reason (if excluded) </td>
                     <td>  {{.Dinfo.ExcludeReason}} </td>
+                    <td > <a href="{{.ExcludeLink}}" style="width: 100%; background-color: {{.ExcludeColor}};" 
+                             class="btn btn-info btn-large"> 
+                               {{.ExcludeTag}}
+                          </a> 
+                    </td>
                 </tr>
                 
                 <tr>
                     <td> Last Claimed By Fetcher </td>
                     <td>  {{ftime2 .Dinfo.TimeQueued}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
                 
                 <tr>
                     <td> Current Fetcher Claim ID </td>
                     <td>  {{fuuid .Dinfo.UuidOfQueued}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
                 
                 <tr>
                     <td> Total Unique Links </td>
                     <td>  {{.Dinfo.NumberLinksTotal}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
                 
                 <tr>
                     <td> Links Dispatched </td>
                     <td>  {{.Dinfo.NumberLinksQueued}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
 
                 <tr>
                     <td> Unique Links Crawled </td>
                     <td>  {{.NumberCrawled}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
 
                 <tr>
                     <td> Unique Links Not Yet Crawled </td>
                     <td>  {{.Dinfo.NumberLinksUncrawled}} </td>
+                    <td> &nbsp; </td>                    
                 </tr>
 
             </table>
