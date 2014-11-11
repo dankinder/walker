@@ -369,8 +369,8 @@ func TestListLinksWeb(t *testing.T) {
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
-	if thirdColSize != 0 {
-		t.Fatalf("[.container table tr > td:nth-child(3)] Wrong size got %d, expected %s", thirdColSize, 0)
+	if thirdColSize != len(domainKeys) {
+		t.Fatalf("[.container table tr > td:nth-child(3)] Wrong size got %d, expected %d", thirdColSize, 0)
 	}
 
 	//
@@ -421,31 +421,45 @@ func TestListLinksWeb(t *testing.T) {
 		"Previous",
 		"Next",
 	}
-	sub = doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
+	sub = doc.Find(".container .row > a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn")
 	})
 	if sub.Size() != len(buttons) {
-		t.Fatalf("[.container a <buttons>] Size mismatch got %d, expected %d", sub.Size(), len(buttons))
+		t.Fatalf("[.container .row > a <buttons>] Size mismatch got %d, expected %d", sub.Size(), len(buttons))
 	}
 	count = 0
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != buttons[count] {
-			t.Fatalf("[.container a <buttons>] Button text mismatch got '%s', expected '%s'", text, buttons[count])
+			t.Fatalf("[.container .row > a <buttons>] Button text mismatch got '%s', expected '%s'", text, buttons[count])
 		}
 
 		if text == "Previous" {
 			if !sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed button disable for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button disable for %s", text)
 			}
 		} else {
 			if sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed button undisabled for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button undisabled for %s", text)
 			}
 		}
 
 		count++
 	})
+
+	sub = doc.Find(".container .console-table a").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return sel.HasClass("btn")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[.container .console-table a] Size mismatch got %d, expected %d", sub.Size(), 1)
+	}
+
+	if strings.TrimSpace(sub.Text()) != "Exclude" {
+		t.Errorf("[.container .console-table a] Text mismatch got %q, expected %q",
+			strings.TrimSpace(sub.Text()), "Exclude")
+	}
+
 }
 
 func TestListLinksSecondPage(t *testing.T) {
@@ -906,7 +920,6 @@ func TestAddLinks(t *testing.T) {
 
 	form := doc.Find(".container form")
 	textarea := form.Find("textarea")
-	input := form.Find("input")
 	if textarea.Size() != 1 {
 		t.Fatalf("[.container form textarea] Size mismatch got %d, expected 1", textarea.Size())
 	}
@@ -920,14 +933,26 @@ func TestAddLinks(t *testing.T) {
 		}
 	}
 
+	input := form.Find("input[type=submit]")
 	if input.Size() != 1 {
-		t.Fatalf("[.container form input] Size mismatch got %d, expected 1", input.Size())
+		t.Fatalf("[.container form input[type=submit]] Size mismatch got %d, expected 1", input.Size())
 	}
 	typ, typOk := input.Attr("type")
 	if !typOk {
-		t.Fatalf("[.container form input] Failed to find type attribute")
+		t.Fatalf("[.container form input[type=submit]] Failed to find type attribute")
 	} else if typ != "submit" {
-		t.Fatalf("[.container form input] Bad type got %s, expected submit", typ)
+		t.Fatalf("[.container form input[type=submit]] Bad type got %s, expected submit", typ)
+	}
+
+	input = form.Find("input[type=checkbox]")
+	if input.Size() != 1 {
+		t.Fatalf("[.container form input[type=checkbox]] Size mismatch got %d, expected 1", input.Size())
+	}
+	typ, typOk = input.Attr("type")
+	if !typOk {
+		t.Fatalf("[.container form input[type=checkbox]] Failed to find type attribute")
+	} else if typ != "checkbox" {
+		t.Fatalf("[.container form input[type=checkbox]] Bad type got %s, expected checkbox", typ)
 	}
 
 	//

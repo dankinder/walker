@@ -2,7 +2,7 @@
 
 Feel free to update this document as questions arise and are addressed.
 
-## Walker's Cassandra data model
+## Cassandra questions
 
 #### It looks like Walker uses Cassandra as a queue for work. Isn't this a known anti-pattern with performance problems?
 
@@ -21,3 +21,21 @@ Regarding *selecting* segments: Cassandra will have to ignore 4500 of those 5000
 Regarding *disk*: Cassandra will be storing 10x more than is necessary in this case.
 
 In other words, you can set gc_grace_seconds to a non-zero number if you wish, but 0 works more optimaly.
+
+#### Can I run Walker with Cassandra on (Mac OS X | Windows | etc.)?
+
+Yes, though Walker is primary qualified for linux. In most cases you can use an install package from http://planetcassandra.org/cassandra/
+
+However on Mac OS X you may not have a recent enough version of Java. If that is the case:
+- Download the [cassandra tarball](http://planetcassandra.org/cassandra/)
+- Install a [newer version of Java](https://www.java.com/en/download/index.jsp)
+- Run `bin/cassandra` with JAVA_HOME set to `/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home`
+
+In command-line terms:
+
+    <First, manually install Java from https://www.java.com/en/download/index.jsp>
+    curl -L http://downloads.datastax.com/community/dsc.tar.gz | tar xz
+    cd dsc-cassandra*
+    JAVA_HOME="/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home" bin/cassandra
+
+This should sufficiently allow Walker testing and development on your Mac.

@@ -213,13 +213,23 @@ var filterDomain = console.DomainInfo{
 	NumberLinksQueued:    0,
 	NumberLinksUncrawled: 4,
 	TimeQueued:           testTime,
+}
+
+var excludedDomain = console.DomainInfo{
+	Domain:               "excluded.com",
+	NumberLinksTotal:     0,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 0,
+	ExcludeReason:        "Reason for exclusion",
+	TimeQueued:           walker.NotYetCrawled,
 	UuidOfQueued:         gocql.UUID{},
 }
 
 type updatedInDb struct {
-	link   string
-	domain string
-	path   string
+	link                string
+	domain              string
+	path                string
+	excludeDomainReason string
 }
 
 type insertTest struct {
@@ -327,6 +337,16 @@ func getDs(t *testing.T) *console.CqlModel {
 		}
 	}
 
+	{
+		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) VALUES (?, ?, 0, true, ?)`
+		dom := fmt.Sprintf("exclude.com")
+		reason := "Reason for exclusion"
+		err := db.Query(insertDomainInfoExcluded, dom, walker.NotYetCrawled, reason).Exec()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	//
 	// Need to record the order that the test.com urls come off on
 	//
@@ -424,6 +444,7 @@ func TestListDomains(t *testing.T) {
 				filterDomain,
 				fooDomain,
 				barDomain,
+				excludedDomain,
 				testDomain,
 			},
 		},
@@ -443,6 +464,7 @@ func TestListDomains(t *testing.T) {
 			limit: LIM,
 			expected: []console.DomainInfo{
 				barDomain,
+				excludedDomain,
 				testDomain,
 			},
 		},
@@ -883,7 +905,7 @@ func TestInsertLinks(t *testing.T) {
 			expect[u.domain] = append(expect[u.domain], u.link)
 		}
 
-		errList := store.InsertLinks(toadd)
+		errList := store.InsertLinks(toadd, "")
 		if len(errList) != 0 {
 			t.Errorf("InsertLinks for tag %s direct error %v", test.tag, errList)
 			continue
@@ -926,6 +948,50 @@ func TestInsertLinks(t *testing.T) {
 		}
 	}
 
+}
+
+func TestInsertExcludedLinks(t *testing.T) {
+	store := getDs(t)
+
+	tests := []insertTest{
+		insertTest{
+			updated: []updatedInDb{
+				updatedInDb{
+					link:                "http://excluded.com/page1.html",
+					domain:              "excluded.com",
+					excludeDomainReason: "Because I said so",
+				},
+			},
+		},
+	}
+
+	// FYI: by iterating twice, we follow two different code paths through
+	// addDomainIfNew in model.go
+	for iterate := 0; iterate < 2; iterate++ {
+		for _, test := range tests {
+			if test.omittest {
+				continue
+			}
+
+			added := test.updated[0]
+			toadd := []string{added.link}
+			errList := store.InsertLinks(toadd, added.excludeDomainReason)
+			if len(errList) != 0 {
+				t.Errorf("InsertExcludedLinks for tag %s direct error %v", test.tag, errList)
+				continue
+			}
+
+			dinfo, err := store.FindDomain(added.domain)
+			if err != nil {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s direct error %v", test.tag, err)
+			} else if dinfo == nil {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s didn't find domain %s", test.tag, added.domain)
+			} else if dinfo.ExcludeReason != added.excludeDomainReason {
+				t.Errorf("InsertExcludedLinks:FindDomain for tag %s ExcludeReason mismatch: got %q, expected %q",
+					test.tag, dinfo.ExcludeReason, added.excludeDomainReason)
+			}
+		}
+	}
 }
 
 func TestCloseToLimitBug(t *testing.T) {

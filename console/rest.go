@@ -71,7 +71,7 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 		links = append(links, u)
 	}
 
-	errList := DS.InsertLinks(links)
+	errList := DS.InsertLinks(links, "")
 	if len(errList) != 0 {
 		var buffer bytes.Buffer
 		for _, e := range errList {

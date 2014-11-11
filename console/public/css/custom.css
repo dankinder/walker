@@ -19,3 +19,10 @@
     color: blue;
     font-size: 150%;   
 }
+
+
+.wide-button {
+    width: 90%; 
+    height: 30px; 
+    margin-top: 31px;
+}

@@ -68,8 +68,11 @@ type Model interface {
 	// Close the data store after you're done with it
 	Close()
 
-	// InsertLinks queues a set of URLS to be crawled
-	InsertLinks(links []string) []error
+	// InsertLinks queues a set of URLS to be crawled. If excludeDomainReason
+	// is a non-empty string, then all the domains (TLD+1) of the links list
+	// will be added/set as excluded with the exclude reason set to
+	// excludeDomainReason.
+	InsertLinks(links []string, excludeDomainReason string) []error
 
 	// Find a specific domain
 	FindDomain(domain string) (*DomainInfo, error)
@@ -91,6 +94,9 @@ type Model interface {
 
 	// Find a link
 	FindLink(link string) (*LinkInfo, error)
+
+	// Change the exclusion on a domain
+	UpdateDomainExclude(domain string, exclude bool, reason string) error
 }
 
 var DS Model
@@ -117,7 +123,7 @@ func (ds *CqlModel) Close() {
 }
 
 //NOTE: part of this is cribbed from walker.datastore.go. Code share?
-func (ds *CqlModel) addDomainIfNew(domain string) error {
+func (ds *CqlModel) addDomainIfNew(domain string, excludeDomainReason string) error {
 	var count int
 	err := ds.Db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = ?`, domain).Scan(&count)
 	if err != nil {
@@ -125,10 +131,17 @@ func (ds *CqlModel) addDomainIfNew(domain string) error {
 	}
 
 	if count == 0 {
-		err := ds.Db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
-		if err != nil {
-			return fmt.Errorf("insert; %v", err)
+		if excludeDomainReason == "" {
+			err = ds.Db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
+		} else {
+			err = ds.Db.Query(`INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 0, true, ?)`, domain, excludeDomainReason).Exec()
 		}
+	} else if excludeDomainReason != "" {
+		err = ds.Db.Query(`UPDATE domain_info SET excluded = ?, exclude_reason = ? WHERE dom = ?`, true, excludeDomainReason, domain).Exec()
+	}
+
+	if err != nil {
+		return fmt.Errorf("insert; %v", err)
 	}
 
 	return nil
@@ -136,7 +149,7 @@ func (ds *CqlModel) addDomainIfNew(domain string) error {
 
 //NOTE: InsertLinks should try to insert as much information as possible
 //return errors for things it can't handle
-func (ds *CqlModel) InsertLinks(links []string) []error {
+func (ds *CqlModel) InsertLinks(links []string, excludeDomainReason string) []error {
 	//
 	// Collect domains
 	//
@@ -186,7 +199,7 @@ func (ds *CqlModel) InsertLinks(links []string) []error {
 		}
 
 		if !seen[d] {
-			err := ds.addDomainIfNew(d)
+			err := ds.addDomainIfNew(d, excludeDomainReason)
 			if err != nil {
 				errList = append(errList, fmt.Errorf("%v # addDomainIfNew: %v", link, err))
 				continue
@@ -279,21 +292,30 @@ func (ds *CqlModel) listDomainsImpl(seed string, limit int, working bool) ([]Dom
 
 	var itr *gocql.Iter
 	if seed == "" && !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info LIMIT ?", limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info LIMIT ?", limit).Iter()
 	} else if seed == "" {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE dispatched = true LIMIT ?", limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true LIMIT ?", limit).Iter()
 	} else if !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 	} else { //working==true AND seed != ""
-		itr = db.Query("SELECT dom, claim_tok, claim_time FROM domain_info WHERE dispatched = true AND TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
+		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true AND TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 	}
 
 	var dinfos []DomainInfo
-	var domain string
+	var domain, exclude_reason string
 	var claim_tok gocql.UUID
 	var claim_time time.Time
-	for itr.Scan(&domain, &claim_tok, &claim_time) {
-		dinfos = append(dinfos, DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time})
+	var excluded bool
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
+		reason := ""
+		if exclude_reason != "" {
+			reason = exclude_reason
+		} else if excluded {
+			// This should just be a backstop in case someone doesn't set exclude_reason.
+			reason = "Exclusion marked"
+		}
+
+		dinfos = append(dinfos, DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason})
 	}
 	err := itr.Close()
 	if err != nil {
@@ -321,15 +343,25 @@ func (ds *CqlModel) ListWorkingDomains(seedDomain string, limit int) ([]DomainIn
 //		itr = db.Query("SELECT domain, claim_tok, claim_time FROM domain_info WHERE dispatched = true AND TOKEN(domain) > TOKEN(?) LIMIT ?", seed, limit).Iter()
 func (ds *CqlModel) FindDomain(domain string) (*DomainInfo, error) {
 	db := ds.Db
-	itr := db.Query("SELECT claim_tok, claim_time FROM domain_info WHERE dom = ?", domain).Iter()
+	itr := db.Query("SELECT claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dom = ?", domain).Iter()
 	var claim_tok gocql.UUID
 	var claim_time time.Time
-	if !itr.Scan(&claim_tok, &claim_time) {
+	var excluded bool
+	var exclude_reason string
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
 		err := itr.Close()
 		return nil, err
 	}
 
-	dinfo := &DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time}
+	reason := ""
+	if exclude_reason != "" {
+		reason = exclude_reason
+	} else if excluded {
+		// This should just be a backstop in case someone doesn't set exclude_reason.
+		reason = "Exclusion marked"
+	}
+
+	dinfo := &DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason}
 	err := itr.Close()
 	if err != nil {
 		return dinfo, err
@@ -626,3 +658,20 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 		return &linfos[0], nil
 	}
 }
+
+func (ds *CqlModel) UpdateDomainExclude(domain string, exclude bool, reason string) error {
+	db := ds.Db
+	query := `UPDATE domain_info 
+			  SET 
+				  excluded = ?,
+				  exclude_reason = ?
+			  WHERE 
+				  dom = ?`
+	if !exclude {
+		reason = ""
+	}
+	err := db.Query(query, exclude, reason, domain).Exec()
+	return err
+}
+
+// comment

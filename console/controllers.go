@@ -37,6 +37,7 @@ func Routes() []Route {
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
+		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
 	}
 }
 
@@ -226,7 +227,12 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	errList := DS.InsertLinks(links)
+	excludeReason := ""
+	if len(req.Form["exclude"]) > 0 {
+		excludeReason = "Manual exclude"
+	}
+
+	errList := DS.InsertLinks(links, excludeReason)
 	if len(errList) != 0 {
 		for _, e := range errList {
 			errs = append(errs, e.Error())
@@ -323,6 +329,15 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		historyLinks = append(historyLinks, path)
 	}
 
+	excludeTag := "Exclude"
+	excludeColor := "green"
+	excludeLink := fmt.Sprintf("/excludeToggle/%s/ex", domain)
+	if dinfo.ExcludeReason != "" {
+		excludeTag = "Unexclude"
+		excludeColor = "red"
+		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
+	}
+
 	mp := map[string]interface{}{
 		"Dinfo":             dinfo,
 		"NumberCrawled":     dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
@@ -332,9 +347,14 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"NextSeedUrl":       nextSeedUrl,
 		"FilterUrlSuffix":   filterUrlSuffix,
 		"FilterRegexSuffix": filterRegexSuffix,
-		"NextButtonClass":   nextButtonClass,
-		"PrevButtonClass":   prevButtonClass,
-		"HistoryLinks":      historyLinks,
+
+		"NextButtonClass": nextButtonClass,
+		"PrevButtonClass": prevButtonClass,
+		"HistoryLinks":    historyLinks,
+
+		"ExcludeTag":   excludeTag,
+		"ExcludeColor": excludeColor,
+		"ExcludeLink":  excludeLink,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -511,6 +531,37 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 	url := fmt.Sprintf("/links2/%s/%s", domain[0], encode32(regex[0]))
 	http.Redirect(w, req, url, http.StatusSeeOther)
 	return
+}
+
+func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	domain := vars["domain"]
+	direction := vars["direction"]
+	if domain == "" || direction == "" {
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+	var exclude bool
+	var reason string
+	switch direction {
+	case "ex":
+		exclude = true
+		reason = "Manual exclude"
+	case "un":
+		exclude = false
+		reason = ""
+	default:
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+
+	err := DS.UpdateDomainExclude(domain, exclude, reason)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
 }
 
 func assureScheme(url string) (string, error) {
