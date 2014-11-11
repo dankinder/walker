@@ -934,9 +934,12 @@ func TestPathInclusion(t *testing.T) {
 }
 
 func TestMaxCrawlDealy(t *testing.T) {
+	// The approach to this test is simple. Set a very high Crawl-delay from
+	// the host, and set a small MaxCrawlDelay in config. Then only allow the
+	// fetcher to run long enough to get all the links IF the fetcher is honoring
+	// the MaxCrawlDelay
 	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
 	origMaxCrawlDelay := walker.Config.MaxCrawlDelay
-
 	defer func() {
 		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
 		walker.Config.MaxCrawlDelay = origMaxCrawlDelay
@@ -970,7 +973,7 @@ func TestMaxCrawlDealy(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{
-		Body: "User-agent: *\nCrawl-delay: 120\n",
+		Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
 	})
 	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{Status: 404})
 	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{Status: 404})
@@ -1015,5 +1018,3 @@ func TestMaxCrawlDealy(t *testing.T) {
 	}
 
 }
-
-//
