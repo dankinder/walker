@@ -68,7 +68,9 @@ include_link_patterns: []
 # Crawl delay duration to use when unspecified by robots.txt. 
 default_crawl_delay: 1s
 
-# Max crawl delay accepted by crawler
+# Max crawl delay accepted. To compute the actual crawl delay, walker will use
+# the minimum of max_crawl_delay, and the Crawl-Delay header read out of a
+# site's robots.txt file.
 max_crawl_delay: 5m
 
 # Dispatcher configuration
