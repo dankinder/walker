@@ -40,7 +40,6 @@ type WalkerConfig struct {
 	UserAgent               string   `yaml:"user_agent"`
 	AcceptFormats           []string `yaml:"accept_formats"`
 	AcceptProtocols         []string `yaml:"accept_protocols"`
-	DefaultCrawlDelay       int      `yaml:"default_crawl_delay"`
 	MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
 	IgnoreTags              []string `yaml:"ignore_tags"`
 	//TODO: allow -1 as a no max value
@@ -52,6 +51,8 @@ type WalkerConfig struct {
 	HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
 	ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
 	IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
+	DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
+	MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -119,7 +120,6 @@ func SetDefaultConfig() {
 	Config.UserAgent = "Walker (http://github.com/iParadigms/walker)"
 	Config.AcceptFormats = []string{"text/html", "text/*;"} //NOTE you can add quality factors by doing "text/html; q=0.4"
 	Config.AcceptProtocols = []string{"http", "https"}
-	Config.DefaultCrawlDelay = 1
 	Config.MaxHTTPContentSizeBytes = 20 * 1024 * 1024 // 20MB
 	Config.IgnoreTags = []string{"script", "img", "link"}
 	Config.MaxLinksPerPage = 1000
@@ -130,6 +130,8 @@ func SetDefaultConfig() {
 	Config.HonorMetaNofollow = false
 	Config.ExcludeLinkPatterns = nil
 	Config.IncludeLinkPatterns = nil
+	Config.DefaultCrawlDelay = "1s"
+	Config.MaxCrawlDelay = "5m"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -189,6 +191,20 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
+	}
+
+	def, err := time.ParseDuration(Config.DefaultCrawlDelay)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("DefaultCrawlDelay failed to parse: %v", err))
+	}
+
+	max, err := time.ParseDuration(Config.MaxCrawlDelay)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("MaxCrawlDelay failed to parse: %v", err))
+	}
+
+	if def > max {
+		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
 	}
 
 	if len(errs) > 0 {

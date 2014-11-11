@@ -706,7 +706,7 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 	defer func() {
 		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
 	}()
-	walker.Config.DefaultCrawlDelay = 1
+	walker.Config.DefaultCrawlDelay = "1s"
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("test.com").Once()
@@ -929,6 +929,93 @@ func TestPathInclusion(t *testing.T) {
 
 	for path := range expectedPaths {
 		t.Errorf("StoreParsedURL not called for %v, but should have been", path)
+	}
+
+}
+
+func TestMaxCrawlDealy(t *testing.T) {
+	// The approach to this test is simple. Set a very high Crawl-delay from
+	// the host, and set a small MaxCrawlDelay in config. Then only allow the
+	// fetcher to run long enough to get all the links IF the fetcher is honoring
+	// the MaxCrawlDelay
+	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
+	origMaxCrawlDelay := walker.Config.MaxCrawlDelay
+	defer func() {
+		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
+		walker.Config.MaxCrawlDelay = origMaxCrawlDelay
+	}()
+	walker.Config.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
+	walker.Config.DefaultCrawlDelay = "0s"
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a.com").Once()
+	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
+		helpers.Parse("http://a.com/page1.html"),
+		helpers.Parse("http://a.com/page2.html"),
+		helpers.Parse("http://a.com/page3.html"),
+	})
+	ds.On("UnclaimHost", "a.com").Return()
+
+	// This last call will make ClaimNewHost return "" on each subsequent call,
+	// which will put the fetcher to sleep.
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{
+		Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
+	})
+	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page3.html", &helpers.MockResponse{Status: 404})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+
+	expectedPages := map[string]bool{
+		"/page1.html": true,
+		"/page2.html": true,
+		"/page3.html": true,
+	}
+
+	for _, call := range ds.Calls {
+		if call.Method == "StoreURLFetchResults" {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			domain, err := fr.URL.ToplevelDomainPlusOne()
+			if err != nil {
+				panic(err)
+			}
+			path := fr.URL.RequestURI()
+			if domain != "a.com" {
+				t.Fatalf("Domain mismatch -- this shouldn't happen")
+			}
+			if !expectedPages[path] {
+				t.Errorf("Path mistmatch, didn't find path %q in expectedPages", path)
+			} else {
+				delete(expectedPages, path)
+			}
+		}
+	}
+
+	for path := range expectedPages {
+		t.Errorf("Didn't find expected page %q in mock data store", path)
 	}
 
 }
