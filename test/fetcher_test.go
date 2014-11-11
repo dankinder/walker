@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-const defaultSleep time.Duration = time.Millisecond * 10
+const defaultSleep time.Duration = time.Millisecond * 20
 
 const html_body string = `<!DOCTYPE html>
 <html>
