@@ -149,14 +149,15 @@ type domainTest struct {
 }
 
 type linkTest struct {
-	omittest bool
-	tag      string
-	domain   string
-	histUrl  string
-	seed     int
-	seedUrl  string
-	limit    int
-	expected []console.LinkInfo
+	omittest    bool
+	tag         string
+	domain      string
+	histUrl     string
+	seed        int
+	seedUrl     string
+	filterRegex string
+	limit       int
+	expected    []console.LinkInfo
 }
 
 const LIM = 50
@@ -204,6 +205,14 @@ var testDomain = console.DomainInfo{
 	NumberLinksUncrawled: 8,
 	TimeQueued:           testTime,
 	UuidOfQueued:         gocql.UUID{},
+}
+
+var filterDomain = console.DomainInfo{
+	Domain:               "filter.com",
+	NumberLinksTotal:     7,
+	NumberLinksQueued:    0,
+	NumberLinksUncrawled: 7,
+	TimeQueued:           testTime,
 }
 
 var excludedDomain = console.DomainInfo{
@@ -314,7 +323,17 @@ func getDs(t *testing.T) *console.CqlModel {
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[5].CrawlTime, 200, "", false),
 
 		db.Query(insertSegment, "baz.com", "sub", "page1.html", "http"),
+
+		db.Query(insertDomainToCrawl, "filter.com", gocql.UUID{}, testTime),
+		db.Query(insertLink, "filter.com", "", "/aaa.html", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/bbb.html", "https", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/ccc/ddd.html", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "subd", "/aaa.html", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1/2/A", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1111/2222/A", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1111/2222/B", "http", walker.NotYetCrawled, 200, "", false),
 	}
+
 	for _, q := range queries {
 		err := q.Exec()
 		if err != nil {
@@ -426,6 +445,7 @@ func TestListDomains(t *testing.T) {
 			limit: LIM,
 			expected: []console.DomainInfo{
 				bazDomain,
+				filterDomain,
 				fooDomain,
 				barDomain,
 				excludedDomain,
@@ -583,6 +603,7 @@ func TestListWorkingDomains(t *testing.T) {
 			limit: LIM,
 			expected: []console.DomainInfo{
 				bazDomain,
+				filterDomain,
 				testDomain,
 			},
 		},
@@ -601,6 +622,7 @@ func TestListWorkingDomains(t *testing.T) {
 			seed:  "baz.com",
 			limit: LIM,
 			expected: []console.DomainInfo{
+				filterDomain,
 				testDomain,
 			},
 		},
@@ -613,7 +635,7 @@ func TestListWorkingDomains(t *testing.T) {
 			continue
 		}
 		if len(dinfos) != len(test.expected) {
-			t.Errorf("ListWorkingDomains length mismatch: got %d, expected %d", len(dinfos), len(test.expected))
+			t.Errorf("ListWorkingDomains length mismatch for tag %s: got %d, expected %d", test.tag, len(dinfos), len(test.expected))
 			continue
 		}
 		for i := range dinfos {
@@ -712,7 +734,7 @@ func TestListLinks(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit)
+		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -895,7 +917,7 @@ func TestInsertLinks(t *testing.T) {
 
 		allDomains := []string{}
 		for domain, exp := range expect {
-			linfos, err := store.ListLinks(domain, console.DontSeedUrl, LIM)
+			linfos, err := store.ListLinks(domain, console.DontSeedUrl, LIM, "")
 			if err != nil {
 				t.Errorf("InsertLinks:ListLinks for tag %s direct error %v", test.tag, err)
 			}
@@ -993,7 +1015,7 @@ func TestCloseToLimitBug(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit)
+		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -1022,4 +1044,127 @@ func TestCloseToLimitBug(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestFilterRegex(t *testing.T) {
+	filterUrls := []string{
+		"http://filter.com/1/2/A",
+		"http://filter.com/1111/2222/A",
+		"http://filter.com/1111/2222/B",
+
+		"http://filter.com/aaa.html",
+		"https://filter.com/bbb.html",
+		"http://filter.com/ccc/ddd.html",
+		"http://subd.filter.com/aaa.html",
+	}
+
+	// This function composes LinkInfo array from the urls in filterUrls. The
+	// index argument corresponds to  which element of filterUrls to include
+	// in the LinkInfo list.
+	pickFiltered := func(index ...int) []console.LinkInfo {
+		var r []console.LinkInfo
+		for _, i := range index {
+			if i >= len(filterUrls) || i < 0 {
+				panic("INTERNAL ERROR")
+			}
+			r = append(r, console.LinkInfo{
+				Url: filterUrls[i],
+			})
+		}
+		return r
+	}
+
+	store := getDs(t)
+	tests := []linkTest{
+		linkTest{
+			domain:      "filter.com",
+			tag:         "NoFilter",
+			limit:       LIM,
+			filterRegex: "",
+			expected:    pickFiltered(0, 1, 2, 3, 4, 5, 6),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "PathFilter",
+			limit:       LIM,
+			filterRegex: `/ccc/.*\.html$`,
+			expected:    pickFiltered(5),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "PathFilter2",
+			limit:       LIM,
+			filterRegex: `aaa\.html$`,
+			expected:    pickFiltered(3, 6),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "SubdomainFilter",
+			limit:       LIM,
+			filterRegex: `subd.filter.com`,
+			expected:    pickFiltered(6),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "ProtocolFilter",
+			limit:       LIM,
+			filterRegex: `^https`,
+			expected:    pickFiltered(4),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "HonorLimit",
+			limit:       1,
+			filterRegex: `aaa\.html$`,
+			expected:    pickFiltered(3),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "DeepPathFilter",
+			limit:       LIM,
+			filterRegex: `/[^/]+/[^/]+/A$`,
+			expected:    pickFiltered(0, 1),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "DeepPathFilter2",
+			limit:       LIM,
+			filterRegex: `/[^/]{4}/[^/]{4}/.$`,
+			expected:    pickFiltered(1, 2),
+		},
+	}
+
+	// run the tests
+	for _, test := range tests {
+		if test.omittest {
+			continue
+		}
+		linfos, err := store.ListLinks(test.domain, "", test.limit, test.filterRegex)
+		if err != nil {
+			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
+			continue
+		}
+
+		if len(linfos) != len(test.expected) {
+			t.Errorf("ListLinks for tag %s length mismatch got %d, expected %d", test.tag, len(linfos), len(test.expected))
+			continue
+		}
+		for i := range linfos {
+			got := linfos[i]
+			exp := test.expected[i]
+			if got.Url != exp.Url {
+				t.Errorf("ListLinks %s Url mismatch got %v, expected %v", test.tag, got.Url, exp.Url)
+			}
+		}
+	}
+
+	store.Close()
+
 }

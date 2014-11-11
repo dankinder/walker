@@ -1,0 +1,96 @@
+<style>
+.outline {
+    border: 1px solid black;
+    border-radius: 10px;
+}
+
+.box input {
+    width: 100%;
+    margin: 20px;
+}
+
+.button-box input {
+    width: 80%;
+    margin: 20px;
+}
+
+.help-bubble {
+    height: 30px;
+}
+
+.popover {
+    max-width: 500px;
+    width: 500px;
+}
+</style>
+
+<script type="text/javascript">
+$(document).ready(function(){
+    $(".help-bubble").popover({
+        placement : 'bottom',
+        title: "Examples",
+        html: true,
+        container: 'body',
+        content: function(){
+            return $('#examples').html();
+        },
+    });
+});
+</script>
+
+<h2>Filter Links</h2>
+
+<div class="outline">
+
+    <form role="form" action="/filterLinks" method="post">
+
+        <div class="row">
+            <div style="text-align: right" class="col-xs-2">
+                <h3> Domain </h3>
+            </div>
+            <div class="box col-xs-8">
+                <input type="text" name="domain" placeholder="Enter domain of sought links" value="{{.InputDomainValue}}">
+            </div>
+        </div>
+
+        <div class="row">
+            <div style="text-align: right" class="col-xs-2">
+                <h3> Link Regex </h3>
+            </div>
+            <div class="box col-xs-8">
+                <input type="text" name="regex" placeholder="Enter regular expression to use as link filter" value="{{.InputRegexValue}}">
+            </div>
+        </div>
+
+         <div class="row">
+            <div class="col-xs-2"></div>
+
+            <div class="button-box col-xs-6">
+                <input type="submit" value="Submit" />
+                 <a href="#" class="help-bubble" data-toggle="popover" data-container="body">examples</a>
+            </div>
+         </div>    
+    </form>
+</div>
+
+
+
+<div class="hidden" id="examples" style="width: 500px;">
+    <ul>
+        <li> Match any path rooted in foobar directory <br>
+            <pre> /foobar/.*$ </pre> </li>
+
+        <li> Match any html files three directories deep
+            <pre> /[^/]+/[^/]+/[^/]+/.*.html$ </pre> </li>
+
+        <li> Match secure sites <pre> ^https </pre> </li>
+
+        <li> Match subdomain foo, in domain bar.com <pre> foo.bar.com </pre> </li>
+
+    </ul>
+
+Further reading can be found
+<a href="http://en.wikipedia.org/wiki/Regular_expression"> here </a>,
+and specifics about the regular expression syntax supported can be found 
+<a href="https://code.google.com/p/re2/wiki/Syntax"> here </a>
+</div>

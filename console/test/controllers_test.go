@@ -44,6 +44,12 @@ func spoofData() {
 // Call a controller and return a Document
 //
 func callController(url string, body string, urlPattern string, controller func(w http.ResponseWriter, req *http.Request)) (*goquery.Document, string, int) {
+	a, b, c, _ := callControllerFull(url, body, urlPattern, controller)
+	return a, b, c
+}
+
+func callControllerFull(url string, body string, urlPattern string, controller func(w http.ResponseWriter, req *http.Request)) (*goquery.Document, string, int,
+	map[string]interface{}) {
 	//
 	// Set your method based on the body input
 	//
@@ -72,14 +78,21 @@ func callController(url string, body string, urlPattern string, controller func(
 	router.ServeHTTP(w, req)
 	status := w.Code
 	output := w.Body.String()
+	mp := map[string]interface{}{
+		"headers": w.Header(),
+	}
+
+	if strings.TrimSpace(output) == "" {
+		return nil, output, status, mp
+	}
 
 	outputReader := strings.NewReader(output)
 	doc, err := goquery.NewDocumentFromReader(outputReader)
 	if err != nil {
 		panic(err)
 	}
+	return doc, output, status, mp
 
-	return doc, output, status
 }
 
 //
@@ -96,14 +109,15 @@ func TestLayout(t *testing.T) {
 
 	// Make sure the main menu is there
 	mainLinks := map[string]string{
-		"/list":      "List",
-		"/find":      "Find Domains",
-		"/findLinks": "Find Links",
-		"/add":       "Add",
+		"/list":        "List",
+		"/find":        "Find Domains",
+		"/findLinks":   "Find Links",
+		"/add":         "Add",
+		"/filterLinks": "Filter Links",
 	}
 	sub := doc.Find("nav ul li a")
-	if sub.Size() != 4 {
-		t.Fatalf("[nav ul li a] Bad size: got %d, expected %d", sub.Size(), 4)
+	if sub.Size() != len(mainLinks) {
+		t.Fatalf("[nav ul li a] Bad size: got %d, expected %d", sub.Size(), len(mainLinks))
 		return
 	}
 	sub.Each(func(index int, sel *goquery.Selection) {
@@ -985,4 +999,73 @@ func TestAddLinks(t *testing.T) {
 		}
 	})
 
+}
+
+func TestFilterLinks(t *testing.T) {
+	spoofData()
+
+	//
+	// First get the filter page and verify it looks correct
+	//
+	doc, body, status := callController("http://localhost:3000/filterLinks", "", "/filterLinks", console.FilterLinksController)
+	if status != http.StatusOK {
+		t.Errorf("TestFilterLinks bad status code got %d, expected %d", status, http.StatusOK)
+		body = ""
+		t.Log(body)
+		t.FailNow()
+	}
+
+	expectedLabels := map[string]bool{
+		"Domain":     true,
+		"Link Regex": true,
+	}
+	doc.Find(".container .row h3").Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !expectedLabels[text] {
+			t.Errorf("[.container .row h3] Label mismatch got %q, but didn't find in expectedLabels", text)
+
+		}
+	})
+
+	sub := doc.Find(".container .box input[type=text]")
+	if sub.Size() != 2 {
+		t.Errorf("[.container .box input[type=text]] Size mismatch got %d, expected 2", sub.Size())
+	}
+
+	sub = doc.Find(".container input[type=submit]")
+	if sub.Size() != 1 {
+		t.Errorf("[.container input[type=submit]] Size mismatch got %d, expected 1", sub.Size())
+
+	}
+
+	// Now test the post submittion
+	rawBody := "domain=t1.com&regex=html"
+	var emp map[string]interface{}
+	doc, body, status, emp = callControllerFull("http://localhost:3000/filterLinks", rawBody, "/filterLinks", console.FilterLinksController)
+	if status != http.StatusSeeOther {
+		t.Errorf("TestFilterLinks bad status code got %d, expected %d", status, http.StatusSeeOther)
+		body = ""
+		t.Log(body)
+		t.FailNow()
+	}
+
+	headersRaw, headersOk := emp["headers"]
+	if !headersOk {
+		t.Fatalf("TestFilterLinks failed to find headers in reply")
+	}
+
+	headers, headersOk := headersRaw.(http.Header)
+	if !headersOk {
+		t.Fatalf("TestFilterLinks failed to cast headers in reply")
+	}
+
+	loc, locOk := headers["Location"]
+	if !locOk {
+		t.Fatalf("TestFilterLinks failed to find Location in headers")
+	}
+
+	expectedLoc := "/links/t1.com?filterRegex=NB2G23A="
+	if loc[0] != expectedLoc {
+		t.Fatalf("TestFilterLinks redirect url got %q, but expected %q", loc[0], expectedLoc)
+	}
 }

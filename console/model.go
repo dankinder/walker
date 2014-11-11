@@ -6,6 +6,7 @@ package console
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -82,8 +83,11 @@ type Model interface {
 	// Same as ListDomains, but only lists the domains that are currently queued
 	ListWorkingDomains(seedDomain string, limit int) ([]DomainInfo, error)
 
-	// List links from the given domain
-	ListLinks(domain string, seedUrl string, limit int) ([]LinkInfo, error)
+	// List links from the given domain. If seedUrl is non-empty, it indicates
+	// where to start the cursor for the list. limit denotes the maximum
+	// number of results returned. If filterRegex is non-empty, the links
+	// returned will be pre-filtered by this regular expression.
+	ListLinks(domain string, seedUrl string, limit int, filterRegex string) ([]LinkInfo, error)
 
 	// For a given linkUrl, return the entire crawl history
 	ListLinkHistorical(linkUrl string, seedIndex int, limit int) ([]LinkInfo, int, error)
@@ -402,20 +406,28 @@ type rememberTimes struct {
 	ind int
 }
 
-//collectLinkInfos populates a []LinkInfo list given a cassandra iterator
-func (ds *CqlModel) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int) ([]LinkInfo, error) {
+//collectLinkInfos populates a []LinkInfo list given a cassandra iterator. Arguments are described as:
+// (a) linfos is the list of LinkInfo's to build on
+// (b) rtimes is scratch space used to filter most recent link
+// (c) itr is a gocql.Iter instance to be read
+// (d) limit is the max length of linfos
+// (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [This is used
+//     to implement filterRegex on ListLinks]
+func (ds *CqlModel) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkAccept func(string) bool) ([]LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
 	var status int
-
 	for itr.Scan(&domain, &subdomain, &path, &protocol, &crawlTime, &status, &anerror, &robotsExcluded) {
-
 		u, err := walker.CreateURL(domain, subdomain, path, protocol, crawlTime)
 		if err != nil {
 			return linfos, err
 		}
 		urlString := u.String()
+
+		if linkAccept != nil && !linkAccept(urlString) {
+			continue
+		}
 
 		qq, yes := rtimes[urlString]
 
@@ -454,10 +466,22 @@ type queryEntry struct {
 	args  []interface{}
 }
 
-func (ds *CqlModel) ListLinks(domain string, seedUrl string, limit int) ([]LinkInfo, error) {
+func (ds *CqlModel) ListLinks(domain string, seedUrl string, limit int, filterRegex string) ([]LinkInfo, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
 	}
+
+	var acceptLink func(string) bool = nil
+	if filterRegex != "" {
+		re, err := regexp.Compile(filterRegex)
+		if err != nil {
+			return nil, fmt.Errorf("filterRegex compile error: %v", err)
+		}
+		acceptLink = func(s string) bool {
+			return re.MatchString(s)
+		}
+	}
+
 	db := ds.Db
 	var linfos []LinkInfo
 	rtimes := map[string]rememberTimes{}
@@ -522,7 +546,7 @@ func (ds *CqlModel) ListLinks(domain string, seedUrl string, limit int) ([]LinkI
 	var err error
 	for _, qt := range table {
 		itr := db.Query(qt.query, qt.args...).Iter()
-		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, limit)
+		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, limit, acceptLink)
 		if err != nil {
 			return linfos, err
 		}
@@ -617,7 +641,7 @@ func (ds *CqlModel) FindLink(link string) (*LinkInfo, error) {
 
 	itr := db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
 	rtimes := map[string]rememberTimes{}
-	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1)
+	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil)
 	if err != nil {
 		itr.Close()
 		return nil, err
