@@ -1064,7 +1064,7 @@ func TestFilterLinks(t *testing.T) {
 		t.Fatalf("TestFilterLinks failed to find Location in headers")
 	}
 
-	expectedLoc := "/links2/t1.com/NB2G23A="
+	expectedLoc := "/links/t1.com?filterRegex=NB2G23A="
 	if loc[0] != expectedLoc {
 		t.Fatalf("TestFilterLinks redirect url got %q, but expected %q", loc[0], expectedLoc)
 	}

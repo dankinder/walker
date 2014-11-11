@@ -32,8 +32,6 @@ func Routes() []Route {
 		Route{Path: "/add/", Controller: AddLinkIndexController},
 		Route{Path: "/links/{domain}", Controller: LinksController},
 		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
-		Route{Path: "/links2/{domain}/{filterRegex}", Controller: LinksController},
-		Route{Path: "/links/{domain}/{seedUrl}/{filterRegex}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
@@ -297,11 +295,21 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		seedUrl = ss
 	}
 
-	filterRegex := vars["filterRegex"]
+	//
+	// Get the filterRegex if there is one
+	//
+	err = req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+	filterRegex := ""
 	filterUrlSuffix := ""
 	filterRegexSuffix := ""
-	if filterRegex != "" {
-		filterUrlSuffix = "/" + filterRegex
+	filterRegexArr, filterRegexOk := req.Form["filterRegex"]
+	if filterRegexOk && len(filterRegexArr) > 0 {
+		filterRegex = filterRegexArr[0]
+		filterUrlSuffix = "?filterRegex=" + filterRegex
 		filterRegex, err = decode32(filterRegex)
 		if err != nil {
 			replyServerError(w, fmt.Errorf("decode32 error: %v", err))
@@ -310,12 +318,18 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		filterRegexSuffix = fmt.Sprintf("(filtered by /%s/)", filterRegex)
 	}
 
+	//
+	// Lets grab the links
+	//
 	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, filterRegex)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("ListLinks: %v", err))
 		return
 	}
 
+	//
+	// Odds and ends
+	//
 	nextSeedUrl := ""
 	nextButtonClass := "disabled"
 	if len(linfos) == windowLength {
@@ -338,6 +352,9 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
 	}
 
+	//
+	// Lets render
+	//
 	mp := map[string]interface{}{
 		"Dinfo":             dinfo,
 		"NumberCrawled":     dinfo.NumberLinksTotal - dinfo.NumberLinksUncrawled,
@@ -474,6 +491,37 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	domain := vars["domain"]
+	direction := vars["direction"]
+	if domain == "" || direction == "" {
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+	var exclude bool
+	var reason string
+	switch direction {
+	case "ex":
+		exclude = true
+		reason = "Manual exclude"
+	case "un":
+		exclude = false
+		reason = ""
+	default:
+		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
+		return
+	}
+
+	err := DS.UpdateDomainExclude(domain, exclude, reason)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+}
+
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		mp := map[string]interface{}{
@@ -528,40 +576,9 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("/links2/%s/%s", domain[0], encode32(regex[0]))
+	url := fmt.Sprintf("/links/%s?filterRegex=%s", domain[0], encode32(regex[0]))
 	http.Redirect(w, req, url, http.StatusSeeOther)
 	return
-}
-
-func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
-	vars := mux.Vars(req)
-	domain := vars["domain"]
-	direction := vars["direction"]
-	if domain == "" || direction == "" {
-		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
-		return
-	}
-	var exclude bool
-	var reason string
-	switch direction {
-	case "ex":
-		exclude = true
-		reason = "Manual exclude"
-	case "un":
-		exclude = false
-		reason = ""
-	default:
-		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
-		return
-	}
-
-	err := DS.UpdateDomainExclude(domain, exclude, reason)
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-
-	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
 }
 
 func assureScheme(url string) (string, error) {
