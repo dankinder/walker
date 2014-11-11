@@ -209,9 +209,9 @@ var testDomain = console.DomainInfo{
 
 var filterDomain = console.DomainInfo{
 	Domain:               "filter.com",
-	NumberLinksTotal:     4,
+	NumberLinksTotal:     7,
 	NumberLinksQueued:    0,
-	NumberLinksUncrawled: 4,
+	NumberLinksUncrawled: 7,
 	TimeQueued:           testTime,
 }
 
@@ -329,7 +329,11 @@ func getDs(t *testing.T) *console.CqlModel {
 		db.Query(insertLink, "filter.com", "", "/bbb.html", "https", walker.NotYetCrawled, 200, "", false),
 		db.Query(insertLink, "filter.com", "", "/ccc/ddd.html", "http", walker.NotYetCrawled, 200, "", false),
 		db.Query(insertLink, "filter.com", "subd", "/aaa.html", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1/2/A", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1111/2222/A", "http", walker.NotYetCrawled, 200, "", false),
+		db.Query(insertLink, "filter.com", "", "/1111/2222/B", "http", walker.NotYetCrawled, 200, "", false),
 	}
+
 	for _, q := range queries {
 		err := q.Exec()
 		if err != nil {
@@ -1044,6 +1048,10 @@ func TestCloseToLimitBug(t *testing.T) {
 
 func TestFilterRegex(t *testing.T) {
 	filterUrls := []string{
+		"http://filter.com/1/2/A",
+		"http://filter.com/1111/2222/A",
+		"http://filter.com/1111/2222/B",
+
 		"http://filter.com/aaa.html",
 		"https://filter.com/bbb.html",
 		"http://filter.com/ccc/ddd.html",
@@ -1073,7 +1081,7 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "NoFilter",
 			limit:       LIM,
 			filterRegex: "",
-			expected:    pickFiltered(0, 1, 2, 3),
+			expected:    pickFiltered(0, 1, 2, 3, 4, 5, 6),
 		},
 
 		linkTest{
@@ -1081,7 +1089,7 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "PathFilter",
 			limit:       LIM,
 			filterRegex: `/ccc/.*\.html$`,
-			expected:    pickFiltered(2),
+			expected:    pickFiltered(5),
 		},
 
 		linkTest{
@@ -1089,7 +1097,7 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "PathFilter2",
 			limit:       LIM,
 			filterRegex: `aaa\.html$`,
-			expected:    pickFiltered(0, 3),
+			expected:    pickFiltered(3, 6),
 		},
 
 		linkTest{
@@ -1097,7 +1105,7 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "SubdomainFilter",
 			limit:       LIM,
 			filterRegex: `subd.filter.com`,
-			expected:    pickFiltered(3),
+			expected:    pickFiltered(6),
 		},
 
 		linkTest{
@@ -1105,7 +1113,7 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "ProtocolFilter",
 			limit:       LIM,
 			filterRegex: `^https`,
-			expected:    pickFiltered(1),
+			expected:    pickFiltered(4),
 		},
 
 		linkTest{
@@ -1113,7 +1121,23 @@ func TestFilterRegex(t *testing.T) {
 			tag:         "HonorLimit",
 			limit:       1,
 			filterRegex: `aaa\.html$`,
-			expected:    pickFiltered(0),
+			expected:    pickFiltered(3),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "DeepPathFilter",
+			limit:       LIM,
+			filterRegex: `/[^/]+/[^/]+/A$`,
+			expected:    pickFiltered(0, 1),
+		},
+
+		linkTest{
+			domain:      "filter.com",
+			tag:         "DeepPathFilter2",
+			limit:       LIM,
+			filterRegex: `/[^/]{4}/[^/]{4}/.$`,
+			expected:    pickFiltered(1, 2),
 		},
 	}
 
@@ -1127,6 +1151,7 @@ func TestFilterRegex(t *testing.T) {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
 		}
+
 		if len(linfos) != len(test.expected) {
 			t.Errorf("ListLinks for tag %s length mismatch got %d, expected %d", test.tag, len(linfos), len(test.expected))
 			continue
