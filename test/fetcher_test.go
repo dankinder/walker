@@ -1008,8 +1008,9 @@ func TestMaxCrawlDealy(t *testing.T) {
 			}
 			if !expectedPages[path] {
 				t.Errorf("Path mistmatch, didn't find path %q in expectedPages", path)
+			} else {
+				delete(expectedPages, path)
 			}
-			delete(expectedPages, path)
 		}
 	}
 
