@@ -183,6 +183,9 @@ type FetchManager struct {
 
 	// used to match Content-Type headers
 	acceptFormats *mimetools.Matcher
+
+	defCrawlDelay time.Duration
+	maxCrawlDelay time.Duration
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -202,8 +205,20 @@ func (fm *FetchManager) Start() {
 		panic("Cannot start a FetchManager multiple times")
 	}
 
-	mm, err := mimetools.NewMatcher(Config.AcceptFormats)
-	fm.acceptFormats = mm
+	var err error
+	fm.defCrawlDelay, err = time.ParseDuration(Config.DefaultCrawlDelay)
+	if err != nil {
+		// This won't happen b/c this duration is checked in Config
+		panic(err)
+	}
+
+	fm.maxCrawlDelay, err = time.ParseDuration(Config.MaxCrawlDelay)
+	if err != nil {
+		// This won't happen b/c this duration is checked in Config
+		panic(err)
+	}
+
+	fm.acceptFormats, err = mimetools.NewMatcher(Config.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
@@ -383,10 +398,23 @@ func (f *fetcher) crawlNewHost() bool {
 		return true
 	}
 
+	//
+	// Determine crawlDelay
+	//
 	f.fetchRobots(f.host)
-	f.crawldelay = time.Duration(Config.DefaultCrawlDelay) * time.Second
-	if f.robots != nil && int(f.robots.CrawlDelay) > Config.DefaultCrawlDelay {
-		f.crawldelay = f.robots.CrawlDelay
+	def := f.fm.defCrawlDelay // we know def < max as asserted in assertConfigInvariants
+	max := f.fm.maxCrawlDelay
+	f.crawldelay = def
+	if f.robots != nil {
+		req := f.robots.CrawlDelay
+		if req > def {
+			if req < max {
+				f.crawldelay = req
+			} else {
+				f.crawldelay = max
+			}
+		}
+
 	}
 	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
 
