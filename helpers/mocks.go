@@ -96,6 +96,7 @@ type MockHTTPHandler struct {
 	// level map is by method, i.e. returns["GET"]["http://test.com/"] => an
 	// expected response
 	returns map[string]map[string]*MockResponse
+	headers map[string]map[string][]http.Header
 }
 
 func NewMockHTTPHandler() *MockHTTPHandler {
@@ -108,6 +109,15 @@ func NewMockHTTPHandler() *MockHTTPHandler {
 		"POST":    map[string]*MockResponse{},
 		"PUT":     map[string]*MockResponse{},
 		"TRACE":   map[string]*MockResponse{},
+	}
+	s.headers = map[string]map[string][]http.Header{
+		"DELETE":  map[string][]http.Header{},
+		"GET":     map[string][]http.Header{},
+		"HEAD":    map[string][]http.Header{},
+		"OPTIONS": map[string][]http.Header{},
+		"POST":    map[string][]http.Header{},
+		"PUT":     map[string][]http.Header{},
+		"TRACE":   map[string][]http.Header{},
 	}
 	return s
 }
@@ -124,6 +134,26 @@ func (s *MockHTTPHandler) SetResponse(link string, r *MockResponse) {
 	m[link] = r
 }
 
+func (s *MockHTTPHandler) storeHeader(method string, link string, inHeaders http.Header) error {
+	// first copy the input headers
+	headers := http.Header{}
+	for key, list := range inHeaders {
+		var nlist []string
+		nlist = append(nlist, list...)
+		headers[key] = nlist
+	}
+
+	// now put them in the right place
+	m, mok := s.headers[method]
+	if !mok {
+		return fmt.Errorf("Failed to find method %v in headers", method)
+	}
+	hlist := m[link]
+	hlist = append(hlist, headers)
+	m[link] = hlist
+	return nil
+}
+
 func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil {
 		r.URL.Scheme = "http"
@@ -136,11 +166,14 @@ func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		panic(fmt.Sprintf("Got an http method we didn't expect: %v", r.Method))
 	}
-	res, ok := m[r.URL.String()]
+	link := r.URL.String()
+	res, ok := m[link]
 	if !ok {
 		// No particular response requested, just return 200 OK return
 		return
 	}
+
+	s.storeHeader(r.Method, link, r.Header)
 
 	if res.Status == 0 {
 		res.Status = 200
@@ -179,6 +212,27 @@ func NewMockRemoteServer() (*MockRemoteServer, error) {
 	}
 	go http.Serve(rs.listener, rs)
 	return rs, nil
+}
+
+func (rs *MockRemoteServer) Headers(method string, url string, depth int) *http.Header {
+	m, mok := rs.MockHTTPHandler.headers[method]
+	if !mok {
+		return nil
+	}
+	head, headok := m[url]
+	if !headok {
+		return nil
+	}
+
+	if depth >= len(head) {
+		return nil
+	}
+
+	if depth < 0 {
+		return &head[len(head)-1]
+	}
+
+	return &head[depth]
 }
 
 func (rs *MockRemoteServer) Stop() {
