@@ -523,6 +523,47 @@ func TestAddingRedirects(t *testing.T) {
 	}
 }
 
+func TestUnclaimAll(t *testing.T) {
+	db := GetTestDB()
+	ds := getDS(t)
+
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
+								VALUES (?, ?, ?, ?)`
+	insertSegment := `INSERT INTO segments (dom, subdom, path, proto)
+						VALUES (?, ?, ?, ?)`
+
+	queries := []*gocql.Query{
+		db.Query(insertDomainInfo, "test.com", gocql.TimeUUID(), 0, true),
+		db.Query(insertSegment, "test.com", "", "page1.html", "http"),
+		db.Query(insertSegment, "test.com", "", "page2.html", "http"),
+	}
+	for _, q := range queries {
+		err := q.Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert test data: %v\nQuery: %v", err, q)
+		}
+	}
+
+	ds.UnclaimAll()
+
+	var count int
+	db.Query(`SELECT COUNT(*) FROM segments WHERE dom = 'test.com'`).Scan(&count)
+	if count != 0 {
+		t.Errorf("Expected links from unclaimed domain to be deleted, found %v", count)
+	}
+
+	err := db.Query(`SELECT COUNT(*) FROM domain_info
+						WHERE dom = 'test.com'
+						AND claim_tok = 00000000-0000-0000-0000-000000000000
+						AND dispatched = false ALLOW FILTERING`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query for test.com in domain_info: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("test.com has not been correctly undispatched in domain_info after unclaim all")
+	}
+}
+
 func TestClaimHostConcurrency(t *testing.T) {
 	numInstances := 10
 	numDomain := 1000
@@ -629,5 +670,4 @@ func TestDomainPriority(t *testing.T) {
 
 		highestPriority = prio
 	}
-
 }
