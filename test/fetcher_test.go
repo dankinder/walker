@@ -1071,6 +1071,7 @@ func TestFnvFingerprint(t *testing.T) {
 	go manager.Start()
 	time.Sleep(time.Second * 1)
 	manager.Stop()
+	rs.Stop()
 
 	fnv := fnv.New64()
 	fnv.Write([]byte(html))
