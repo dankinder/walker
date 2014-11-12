@@ -246,6 +246,7 @@ type LinksExpectation struct {
 	ExcludedByRobots bool
 	Status           int
 	MimeType         string
+	FnvFingerprint   uint64
 }
 
 var StoreURLExpectations []StoreURLExpectation
@@ -262,15 +263,17 @@ func init() {
 						Host: "test.com",
 					},
 				},
-				MimeType: "text/html; charset=ISO-8859-4",
+				MimeType:       "text/html; charset=ISO-8859-4",
+				FnvFingerprint: 1,
 			},
 			Expected: &LinksExpectation{
-				Domain:    "test.com",
-				Path:      "/page1.html",
-				Protocol:  "http",
-				CrawlTime: time.Unix(0, 0),
-				Status:    200,
-				MimeType:  "text/html; charset=ISO-8859-4",
+				Domain:         "test.com",
+				Path:           "/page1.html",
+				Protocol:       "http",
+				CrawlTime:      time.Unix(0, 0),
+				Status:         200,
+				MimeType:       "text/html; charset=ISO-8859-4",
+				FnvFingerprint: 1,
 			},
 		},
 		StoreURLExpectation{
@@ -280,21 +283,24 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
-				MimeType: "foo/bar",
+				MimeType:       "foo/bar",
+				FnvFingerprint: 2,
 			},
 			Expected: &LinksExpectation{
-				Domain:    "test.com",
-				Path:      "/page2.html?var1=abc&var2=def",
-				Protocol:  "http",
-				CrawlTime: time.Unix(0, 0),
-				Status:    200,
-				MimeType:  "foo/bar",
+				Domain:         "test.com",
+				Path:           "/page2.html?var1=abc&var2=def",
+				Protocol:       "http",
+				CrawlTime:      time.Unix(0, 0),
+				Status:         200,
+				MimeType:       "foo/bar",
+				FnvFingerprint: 2,
 			},
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
 				URL:              helpers.Parse("http://test.com/page3.html"),
 				ExcludedByRobots: true,
+				FnvFingerprint:   3,
 			},
 			Expected: &LinksExpectation{
 				Domain:           "test.com",
@@ -302,6 +308,7 @@ func init() {
 				Protocol:         "http",
 				CrawlTime:        time.Unix(0, 0),
 				ExcludedByRobots: true,
+				FnvFingerprint:   3,
 			},
 		},
 		StoreURLExpectation{
@@ -311,13 +318,15 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
+				FnvFingerprint: 4,
 			},
 			Expected: &LinksExpectation{
-				Domain:    "test.com",
-				Path:      "/page4.html",
-				Protocol:  "http",
-				CrawlTime: time.Unix(1234, 5678),
-				Status:    200,
+				Domain:         "test.com",
+				Path:           "/page4.html",
+				Protocol:       "http",
+				CrawlTime:      time.Unix(1234, 5678),
+				Status:         200,
+				FnvFingerprint: 4,
 			},
 		},
 		StoreURLExpectation{
@@ -327,13 +336,15 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
+				FnvFingerprint: 5,
 			},
 			Expected: &LinksExpectation{
-				Domain:    "test.com",
-				Path:      "/page5.html",
-				Protocol:  "https",
-				CrawlTime: time.Unix(0, 0),
-				Status:    200,
+				Domain:         "test.com",
+				Path:           "/page5.html",
+				Protocol:       "https",
+				CrawlTime:      time.Unix(0, 0),
+				Status:         200,
+				FnvFingerprint: 5,
 			},
 		},
 		StoreURLExpectation{
@@ -343,14 +354,16 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
+				FnvFingerprint: 6,
 			},
 			Expected: &LinksExpectation{
-				Domain:    "test.com",
-				Subdomain: "sub.dom1",
-				Path:      "/page5.html",
-				Protocol:  "https",
-				CrawlTime: time.Unix(0, 0),
-				Status:    200,
+				Domain:         "test.com",
+				Subdomain:      "sub.dom1",
+				Path:           "/page5.html",
+				Protocol:       "https",
+				CrawlTime:      time.Unix(0, 0),
+				Status:         200,
+				FnvFingerprint: 6,
 			},
 		},
 	}
@@ -366,14 +379,14 @@ func TestStoreURLFetchResults(t *testing.T) {
 
 		actual := &LinksExpectation{}
 		err := db.Query(
-			`SELECT err, robot_ex, stat, mime FROM links
+			`SELECT err, robot_ex, stat, mime, fnv FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
 			exp.Domain,
 			exp.Subdomain,
 			exp.Path,
 			exp.Protocol,
 			//exp.CrawlTime,
-		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType)
+		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType, &actual.FnvFingerprint)
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
@@ -392,6 +405,10 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if exp.MimeType != actual.MimeType {
 			t.Errorf("Expected mime: %v\nBut got: %v\nFor input: %+v",
 				exp.MimeType, actual.MimeType, tcase.Input)
+		}
+		if exp.FnvFingerprint != actual.FnvFingerprint {
+			t.Errorf("Expected FnvFingerprint: %v\nBut got: %v\nFor input: %+v",
+				exp.FnvFingerprint, actual.FnvFingerprint, tcase.Input)
 		}
 	}
 }
