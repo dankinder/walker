@@ -214,25 +214,25 @@ func NewMockRemoteServer() (*MockRemoteServer, error) {
 	return rs, nil
 }
 
-func (rs *MockRemoteServer) Headers(method string, url string, depth int) *http.Header {
+func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.Header, error) {
 	m, mok := rs.MockHTTPHandler.headers[method]
 	if !mok {
-		return nil
+		return nil, fmt.Errorf("Failed to find method %q", method)
 	}
 	head, headok := m[url]
 	if !headok {
-		return nil
+		return nil, fmt.Errorf("Failed to find link %q", url)
 	}
 
 	if depth >= len(head) {
-		return nil
+		return nil, fmt.Errorf("Depth (%d) was >= length of headers %d", depth, len(head))
 	}
 
 	if depth < 0 {
-		return &head[len(head)-1]
+		return head[len(head)-1], nil
+	} else {
+		return head[depth], nil
 	}
-
-	return &head[depth]
 }
 
 func (rs *MockRemoteServer) Stop() {

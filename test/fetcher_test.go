@@ -1020,3 +1020,91 @@ func TestMaxCrawlDealy(t *testing.T) {
 	}
 
 }
+
+func TestIfModifiedSince(t *testing.T) {
+	url := helpers.Parse("http://a.com/page1.html")
+	url.LastCrawled = time.Now()
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a.com").Once()
+	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
+		url,
+	})
+	ds.On("UnclaimHost", "a.com").Return()
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{Status: 304})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+	rs.Stop()
+
+	//
+	// Did the server see the header
+	//
+	headers, err := rs.Headers("GET", url.String(), -1)
+	mod, modOk := headers["If-Modified-Since"]
+	if !modOk {
+		t.Fatalf("Failed to find If-Modified-Since in request header for link %q", url.String())
+	} else if lm := url.LastCrawled.Format(time.RFC1123); lm != mod[0] {
+		t.Errorf("If-Modified-Since has bad format, got %q, expected %q", mod[0], lm)
+	}
+
+	//
+	// Did the data store get called correctly
+	//
+	count := 0
+	for _, call := range ds.Calls {
+		if call.Method == "StoreURLFetchResults" {
+			count++
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			if fr.URL.String() != url.String() {
+				t.Errorf("DS URL link mismatch: got %q, expected %q", fr.URL.String(), url.String())
+			}
+			if fr.Response.StatusCode != 304 {
+				t.Errorf("DS StatusCode mismatch: got %d, expected %d", fr.Response.StatusCode, 304)
+			}
+		}
+	}
+	if count < 1 {
+		t.Errorf("Expected to find DS call, but didn't")
+	}
+
+	//
+	// Did the handler get called
+	//
+	count = 0
+	for _, call := range h.Calls {
+		count++
+		fr := call.Arguments.Get(0).(*walker.FetchResults)
+		if fr.URL.String() != url.String() {
+			t.Errorf("Handler URL link mismatch: got %q, expected %q", fr.URL.String(), url.String())
+		}
+		if fr.Response.StatusCode != 304 {
+			t.Errorf("Handler StatusCode mismatch: got %d, expected %d", fr.Response.StatusCode, 304)
+		}
+	}
+	if count < 1 {
+		t.Errorf("Expected to find Handler call, but didn't")
+	}
+}
