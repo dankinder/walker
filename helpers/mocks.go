@@ -30,6 +30,11 @@ func (ds *MockDatastore) UnclaimHost(host string) {
 	ds.Mock.Called(host)
 }
 
+func (ds *MockDatastore) UnclaimAll() error {
+	args := ds.Mock.Called()
+	return args.Error(0)
+}
+
 func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
 	args := ds.Mock.Called(domain)
 	urls := args.Get(0).([]*walker.URL)
