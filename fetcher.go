@@ -453,7 +453,7 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	}
 	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
 
-	if fr.Response.Status == http.StatusNotModified {
+	if fr.Response.StatusCode == http.StatusNotModified {
 		log4go.Fine("Received 304 when fetching %v", link)
 		f.fm.Datastore.StoreURLFetchResults(fr)
 		return true
@@ -501,11 +501,11 @@ func (f *fetcher) stop() {
 func (f *fetcher) fetchRobots(host string) {
 	u := &URL{
 		URL: &url.URL{
-			Scheme:      "http",
-			Host:        host,
-			Path:        "robots.txt",
-			LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
+			Scheme: "http",
+			Host:   host,
+			Path:   "robots.txt",
 		},
+		LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
 	}
 	res, _, err := f.fetch(u)
 	if err != nil {
