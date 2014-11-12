@@ -453,6 +453,12 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	}
 	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
 
+	if fr.Response.Status == http.StatusNotModified {
+		log4go.Fine("Received 304 when fetching %v", link)
+		f.fm.Datastore.StoreURLFetchResults(fr)
+		return true
+	}
+
 	fr.MimeType = getMimeType(fr.Response)
 
 	if isHTML(fr.Response) {
@@ -495,9 +501,10 @@ func (f *fetcher) stop() {
 func (f *fetcher) fetchRobots(host string) {
 	u := &URL{
 		URL: &url.URL{
-			Scheme: "http",
-			Host:   host,
-			Path:   "robots.txt",
+			Scheme:      "http",
+			Host:        host,
+			Path:        "robots.txt",
+			LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
 		},
 	}
 	res, _, err := f.fetch(u)
@@ -524,7 +531,11 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 
 	req.Header.Set("User-Agent", Config.UserAgent)
 	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
-
+	if !u.LastCrawled.Equal(NotYetCrawled) {
+		// Date format used is RFC822 as defined by
+		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
+		req.Header.Set("If-Modified-Since", u.LastCrawled.Format(time.RFC822))
+	}
 	log4go.Debug("Sending request: %+v", req)
 
 	var redirectedFrom []*URL
