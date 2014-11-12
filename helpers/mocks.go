@@ -96,6 +96,9 @@ type MockHTTPHandler struct {
 	// level map is by method, i.e. returns["GET"]["http://test.com/"] => an
 	// expected response
 	returns map[string]map[string]*MockResponse
+
+	// headers stores the headers sent to the Mock server indexed (as for
+	// returns) by the pair (method, url)
 	headers map[string]map[string][]http.Header
 }
 
@@ -134,6 +137,7 @@ func (s *MockHTTPHandler) SetResponse(link string, r *MockResponse) {
 	m[link] = r
 }
 
+// storeHeader stores header information
 func (s *MockHTTPHandler) storeHeader(method string, link string, inHeaders http.Header) error {
 	// first copy the input headers
 	headers := http.Header{}
@@ -148,9 +152,8 @@ func (s *MockHTTPHandler) storeHeader(method string, link string, inHeaders http
 	if !mok {
 		return fmt.Errorf("Failed to find method %v in headers", method)
 	}
-	hlist := m[link]
-	hlist = append(hlist, headers)
-	m[link] = hlist
+
+	m[link] = append(m[link], headers)
 	return nil
 }
 
@@ -214,6 +217,14 @@ func NewMockRemoteServer() (*MockRemoteServer, error) {
 	return rs, nil
 }
 
+// Headers allows user to inspect the headers included in the request object
+// sent to MockRemoteServer. The triple (method, url, depth) selects which
+// header to return. Here:
+//   (a) method is the http method (GET, POST, etc.)
+//   (b) url is the full url of the page that received the request.
+//   (c) depth is an integer specifying which (of possibly many) headers for the
+//   given (method, url) pair to return. Use depth=-1 to get the latest
+//   header.
 func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.Header, error) {
 	m, mok := rs.MockHTTPHandler.headers[method]
 	if !mok {

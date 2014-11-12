@@ -541,7 +541,7 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	req.Header.Set("User-Agent", Config.UserAgent)
 	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
 	if !u.LastCrawled.Equal(NotYetCrawled) {
-		// Date format used is RFC1123 as defined by
+		// Date format used is RFC1123 as specified by
 		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
 		req.Header.Set("If-Modified-Since", u.LastCrawled.Format(time.RFC1123))
 	}
