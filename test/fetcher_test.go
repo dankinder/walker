@@ -988,6 +988,7 @@ func TestMaxCrawlDealy(t *testing.T) {
 	go manager.Start()
 	time.Sleep(time.Second * 1)
 	manager.Stop()
+	rs.Stop()
 
 	expectedPages := map[string]bool{
 		"/page1.html": true,
