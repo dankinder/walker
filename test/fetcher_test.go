@@ -1063,6 +1063,9 @@ func TestIfModifiedSince(t *testing.T) {
 	// Did the server see the header
 	//
 	headers, err := rs.Headers("GET", url.String(), -1)
+	if err != nil {
+		t.Fatalf("rs.Headers failed %v", err)
+	}
 	mod, modOk := headers["If-Modified-Since"]
 	if !modOk {
 		t.Fatalf("Failed to find If-Modified-Since in request header for link %q", url.String())
