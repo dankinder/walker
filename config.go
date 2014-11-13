@@ -78,22 +78,21 @@ type WalkerConfig struct {
 		Keyspace          string   `yaml:"keyspace"`
 		ReplicationFactor int      `yaml:"replication_factor"`
 		Timeout           string   `yaml:"timeout"`
+		CQLVersion        string   `yaml:"cql_version"`
+		ProtoVersion      int      `yaml:"proto_version"`
+		Port              int      `yaml:"port"`
+		NumConns          int      `yaml:"num_conns"`
+		NumStreams        int      `yaml:"num_streams"`
+		DiscoverHosts     bool     `yaml:"discover_hosts"`
+		MaxPreparedStmts  int      `yaml:"max_prepared_stmts"`
 
 		//TODO: Currently only exposing values needed for testing; should expose more?
-		//CQLVersion       string
-		//ProtoVersion     int
-		//Timeout          time.Duration
-		//Port             int
-		//NumConns         int
-		//NumStreams       int
 		//Consistency      Consistency
 		//Compressor       Compressor
 		//Authenticator    Authenticator
 		//RetryPolicy      RetryPolicy
 		//SocketKeepalive  time.Duration
 		//ConnPoolType     NewPoolFunc
-		//DiscoverHosts    bool
-		//MaxPreparedStmts int
 		//Discovery        DiscoveryConfig
 	} `yaml:"cassandra"`
 
@@ -142,6 +141,13 @@ func SetDefaultConfig() {
 	Config.Cassandra.Keyspace = "walker"
 	Config.Cassandra.ReplicationFactor = 3
 	Config.Cassandra.Timeout = "2s"
+	Config.Cassandra.CQLVersion = "3.0.0"
+	Config.Cassandra.ProtoVersion = 2
+	Config.Cassandra.Port = 9042
+	Config.Cassandra.NumConns = 2
+	Config.Cassandra.NumStreams = 128
+	Config.Cassandra.DiscoverHosts = false
+	Config.Cassandra.MaxPreparedStmts = 1000
 
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"
