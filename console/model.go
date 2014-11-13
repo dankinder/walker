@@ -271,13 +271,9 @@ func (ds *CqlModel) annotateDomainInfo(dinfos []DomainInfo) error {
 		d.NumberLinksTotal = linkCount
 		d.NumberLinksUncrawled = linkUncrawled
 
-		d.NumberLinksQueued = 0
-		if d.TimeQueued != zeroTime {
-			segmentCount, _, err := ds.countUniqueLinks(d.Domain, "segments")
-			if err != nil {
-				return err
-			}
-			d.NumberLinksQueued = segmentCount
+		d.NumberLinksQueued, _, err = ds.countUniqueLinks(d.Domain, "segments")
+		if err != nil {
+			return err
 		}
 	}
 
