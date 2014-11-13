@@ -4,7 +4,7 @@ Walker
 An efficient, scalable, continuous crawler leveraging Go/Cassandra
 
 [![Build Status](https://travis-ci.org/iParadigms/walker.svg?branch=master)](https://travis-ci.org/iParadigms/walker)
-[![GoDoc](https://godoc.org/github.com/iParadigms/walker/test?status.svg)](https://godoc.org/github.com/iParadigms/walker/test)
+[![GoDoc](https://godoc.org/github.com/iParadigms/walker?status.svg)](https://godoc.org/github.com/iParadigms/walker)
 
 # Documentation
 - [The walker-user mailing list](https://groups.google.com/forum/#!forum/walker-user)
