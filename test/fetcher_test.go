@@ -68,6 +68,14 @@ func init() {
 }
 
 func TestUrlParsing(t *testing.T) {
+	orig := walker.Config.PurgeSidList
+	defer func() {
+		walker.Config.PurgeSidList = orig
+		walker.PostConfigHooks()
+	}()
+	walker.Config.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.PostConfigHooks()
+
 	tests := []struct {
 		tag    string
 		input  string
@@ -86,6 +94,11 @@ func TestUrlParsing(t *testing.T) {
 		{
 			tag:    "PathSID",
 			input:  "http://a.com/page1.com;jsessionid=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "PathSID2",
+			input:  "http://a.com/page1.com;phpsessid=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a.com/page1.com",
 		},
 		{

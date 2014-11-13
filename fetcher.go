@@ -110,12 +110,30 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 }
 
 var parseURLPathStrip *regexp.Regexp
-var parseURLSessIds = []string{"jsessionid"}
 
 func setupParseURL() error {
-	var err error
-	parseURLPathStrip, err = regexp.Compile(`;jsessionid\=.*$`)
-	return err
+	if len(Config.PurgeSidList) == 0 {
+		parseURLPathStrip = nil
+	} else {
+		var buffer bytes.Buffer
+		startedLoop := false
+		for _, sid := range Config.PurgeSidList {
+			if startedLoop {
+				buffer.WriteRune('|')
+			}
+			startedLoop = true
+			buffer.WriteString(`\;`)
+			buffer.WriteString(sid)
+			buffer.WriteString(`\=.*$`)
+		}
+		var err error
+		parseURLPathStrip, err = regexp.Compile(buffer.String())
+		if err != nil {
+			return fmt.Errorf("Failed setupParseURL: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // ParseURL is the walker.URL equivalent of url.Parse. Note, all URL's should
@@ -128,16 +146,18 @@ func ParseURL(ref string) (*URL, error) {
 	purell.NormalizeURL(u, purell.FlagsSafe)
 	u.Fragment = "" // remove # tags at the end of path
 
-	setupParseURL()
-	u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+	if parseURLPathStrip != nil {
+		// Remove SID from path
+		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+	}
 
-	//Rewrite the query string as needed.
+	//Rewrite the query string as needed, removing SID's.
 	//XXX: Consider if we should rewrite every query string
 	// to be in a canonical order.
 	if u.RawQuery != "" {
 		needRebuild := false
 		params := u.Query()
-		for _, SID := range parseURLSessIds {
+		for _, SID := range Config.PurgeSidList {
 			_, found := params[SID]
 			if found {
 				delete(params, SID)

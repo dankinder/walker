@@ -53,6 +53,7 @@ type WalkerConfig struct {
 	IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
 	DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
 	MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
+	PurgeSidList            []string `yaml:"purge_sid_list"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -132,6 +133,7 @@ func SetDefaultConfig() {
 	Config.IncludeLinkPatterns = nil
 	Config.DefaultCrawlDelay = "1s"
 	Config.MaxCrawlDelay = "5m"
+	Config.PurgeSidList = nil
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -229,6 +231,15 @@ func assertConfigInvariants() error {
 	return nil
 }
 
+// This function allows code to set up data structures that depend
+// on the config, right after the config is consumed.
+func PostConfigHooks() {
+	err := setupParseURL()
+	if err != nil {
+		panic(err)
+	}
+}
+
 func readConfig() error {
 	SetDefaultConfig()
 
@@ -237,6 +248,7 @@ func readConfig() error {
 	Config.AcceptProtocols = []string{}
 	Config.IgnoreTags = []string{}
 	Config.Cassandra.Hosts = []string{}
+	Config.PurgeSidList = []string{}
 
 	data, err := ioutil.ReadFile(ConfigName)
 	if err != nil {
@@ -260,10 +272,16 @@ func readConfig() error {
 	if len(Config.Cassandra.Hosts) == 0 {
 		Config.Cassandra.Hosts = []string{"localhost"}
 	}
+	if len(Config.PurgeSidList) == 0 {
+		Config.PurgeSidList = []string{"jsessionid", "phpsessid", "aspsessionid"}
+	}
 
 	err = assertConfigInvariants()
 	if err != nil {
 		log4go.Info("Loaded config file %v", ConfigName)
 	}
+
+	PostConfigHooks()
+
 	return err
 }
