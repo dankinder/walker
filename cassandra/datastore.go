@@ -44,6 +44,13 @@ func GetConfig() *gocql.ClusterConfig {
 	config := gocql.NewCluster(walker.Config.Cassandra.Hosts...)
 	config.Keyspace = walker.Config.Cassandra.Keyspace
 	config.Timeout = timeout
+	config.CQLVersion = walker.Config.Cassandra.CQLVersion
+	config.ProtoVersion = walker.Config.Cassandra.ProtoVersion
+	config.Port = walker.Config.Cassandra.Port
+	config.NumConns = walker.Config.Cassandra.NumConns
+	config.NumStreams = walker.Config.Cassandra.NumStreams
+	config.DiscoverHosts = walker.Config.Cassandra.DiscoverHosts
+	config.MaxPreparedStmts = walker.Config.Cassandra.MaxPreparedStmts
 	return config
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
 type DomainInfo struct {
@@ -111,8 +112,7 @@ type CqlModel struct {
 
 func NewCqlModel() (*CqlModel, error) {
 	ds := new(CqlModel)
-	ds.Cluster = gocql.NewCluster(walker.Config.Cassandra.Hosts...)
-	ds.Cluster.Keyspace = walker.Config.Cassandra.Keyspace
+	ds.Cluster = cassandra.GetConfig()
 	var err error
 	ds.Db, err = ds.Cluster.CreateSession()
 	return ds, err
