@@ -231,8 +231,11 @@ func assertConfigInvariants() error {
 	return nil
 }
 
-// This function allows code to set up data structures that depend
-// on the config, right after the config is consumed.
+// This function allows code to set up data structures that depend on the
+// config. It is always called right after the config file is consumed. But
+// it's also public so if you modify the config in a test, you may need to
+// call this function. This function is idempotent; so you can call it as many
+// times as you like.
 func PostConfigHooks() {
 	err := setupParseURL()
 	if err != nil {

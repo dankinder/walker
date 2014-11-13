@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +116,8 @@ func setupParseURL() error {
 	if len(Config.PurgeSidList) == 0 {
 		parseURLPathStrip = nil
 	} else {
+		// Here we want to write a regexp that looks like
+		// \;jsessionid=.*$|\;other=.*$
 		var buffer bytes.Buffer
 		startedLoop := false
 		for _, sid := range Config.PurgeSidList {
@@ -153,22 +156,31 @@ func ParseURL(ref string) (*URL, error) {
 
 	//Rewrite the query string as needed, removing SID's.
 	//XXX: Consider if we should rewrite every query string
-	// to be in a canonical order.
+	//to be in a canonical order.
 	if u.RawQuery != "" {
 		needRebuild := false
 		params := u.Query()
-		for _, SID := range Config.PurgeSidList {
-			_, found := params[SID]
+		for _, sid := range Config.PurgeSidList {
+			_, found := params[sid]
 			if found {
-				delete(params, SID)
+				delete(params, sid)
 				needRebuild = true
 			}
 		}
 
 		if needRebuild {
+			// If we don't sort the url params, the order of query params is
+			// stochastic.
+			keyOrder := []string{}
+			for key := range params {
+				keyOrder = append(keyOrder, key)
+			}
+			sort.Strings(keyOrder)
+
 			var buffer bytes.Buffer
 			loopStarted := false
-			for key, list := range params {
+			for _, key := range keyOrder {
+				list := params[key]
 				if loopStarted {
 					buffer.WriteRune('&')
 				}

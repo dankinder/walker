@@ -104,7 +104,12 @@ func TestUrlParsing(t *testing.T) {
 		{
 			tag:    "QuerySID",
 			input:  "http://a.com/page1.com?foo=bar&jsessionid=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
-			expect: "http://a.com/page1.com?foo=bar&baz=niffler",
+			expect: "http://a.com/page1.com?baz=niffler&foo=bar",
+		},
+		{
+			tag:    "QuerySID2",
+			input:  "http://a.com/page1.com?phpsessid=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
 		},
 	}
 
@@ -115,7 +120,7 @@ func TestUrlParsing(t *testing.T) {
 		}
 		got := u.String()
 		if got != tst.expect {
-			t.Errorf("For tag %q kink mismatch got %q, expected %q", tst.tag, got, tst.expect)
+			t.Errorf("For tag %q link mismatch got %q, expected %q", tst.tag, got, tst.expect)
 		}
 	}
 }
