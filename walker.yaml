@@ -103,6 +103,14 @@ dispatcher:
 cassandra:
     hosts: ["localhost"]
     timeout: "2s"
+    discover_hosts: false
+    cql_version: "3.0.0"
+    proto_version: 2
+    port: 9042
+    num_conns: 2
+    num_streams: 128
+    discover_hosts: false
+    max_prepared_stmts: 1000
 
     # keyspace shouldn't generally need to be changed; it is mainly changed in
     # testing as an extra layer of safety.
