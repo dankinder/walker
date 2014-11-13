@@ -117,6 +117,7 @@ func ParseURL(ref string) (*URL, error) {
 		return nil, err
 	}
 	purell.NormalizeURL(u, purell.FlagsSafe)
+	u.Fragment = "" // remove # tags at the end of path
 	return &URL{URL: u, LastCrawled: NotYetCrawled}, nil
 }
 
