@@ -235,7 +235,7 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		dbfield{"path", url.RequestURI()},
 		dbfield{"proto", url.Scheme},
 		dbfield{"time", fr.FetchTime},
-		dbfield{"fnv", int64(fr.FnvFingerprint)},
+		dbfield{"fnv", fr.FnvFingerprint},
 	}
 
 	if fr.FetchError != nil {
