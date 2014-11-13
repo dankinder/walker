@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/iParadigms/walker"
 
@@ -36,9 +37,17 @@ func (h *Handler) HandleResponse(fr *walker.FetchResults) {
 
 	path := filepath.Join(fr.URL.Host, fr.URL.RequestURI())
 	dir, _ := filepath.Split(path)
+	if dir == "" {
+		dir = fr.URL.Host
+	}
 	log4go.Debug("Creating dir %v", dir)
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		log4go.Error(err.Error())
+		return
+	}
+
+	if strings.HasSuffix(path, "/") || path == dir {
+		// Don't store directory pages; no sensible name to use for them
 		return
 	}
 
