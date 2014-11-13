@@ -18,6 +18,7 @@ import (
 	"code.google.com/p/go.net/html/charset"
 	"code.google.com/p/go.net/publicsuffix"
 	"code.google.com/p/log4go"
+	"github.com/PuerkitoBio/purell"
 	"github.com/iParadigms/walker/dnscache"
 	"github.com/iParadigms/walker/mimetools"
 	"github.com/temoto/robotstxt.go"
@@ -108,10 +109,15 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 	return u, nil
 }
 
-// ParseURL is the walker.URL equivalent of url.Parse
+// ParseURL is the walker.URL equivalent of url.Parse. Note, all URL's should
+// be passed through this function so that we get consistency.
 func ParseURL(ref string) (*URL, error) {
 	u, err := url.Parse(ref)
-	return &URL{URL: u, LastCrawled: NotYetCrawled}, err
+	if err != nil {
+		return nil, err
+	}
+	purell.NormalizeURL(u, purell.FlagsSafe)
+	return &URL{URL: u, LastCrawled: NotYetCrawled}, nil
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
