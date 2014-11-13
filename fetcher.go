@@ -457,6 +457,21 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	}
 	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
 
+	if fr.Response.StatusCode == http.StatusNotModified {
+		log4go.Fine("Received 304 when fetching %v", link)
+		f.fm.Datastore.StoreURLFetchResults(fr)
+
+		// There are some logical problems with this handler call.  For
+		// example, the page we're fetching could have been rejected by the
+		// handler (see below) by either fr.MetaNoIndex or
+		// !f.isHandleable(fr.Response). BUT, then stored when we go back with
+		// a 304. By definition a 304 is never MetaNoIndex, and f.isHandleable
+		// always returns false. May need to address in the future.
+		f.fm.Handler.HandleResponse(fr)
+
+		return true
+	}
+
 	fr.MimeType = getMimeType(fr.Response)
 
 	//
@@ -511,6 +526,7 @@ func (f *fetcher) fetchRobots(host string) {
 			Host:   host,
 			Path:   "robots.txt",
 		},
+		LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
 	}
 	res, _, err := f.fetch(u)
 	if err != nil {
@@ -536,7 +552,11 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 
 	req.Header.Set("User-Agent", Config.UserAgent)
 	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
-
+	if !u.LastCrawled.Equal(NotYetCrawled) {
+		// Date format used is RFC1123 as specified by
+		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
+		req.Header.Set("If-Modified-Since", u.LastCrawled.Format(time.RFC1123))
+	}
 	log4go.Debug("Sending request: %+v", req)
 
 	var redirectedFrom []*URL
