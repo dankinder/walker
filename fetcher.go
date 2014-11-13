@@ -74,7 +74,7 @@ type FetchResults struct {
 	MimeType string
 
 	// Fingerprint computed with fnv algorithm (see hash/fnv in standard library)
-	FnvFingerprint uint64
+	FnvFingerprint int64
 }
 
 // URL is the walker URL object, which embeds *url.URL but has extra data and
@@ -478,7 +478,7 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 
 	fnv := fnv.New64()
 	fnv.Write(body)
-	fr.FnvFingerprint = fnv.Sum64()
+	fr.FnvFingerprint = int64(fnv.Sum64())
 
 	//
 	// Handle html and generic handlers
