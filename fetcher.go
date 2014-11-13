@@ -109,6 +109,15 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 	return u, nil
 }
 
+var parseURLPathStrip *regexp.Regexp
+var parseURLSessIds = []string{"jsessionid"}
+
+func setupParseURL() error {
+	var err error
+	parseURLPathStrip, err = regexp.Compile(`;jsessionid\=.*$`)
+	return err
+}
+
 // ParseURL is the walker.URL equivalent of url.Parse. Note, all URL's should
 // be passed through this function so that we get consistency.
 func ParseURL(ref string) (*URL, error) {
@@ -118,7 +127,48 @@ func ParseURL(ref string) (*URL, error) {
 	}
 	purell.NormalizeURL(u, purell.FlagsSafe)
 	u.Fragment = "" // remove # tags at the end of path
-	return &URL{URL: u, LastCrawled: NotYetCrawled}, nil
+
+	setupParseURL()
+	u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+
+	//Rewrite the query string as needed.
+	//XXX: Consider if we should rewrite every query string
+	// to be in a canonical order.
+	if u.RawQuery != "" {
+		needRebuild := false
+		params := u.Query()
+		for _, SID := range parseURLSessIds {
+			_, found := params[SID]
+			if found {
+				delete(params, SID)
+				needRebuild = true
+			}
+		}
+
+		if needRebuild {
+			var buffer bytes.Buffer
+			loopStarted := false
+			for key, list := range params {
+				if loopStarted {
+					buffer.WriteRune('&')
+				}
+				loopStarted = true
+				last := len(list) - 1
+				for i, val := range list {
+					buffer.WriteString(url.QueryEscape(key))
+					buffer.WriteRune('=')
+					buffer.WriteString(url.QueryEscape(val))
+					if i != last {
+						buffer.WriteRune('&')
+					}
+				}
+			}
+			u.RawQuery = buffer.String()
+		}
+	}
+
+	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
+	return wurl, nil
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
