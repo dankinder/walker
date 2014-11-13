@@ -1075,9 +1075,9 @@ func TestFnvFingerprint(t *testing.T) {
 
 	fnv := fnv.New64()
 	fnv.Write([]byte(html))
-	fp := fnv.Sum64()
+	fp := int64(fnv.Sum64())
 
-	expectedFps := map[string]uint64{
+	expectedFps := map[string]int64{
 		"/page1.html": fp,
 	}
 
