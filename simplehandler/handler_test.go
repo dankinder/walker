@@ -12,44 +12,84 @@ import (
 )
 
 func TestSimpleWriterHandler(t *testing.T) {
-	h := &Handler{}
-
-	page1URL := helpers.Parse("http://test.com/page1.html")
-	page1Contents := []byte("<html>stuff</html>")
-	page1Fetch := &walker.FetchResults{
-		URL:              page1URL,
-		ExcludedByRobots: false,
-		Response: &http.Response{
-			Status:        "200 OK",
-			StatusCode:    200,
-			Proto:         "HTTP/1.1",
-			ProtoMajor:    1,
-			ProtoMinor:    1,
-			ContentLength: 18,
-			Body:          ioutil.NopCloser(bytes.NewReader(page1Contents)),
-			Request: &http.Request{
-				Method:        "GET",
-				URL:           page1URL.URL,
-				Proto:         "HTTP/1.1",
-				ProtoMajor:    1,
-				ProtoMinor:    1,
-				ContentLength: 18,
-				Host:          "test.com",
-			},
+	handlertests := []struct {
+		URL          *walker.URL
+		PageContents []byte
+		ExpectedDir  string // "" if we expect no directory
+		ExpectedFile string // "" if we expect no file matching PageContents
+	}{
+		{
+			helpers.Parse("http://test.com/page1.html"),
+			[]byte("<html>stuff</html>"),
+			"test.com",
+			"test.com/page1.html",
+		},
+		{
+			helpers.Parse("http://test.com/"),
+			[]byte("<html>stuff</html>"),
+			"test.com",
+			"",
+		},
+		{
+			helpers.Parse("http://test.com/a-dir/"),
+			[]byte("<html>blah</html>"),
+			"test.com/a-dir",
+			"",
+		},
+		{
+			helpers.Parse("http://test.com/a-dir/myfile"),
+			[]byte(""),
+			"test.com/a-dir",
+			"test.com/a-dir/myfile",
 		},
 	}
 
-	h.HandleResponse(page1Fetch)
-	file := "test.com/page1.html"
-	contents, err := ioutil.ReadFile(file)
-	if err != nil {
-		t.Fatalf("Could not read expected file(%v): %v", file, err)
+	h := &Handler{}
+	for _, ht := range handlertests {
+
+		fr := &walker.FetchResults{
+			URL: ht.URL,
+			Response: &http.Response{
+				Status:        "200 OK",
+				StatusCode:    200,
+				Proto:         "HTTP/1.1",
+				ProtoMajor:    1,
+				ProtoMinor:    1,
+				ContentLength: int64(len(ht.PageContents)),
+				Body:          ioutil.NopCloser(bytes.NewReader(ht.PageContents)),
+				Request: &http.Request{
+					Method:        "GET",
+					URL:           ht.URL.URL,
+					Proto:         "HTTP/1.1",
+					ProtoMajor:    1,
+					ProtoMinor:    1,
+					ContentLength: int64(len(ht.PageContents)),
+					Host:          ht.URL.Host,
+				},
+			},
+		}
+		h.HandleResponse(fr)
+
+		if ht.ExpectedDir != "" {
+			_, err := os.Stat(ht.ExpectedDir)
+			if err != nil {
+				t.Fatalf("Could not stat expected dir(%v): %v", ht.ExpectedDir, err)
+			}
+		}
+
+		if ht.ExpectedFile != "" {
+			contents, err := ioutil.ReadFile(ht.ExpectedFile)
+			if err != nil {
+				t.Fatalf("Could not read expected file(%v): %v", ht.ExpectedFile, err)
+			}
+			if string(contents) != string(ht.PageContents) {
+				t.Errorf("Page contents not correctly written to file, expected %v\nBut got: %v",
+					string(ht.PageContents), string(contents))
+			}
+		}
+
+		os.RemoveAll(ht.URL.Host)
 	}
-	if string(contents) != string(page1Contents) {
-		t.Errorf("Page contents not correctly written to file, expected %v\nBut got: %v",
-			string(page1Contents), string(contents))
-	}
-	os.Remove(file)
 }
 
 func TestSimpleWriterHandlerIgnoresOnRobots(t *testing.T) {
