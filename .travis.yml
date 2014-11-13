@@ -6,6 +6,10 @@ go:
 services:
   - cassandra
 
+before_install:
+  - sudo service stop postgresql
+  - sudo service stop mysql
+
 before_script:
   - sudo GOPATH=/tmp/tempGOPATH $(which go) get code.google.com/p/go.tools/cmd/...
 
