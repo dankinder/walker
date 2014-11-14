@@ -98,7 +98,6 @@ dispatcher:
 cassandra:
     hosts: ["localhost"]
     timeout: "2s"
-    discover_hosts: false
     cql_version: "3.0.0"
     proto_version: 2
     port: 9042

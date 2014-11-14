@@ -9,3 +9,4 @@ blacklist_private_ips: false
 cassandra:
     keyspace: "walker_test"
     replication_factor: 1
+    timeout: "10s"
