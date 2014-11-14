@@ -302,11 +302,11 @@ type fetcher struct {
 	excludeLink *regexp.Regexp
 	includeLink *regexp.Regexp
 
-	// defCrawlDelay is the default crawl delay to use, if the given host
-	// doesn't have it's own robots.txt
+	// defRobots holds the robots.txt definition used if a host doesn't
+	// publish a robots.txt file on it's own.
 	defRobots *robotstxt.Group
 
-	// robotsMap maps host -> crawldelay
+	// robotsMap maps host -> robots.txt definition to use
 	robotsMap map[string]*robotstxt.Group
 }
 
@@ -408,15 +408,11 @@ func (f *fetcher) crawlNewHost() bool {
 		return true
 	}
 
-	//
-	// Set up new crawldelay map
-	//
+	// Set up robots map
 	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
 	f.initializeRobotsMap(f.host)
 
-	//
 	// Loop through the links
-	//
 	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
@@ -519,8 +515,7 @@ func (f *fetcher) stop() {
 	<-f.done
 }
 
-// initializeRobotsMap clears the robotsMap, and fetches the robots from TLD+1
-// host, and sets it as the default robots group.
+// initializeRobotsMap inits the robotsMap system
 func (f *fetcher) initializeRobotsMap(host string) {
 
 	// Set default robots
@@ -528,11 +523,10 @@ func (f *fetcher) initializeRobotsMap(host string) {
 	f.defRobots = rdata.FindGroup(Config.UserAgent)
 	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
 
-	// try read $host/robots.txt. Failure to get, just returns f.defRobots before call
-	f.defRobots = f.getRobots(host)
-
-	// Set up the robots map
+	// try read $host/robots.txt. Failure to GET, will just returns
+	// f.defRobots before call
 	f.robotsMap = map[string]*robotstxt.Group{}
+	f.defRobots = f.getRobots(host)
 	f.robotsMap[host] = f.defRobots
 }
 
@@ -546,7 +540,8 @@ func (f *fetcher) fetchRobots(host string) *robotstxt.Group {
 	return rob
 }
 
-// getRobots will return the robotstxt.Group for the given host
+// getRobots will return the robotstxt.Group for the given host, or the
+// default robotstxt.Group if the host doesn't support robots.txt
 func (f *fetcher) getRobots(host string) *robotstxt.Group {
 
 	u := &URL{
@@ -559,13 +554,11 @@ func (f *fetcher) getRobots(host string) *robotstxt.Group {
 	}
 
 	res, _, err := f.fetch(u)
-	if err != nil {
-		log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
-		return f.defRobots
-	}
-
-	gotRobots := res.StatusCode >= 200 && res.StatusCode < 300
+	gotRobots := err == nil && res.StatusCode >= 200 && res.StatusCode < 300
 	if !gotRobots {
+		if err != nil {
+			log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
+		}
 		return f.defRobots
 	}
 
