@@ -289,7 +289,6 @@ type fetcher struct {
 	fm         *FetchManager
 	host       string
 	httpclient *http.Client
-	robots     *robotstxt.Group
 	crawldelay time.Duration
 
 	// quit signals the fetcher to stop
@@ -302,6 +301,15 @@ type fetcher struct {
 
 	excludeLink *regexp.Regexp
 	includeLink *regexp.Regexp
+
+	// robots is the robot indication for the next fetch
+	robots *robotstxt.Group
+
+	// defRobots is the default robots text to use (in the absence of a sub-domain robots)
+	defRobots *robotstxt.Group
+
+	// robotsMap maps subdomain -> robotsFile contents
+	robotsMap map[string]*robotstxt.Group
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -378,6 +386,15 @@ func (f *fetcher) start() {
 	f.done <- struct{}{}
 }
 
+type RobotsMap struct {
+	defRobots   *robotstxt.Group
+	host2robots map[string]*robotstxt.Group
+}
+
+func (self *RobotsMap) Get(host string) *robotstxt.Group {
+	return nil
+}
+
 // crawlNewHost host crawls a single host, or delays and returns if there was
 // nothing to crawl.
 // Returns false if it was signaled to quit and the routine should finish
@@ -426,6 +443,8 @@ func (f *fetcher) crawlNewHost() bool {
 			return false
 		default:
 		}
+
+		// Check subdomain
 
 		shouldDelay := f.fetchAndHandle(link)
 		if shouldDelay {
@@ -519,7 +538,35 @@ func (f *fetcher) stop() {
 	<-f.done
 }
 
+// initializeRobotsMap clears the robotsMap, and fetches the robots from TLD+1
+// host, and sets it as the default robots group.
+func (f *fetcher) initializeRobotsMap(host string) {
+	f.robotsMap = map[string]*robotstxt.Group{}
+	f.defRobots = nil
+	f.robots = nil
+	r, _ := f.getRobots(host)
+	f.defRobots = r
+	f.robotsMap[host] = r
+}
+
+// fetchRobots updates the f.robots field to point to the current
+// robotstxt.Group defn
 func (f *fetcher) fetchRobots(host string) {
+	r, rok := f.robotsMap[host] //XXX this is wrong
+	if rok {
+		f.robots = r
+	} else {
+		r, rok = f.getRobots(host)
+		if !rok {
+			r = f.defRobots
+		}
+		f.robotsMap[host] = r
+		f.robots = r
+	}
+}
+
+func (f *fetcher) getRobots(host string) (*robotstxt.Group, bool) {
+
 	u := &URL{
 		URL: &url.URL{
 			Scheme: "http",
@@ -541,7 +588,9 @@ func (f *fetcher) fetchRobots(host string) {
 		f.robots = nil
 		return
 	}
-	f.robots = robots.FindGroup(Config.UserAgent)
+	gotRobots := res.StatusCode >= 200 && res.StatusCode < 300
+
+	return robots.FindGroup(Config.UserAgent), gotRobots
 }
 
 func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
