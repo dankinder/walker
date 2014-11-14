@@ -246,6 +246,25 @@ func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.
 	}
 }
 
+// Requested returns true if the url was requested, and false otherwise
+func (rs *MockRemoteServer) Requested(method string, url string) bool {
+	m, mok := rs.MockHTTPHandler.headers[method]
+	if !mok {
+		return false
+	}
+
+	head, headok := m[url]
+	if !headok {
+		return false
+	}
+
+	if len(head) == 0 {
+		return false
+	}
+
+	return true
+}
+
 func (rs *MockRemoteServer) Stop() {
 	rs.listener.Close()
 }
