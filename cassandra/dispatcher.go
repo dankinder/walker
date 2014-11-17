@@ -248,12 +248,22 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	//
 	// Do the scan, and populate the 3 lists
 	//
+
+	// Making this query consistency = One ensures that when we do this
+	// potentially massive read, the cassandra nodes don't have to waste big
+	// IO/Network verifying the data is consistent between a Quorum of nodes.
+	// The only risk is: if a node is down and does not receive some link
+	// writes, then comes back up and is read for this query it may be missing
+	// some of the newly crawled links. This is unlikely and seems acceptable.
+	q := d.db.Query(`SELECT subdom, path, proto, time, getnow
+						FROM links WHERE dom = ?`, domain)
+	q.Consistency(gocql.One)
+
 	var start = true
 	var finish = true
 	var current cell
 	var previous cell
-	iter := d.db.Query(`SELECT subdom, path, proto, time, getnow
-						FROM links WHERE dom = ?`, domain).Iter()
+	iter := q.Iter()
 	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawl_time, &current.getnow) {
 		if start {
 			previous = current
