@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net"
@@ -302,6 +303,9 @@ type fetcher struct {
 
 	excludeLink *regexp.Regexp
 	includeLink *regexp.Regexp
+
+	// Where to read content pages into
+	readBuffer bytes.Buffer
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -477,22 +481,29 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	//
 	// Nab the body of the request, and compute fingerprint
 	//
-	//TODO: ReadAll is inefficient. We should use a properly sized
-	//		buffer here (determined by
-	//		Config.MaxHTTPContentSizeBytes or possibly
-	//		Content-Length of the response)
-	var body []byte
-	body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+	fr.FetchError = f.fillReadBuffer(fr.Response.Body)
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
 		return true
 	}
-	// Replace the response body so the handler can read it
-	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 
+	// Replace the response body so the handler can read it. XXX: During
+	// normal operation the bytes copy below is NOT needed, the handler sees
+	// the body before the body is replaced by the next iteration. But to pass fetcher
+	// tests, it is needed so that the fr.Response.Body remains intact beyond
+	// this iteration.
+	{
+		var b = make([]byte, 0, f.readBuffer.Len())
+		b = append(b, f.readBuffer.Bytes()...)
+		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(b))
+	}
+
+	//
+	// Get the fingerprint
+	//
 	fnv := fnv.New64()
-	fnv.Write(body)
+	fnv.Write(f.readBuffer.Bytes())
 	fr.FnvFingerprint = int64(fnv.Sum64())
 
 	//
@@ -500,7 +511,7 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	//
 	if isHTML(fr.Response) {
 		log4go.Fine("Reading and parsing as HTML (%v)", link)
-		f.parseLinks(body, fr)
+		f.parseLinks(f.readBuffer.Bytes(), fr)
 	}
 
 	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
@@ -511,6 +522,24 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	log4go.Fine("Storing fetch results for %v", link)
 	f.fm.Datastore.StoreURLFetchResults(fr)
 	return true
+}
+
+//
+// fillReadBuffer will fill up readBuffer with the contents of reader. Any
+// problems with the read will be returned in an error; including (and
+// importantly) if the content size would exceed MaxHTTPContentSizeBytes.
+//
+func (f *fetcher) fillReadBuffer(reader io.Reader) error {
+	f.readBuffer.Reset()
+	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	N, err := f.readBuffer.ReadFrom(limitReader)
+	if err != nil {
+		return err
+	} else if N > Config.MaxHTTPContentSizeBytes {
+		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+	}
+
+	return nil
 }
 
 // stop signals a fetcher to stop and waits until completion.
