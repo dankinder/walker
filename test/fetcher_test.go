@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-const defaultSleep time.Duration = time.Millisecond * 20
+const defaultSleep time.Duration = time.Millisecond * 40
 
 const html_body string = `<!DOCTYPE html>
 <html>
@@ -1251,5 +1251,80 @@ func TestIfModifiedSince(t *testing.T) {
 	}
 	if count < 1 {
 		t.Errorf("Expected to find Handler call, but didn't")
+	}
+}
+
+func TestNestedRobots(t *testing.T) {
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("dom.com").Once()
+	ds.On("LinksForHost", "dom.com").Return([]*walker.URL{
+		helpers.Parse("http://dom.com/page1.html"),
+		helpers.Parse("http://ok.dom.com/page1.html"),
+		helpers.Parse("http://blocked.dom.com/page1.html"),
+	})
+	ds.On("UnclaimHost", "dom.com").Return()
+
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.SetResponse("http://dom.com/robots.txt", &helpers.MockResponse{
+		Body: "User-agent: *\n",
+	})
+	rs.SetResponse("http://ok.dom.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://blocked.dom.com/robots.txt", &helpers.MockResponse{
+		Body: "User-agent: *\nDisallow: /\n",
+	})
+
+	rs.SetResponse("http://dom.com/page1.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://ok.dom.com/page1.html", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://blocked.dom.com/page1.html", &helpers.MockResponse{Status: 404})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+	rs.Stop()
+
+	//
+	// Now check that the correct requests where made
+	//
+	tests := []struct {
+		link    string
+		fetched bool
+	}{
+		{"http://notinvolved.com/page1.html", false},
+
+		{"http://dom.com/robots.txt", true},
+		{"http://ok.dom.com/robots.txt", true},
+		{"http://blocked.dom.com/robots.txt", true},
+
+		{"http://dom.com/page1.html", true},
+		{"http://ok.dom.com/page1.html", true},
+		{"http://blocked.dom.com/page1.html", false},
+	}
+
+	for _, tst := range tests {
+		req := rs.Requested("GET", tst.link)
+		if tst.fetched && !req {
+			t.Errorf("Expected to have requested link %q, but didn't", tst.link)
+		} else if !tst.fetched && req {
+			t.Errorf("Expected NOT to have requested link %q, but did", tst.link)
+		}
 	}
 }
