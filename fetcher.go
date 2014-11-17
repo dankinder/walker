@@ -425,7 +425,9 @@ func (f *fetcher) crawlNewHost() bool {
 		robots := f.fetchRobots(link.Host)
 		shouldDelay, fetchTime := f.fetchAndHandle(link, robots)
 		if shouldDelay {
-			log4go.Error("PETE SURE: %v -- %v == %v ++ %v", time.Now(), fetchTime, robots.CrawlDelay, time.Now().Sub(fetchTime))
+			// fetchTime is the last server GET (not counting robots.txt GET's). So
+			// delta represents the amount of the CrawlDelay that still needs to be
+			// waited
 			delta := robots.CrawlDelay - time.Now().Sub(fetchTime)
 			if delta > 0 {
 				time.Sleep(delta)
