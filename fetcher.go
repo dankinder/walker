@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -111,6 +110,7 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 }
 
 var parseURLPathStrip *regexp.Regexp
+var parseURLPurgeMap map[string]bool
 
 func setupParseURL() error {
 	if len(Config.PurgeSidList) == 0 {
@@ -119,6 +119,7 @@ func setupParseURL() error {
 		// Here we want to write a regexp that looks like
 		// \;jsessionid=.*$|\;other=.*$
 		var buffer bytes.Buffer
+		buffer.WriteString("(?i)") // case-insensitive
 		startedLoop := false
 		for _, sid := range Config.PurgeSidList {
 			if startedLoop {
@@ -136,6 +137,10 @@ func setupParseURL() error {
 		}
 	}
 
+	parseURLPurgeMap = map[string]bool{}
+	for _, p := range Config.PurgeSidList {
+		parseURLPurgeMap[strings.ToLower(p)] = true
+	}
 	return nil
 }
 
@@ -154,49 +159,16 @@ func ParseURL(ref string) (*URL, error) {
 		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
 	}
 
-	//Rewrite the query string as needed, removing SID's.
-	//XXX: Consider if we should rewrite every query string
-	//to be in a canonical order.
+	//Rewrite the query string to canonical order, removing SID's as needed.
 	if u.RawQuery != "" {
-		needRebuild := false
+		purge := parseURLPurgeMap
 		params := u.Query()
-		for _, sid := range Config.PurgeSidList {
-			_, found := params[sid]
-			if found {
-				delete(params, sid)
-				needRebuild = true
+		for k := range params {
+			if purge[strings.ToLower(k)] {
+				delete(params, k)
 			}
 		}
-
-		if needRebuild {
-			// If we don't sort the url params, the order of query params is
-			// stochastic.
-			keyOrder := []string{}
-			for key := range params {
-				keyOrder = append(keyOrder, key)
-			}
-			sort.Strings(keyOrder)
-
-			var buffer bytes.Buffer
-			loopStarted := false
-			for _, key := range keyOrder {
-				list := params[key]
-				if loopStarted {
-					buffer.WriteRune('&')
-				}
-				loopStarted = true
-				last := len(list) - 1
-				for i, val := range list {
-					buffer.WriteString(url.QueryEscape(key))
-					buffer.WriteRune('=')
-					buffer.WriteString(url.QueryEscape(val))
-					if i != last {
-						buffer.WriteRune('&')
-					}
-				}
-			}
-			u.RawQuery = buffer.String()
-		}
+		u.RawQuery = params.Encode()
 	}
 
 	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}

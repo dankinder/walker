@@ -93,22 +93,22 @@ func TestUrlParsing(t *testing.T) {
 		},
 		{
 			tag:    "PathSID",
-			input:  "http://a.com/page1.com;jsessionid=436100313FAFBBB9B4DC8BA3C2EC267B",
+			input:  "http://a.com/page1.com;jsEssIoniD=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a.com/page1.com",
 		},
 		{
 			tag:    "PathSID2",
-			input:  "http://a.com/page1.com;phpsessid=436100313FAFBBB9B4DC8BA3C2EC267B",
+			input:  "http://a.com/page1.com;phPseSsId=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a.com/page1.com",
 		},
 		{
 			tag:    "QuerySID",
-			input:  "http://a.com/page1.com?foo=bar&jsessionid=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
+			input:  "http://a.com/page1.com?foo=bar&jsessionID=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
 			expect: "http://a.com/page1.com?baz=niffler&foo=bar",
 		},
 		{
 			tag:    "QuerySID2",
-			input:  "http://a.com/page1.com?phpsessid=436100313FAFBBB9B4DC8BA3C2EC267B",
+			input:  "http://a.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a.com/page1.com",
 		},
 	}
