@@ -1243,8 +1243,9 @@ func TestMaxContentSize(t *testing.T) {
 		Body: html,
 	})
 	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{
-		Body:          "",
-		ContentLength: 1000, // make sure fetcher is paying attention to Content-Length header
+		Body:          "0123456789 ",
+		ContentType:   "text/html",
+		ContentLength: 11,
 	})
 
 	manager := &walker.FetchManager{

@@ -481,7 +481,7 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	//
 	// Nab the body of the request, and compute fingerprint
 	//
-	fr.FetchError = f.fillReadBuffer(fr.Response.Body)
+	fr.FetchError = f.fillReadBuffer(fr.Response.Body, fr.Response.Header)
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
@@ -521,8 +521,21 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 // problems with the read will be returned in an error; including (and
 // importantly) if the content size would exceed MaxHTTPContentSizeBytes.
 //
-func (f *fetcher) fillReadBuffer(reader io.Reader) error {
+func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 	f.readBuffer.Reset()
+	lenArr, lenOk := headers["Content-Length"]
+	if lenOk && len(lenArr) > 0 {
+		size := 0
+		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
+		if n != 1 || err != nil || size < 0 {
+			log4go.Error("Failed to process Content-Length: %v", err)
+		} else if size > Config.MaxHTTPContentSizeBytes {
+			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+		} else {
+			f.readBuffer.Grow(size)
+		}
+	}
+
 	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
 	N, err := f.readBuffer.ReadFrom(limitReader)
 	if err != nil {

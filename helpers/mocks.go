@@ -53,7 +53,7 @@ type MockHandler struct {
 }
 
 func (h *MockHandler) HandleResponse(fr *walker.FetchResults) {
-	// Copy response body so that the fetcher code can reuses buffer
+	// Copy response body so that the fetcher code can reuse readBuffer
 	var buffer bytes.Buffer
 	_, err := buffer.ReadFrom(fr.Response.Body)
 	if err != nil {
