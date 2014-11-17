@@ -289,7 +289,6 @@ type fetcher struct {
 	fm         *FetchManager
 	host       string
 	httpclient *http.Client
-	robots     *robotstxt.Group
 	crawldelay time.Duration
 
 	// quit signals the fetcher to stop
@@ -302,6 +301,13 @@ type fetcher struct {
 
 	excludeLink *regexp.Regexp
 	includeLink *regexp.Regexp
+
+	// defRobots holds the robots.txt definition used if a host doesn't
+	// publish a robots.txt file on it's own.
+	defRobots *robotstxt.Group
+
+	// robotsMap maps host -> robots.txt definition to use
+	robotsMap map[string]*robotstxt.Group
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -402,22 +408,11 @@ func (f *fetcher) crawlNewHost() bool {
 		return true
 	}
 
-	//
-	// Determine crawlDelay
-	//
-	f.fetchRobots(f.host)
-	f.crawldelay = f.fm.defCrawlDelay
-	if f.robots != nil {
-		max := f.fm.maxCrawlDelay
-		req := f.robots.CrawlDelay
-		if req < max {
-			f.crawldelay = req
-		} else {
-			f.crawldelay = max
-		}
-	}
+	// Set up robots map
 	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
+	f.initializeRobotsMap(f.host)
 
+	// Loop through the links
 	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
@@ -427,9 +422,10 @@ func (f *fetcher) crawlNewHost() bool {
 		default:
 		}
 
-		shouldDelay := f.fetchAndHandle(link)
+		robots := f.fetchRobots(link.Host)
+		shouldDelay := f.fetchAndHandle(link, robots)
 		if shouldDelay {
-			time.Sleep(f.crawldelay)
+			time.Sleep(robots.CrawlDelay)
 		}
 	}
 	return true
@@ -438,10 +434,10 @@ func (f *fetcher) crawlNewHost() bool {
 // fetchAndHandle takes care of fetching and processing a URL beginning to end.
 // Returns true if it did actually perform a fetch (even if it wasn't
 // successful), indicating that crawl-delay should be observed.
-func (f *fetcher) fetchAndHandle(link *URL) bool {
+func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	fr := &FetchResults{URL: link}
 
-	if f.robots != nil && !f.robots.Test(link.String()) {
+	if !robots.Test(link.String()) {
 		log4go.Debug("Not fetching due to robots rules: %v", link)
 		fr.ExcludedByRobots = true
 		f.fm.Datastore.StoreURLFetchResults(fr)
@@ -519,7 +515,35 @@ func (f *fetcher) stop() {
 	<-f.done
 }
 
-func (f *fetcher) fetchRobots(host string) {
+// initializeRobotsMap inits the robotsMap system
+func (f *fetcher) initializeRobotsMap(host string) {
+
+	// Set default robots
+	rdata, _ := robotstxt.FromBytes([]byte("User-agent: *\n"))
+	f.defRobots = rdata.FindGroup(Config.UserAgent)
+	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
+
+	// try read $host/robots.txt. Failure to GET, will just returns
+	// f.defRobots before call
+	f.robotsMap = map[string]*robotstxt.Group{}
+	f.defRobots = f.getRobots(host)
+	f.robotsMap[host] = f.defRobots
+}
+
+// fetchRobots is a caching version of getRobots
+func (f *fetcher) fetchRobots(host string) *robotstxt.Group {
+	rob, robOk := f.robotsMap[host]
+	if !robOk {
+		rob = f.getRobots(host)
+		f.robotsMap[host] = rob
+	}
+	return rob
+}
+
+// getRobots will return the robotstxt.Group for the given host, or the
+// default robotstxt.Group if the host doesn't support robots.txt
+func (f *fetcher) getRobots(host string) *robotstxt.Group {
+
 	u := &URL{
 		URL: &url.URL{
 			Scheme: "http",
@@ -528,20 +552,30 @@ func (f *fetcher) fetchRobots(host string) {
 		},
 		LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
 	}
+
 	res, _, err := f.fetch(u)
-	if err != nil {
-		log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
-		f.robots = nil
-		return
+	gotRobots := err == nil && res.StatusCode >= 200 && res.StatusCode < 300
+	if !gotRobots {
+		if err != nil {
+			log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
+		}
+		return f.defRobots
 	}
+
 	robots, err := robotstxt.FromResponse(res)
 	res.Body.Close()
 	if err != nil {
 		log4go.Debug("Error parsing robots.txt (%v) assuming there is no robots.txt: %v", u, err)
-		f.robots = nil
-		return
+		return f.defRobots
 	}
-	f.robots = robots.FindGroup(Config.UserAgent)
+
+	grp := robots.FindGroup(Config.UserAgent)
+	max := f.fm.maxCrawlDelay
+	if grp.CrawlDelay > max {
+		grp.CrawlDelay = max
+	}
+
+	return grp
 }
 
 func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {

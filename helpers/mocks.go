@@ -170,13 +170,14 @@ func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		panic(fmt.Sprintf("Got an http method we didn't expect: %v", r.Method))
 	}
 	link := r.URL.String()
+
+	s.storeHeader(r.Method, link, r.Header)
+
 	res, ok := m[link]
 	if !ok {
 		// No particular response requested, just return 200 OK return
 		return
 	}
-
-	s.storeHeader(r.Method, link, r.Header)
 
 	if res.Status == 0 {
 		res.Status = 200
@@ -244,6 +245,25 @@ func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.
 	} else {
 		return head[depth], nil
 	}
+}
+
+// Requested returns true if the url was requested, and false otherwise.
+func (rs *MockRemoteServer) Requested(method string, url string) bool {
+	m, mok := rs.MockHTTPHandler.headers[method]
+	if !mok {
+		return false
+	}
+
+	head, headok := m[url]
+	if !headok {
+		return false
+	}
+
+	if len(head) == 0 {
+		return false
+	}
+
+	return true
 }
 
 func (rs *MockRemoteServer) Stop() {
