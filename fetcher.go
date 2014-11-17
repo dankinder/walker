@@ -423,9 +423,13 @@ func (f *fetcher) crawlNewHost() bool {
 		}
 
 		robots := f.fetchRobots(link.Host)
-		shouldDelay := f.fetchAndHandle(link, robots)
+		shouldDelay, fetchTime := f.fetchAndHandle(link, robots)
 		if shouldDelay {
-			time.Sleep(robots.CrawlDelay)
+			log4go.Error("PETE SURE: %v -- %v == %v ++ %v", time.Now(), fetchTime, robots.CrawlDelay, time.Now().Sub(fetchTime))
+			delta := robots.CrawlDelay - time.Now().Sub(fetchTime)
+			if delta > 0 {
+				time.Sleep(delta)
+			}
 		}
 	}
 	return true
@@ -434,14 +438,14 @@ func (f *fetcher) crawlNewHost() bool {
 // fetchAndHandle takes care of fetching and processing a URL beginning to end.
 // Returns true if it did actually perform a fetch (even if it wasn't
 // successful), indicating that crawl-delay should be observed.
-func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
+func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time.Time) {
 	fr := &FetchResults{URL: link}
 
 	if !robots.Test(link.String()) {
 		log4go.Debug("Not fetching due to robots rules: %v", link)
 		fr.ExcludedByRobots = true
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return false
+		return false, time.Time{}
 	}
 
 	fr.FetchTime = time.Now()
@@ -449,7 +453,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	if fr.FetchError != nil {
 		log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return true
+		return true, fr.FetchTime
 	}
 	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
 
@@ -465,7 +469,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 		// always returns false. May need to address in the future.
 		f.fm.Handler.HandleResponse(fr)
 
-		return true
+		return true, fr.FetchTime
 	}
 
 	fr.MimeType = getMimeType(fr.Response)
@@ -482,7 +486,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return true
+		return true, fr.FetchTime
 	}
 	// Replace the response body so the handler can read it
 	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
@@ -506,7 +510,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	//TODO: Wrap the reader and check for read error here
 	log4go.Fine("Storing fetch results for %v", link)
 	f.fm.Datastore.StoreURLFetchResults(fr)
-	return true
+	return true, fr.FetchTime
 }
 
 // stop signals a fetcher to stop and waits until completion.
