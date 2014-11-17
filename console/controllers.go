@@ -31,7 +31,7 @@ func Routes() []Route {
 		Route{Path: "/add", Controller: AddLinkIndexController},
 		Route{Path: "/add/", Controller: AddLinkIndexController},
 		Route{Path: "/links/{domain}", Controller: LinksController},
-		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
+		Route{Path: "/links/{domain}/{seedURL}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
@@ -251,11 +251,11 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-//IMPL NOTE: Why does linksController encode the seedUrl in base32, rather than URL encode it?
+//IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
-// seedUrl argument. First, it appears that the browser is unencoding the link BEFORE submitting it
+// seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
 // to the server. That looks like a problem with the browser to me. But in addition, the server appears
-// to be choking on the url-encoded text as well. For example if the url encoded seedUrl ends with
+// to be choking on the url-encoded text as well. For example if the url encoded seedURL ends with
 // .html, it appears that this is causing the server to throw a 301. Unknown why that is. But the net effect
 // is that, if I totally disguise the link in base32, everything works.
 
@@ -278,21 +278,21 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	seedUrl := vars["seedUrl"]
+	seedURL := vars["seedURL"]
 	needHeader := false
 	windowLength := PageWindowLength
 	prevButtonClass := ""
-	if seedUrl == "" {
+	if seedURL == "" {
 		needHeader = true
 		windowLength /= 2
 		prevButtonClass = "disabled"
 	} else {
-		ss, err := decode32(seedUrl)
+		ss, err := decode32(seedURL)
 		if err != nil {
 			replyServerError(w, fmt.Errorf("decode32: %v", err))
 			return
 		}
-		seedUrl = ss
+		seedURL = ss
 	}
 
 	//
@@ -304,12 +304,12 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	filterRegex := ""
-	filterUrlSuffix := ""
+	filterURLSuffix := ""
 	filterRegexSuffix := ""
 	filterRegexArr, filterRegexOk := req.Form["filterRegex"]
 	if filterRegexOk && len(filterRegexArr) > 0 {
 		filterRegex = filterRegexArr[0]
-		filterUrlSuffix = "?filterRegex=" + filterRegex
+		filterURLSuffix = "?filterRegex=" + filterRegex
 		filterRegex, err = decode32(filterRegex)
 		if err != nil {
 			replyServerError(w, fmt.Errorf("decode32 error: %v", err))
@@ -321,7 +321,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Lets grab the links
 	//
-	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, filterRegex)
+	linfos, err := DS.ListLinks(domain, seedURL, windowLength, filterRegex)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("ListLinks: %v", err))
 		return
@@ -330,16 +330,16 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Odds and ends
 	//
-	nextSeedUrl := ""
+	nextSeedURL := ""
 	nextButtonClass := "disabled"
 	if len(linfos) == windowLength {
-		nextSeedUrl = encode32(linfos[len(linfos)-1].Url)
+		nextSeedURL = encode32(linfos[len(linfos)-1].URL)
 		nextButtonClass = ""
 	}
 
 	var historyLinks []string
 	for _, linfo := range linfos {
-		path := "/historical/" + encode32(linfo.Url)
+		path := "/historical/" + encode32(linfo.URL)
 		historyLinks = append(historyLinks, path)
 	}
 
@@ -361,8 +361,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"HasHeader":         needHeader,
 		"HasLinks":          len(linfos) > 0,
 		"Linfos":            linfos,
-		"NextSeedUrl":       nextSeedUrl,
-		"FilterUrlSuffix":   filterUrlSuffix,
+		"NextSeedURL":       nextSeedURL,
+		"FilterURLSuffix":   filterURLSuffix,
 		"FilterRegexSuffix": filterRegexSuffix,
 
 		"NextButtonClass": nextButtonClass,
@@ -470,7 +470,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 
 	var historyLinks []string
 	for _, linfo := range linfos {
-		path := "/historical/" + encode32(linfo.Url)
+		path := "/historical/" + encode32(linfo.URL)
 		historyLinks = append(historyLinks, path)
 	}
 

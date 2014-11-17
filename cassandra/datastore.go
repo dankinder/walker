@@ -33,7 +33,7 @@ type Datastore struct {
 	domainCache *lrucache.LRUCache
 
 	// This is a unique UUID for the entire crawler.
-	crawlerUuid gocql.UUID
+	crawlerUUID gocql.UUID
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -52,7 +52,7 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		return ds, err
 	}
-	ds.crawlerUuid = u
+	ds.crawlerUUID = u
 
 	return ds, nil
 }
@@ -140,7 +140,7 @@ func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, r
 		// The query below is a compare-and-set type query. It will only update the claim_tok, claim_time
 		// if the claim_tok remains 00000000-0000-0000-0000-000000000000 at the time of update.
 		casMap := map[string]interface{}{}
-		applied, err := ds.db.Query(casQuery, ds.crawlerUuid, time.Now(), domain).MapScanCAS(casMap)
+		applied, err := ds.db.Query(casQuery, ds.crawlerUUID, time.Now(), domain).MapScanCAS(casMap)
 		if err != nil {
 			log4go.Error("Failed to claim segment %v: %v", domain, err)
 		} else if !applied {
@@ -148,7 +148,7 @@ func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, r
 			log4go.Fine("Domain %v was claimed by another crawler before resolution", domain)
 		} else {
 			domains = append(domains, domain)
-			log4go.Fine("Claimed segment %v with token %v in %v", domain, ds.crawlerUuid, time.Since(start))
+			log4go.Fine("Claimed segment %v with token %v in %v", domain, ds.crawlerUUID, time.Since(start))
 			start = time.Now()
 		}
 	}
@@ -377,6 +377,7 @@ func (ds *Datastore) addDomain(dom string) {
 // Implementation of the console.Model interface
 //
 
+// DomainInfo defines a row from the domain_info table
 type DomainInfo struct {
 	// TLD+1
 	Domain string
@@ -388,7 +389,7 @@ type DomainInfo struct {
 	TimeQueued time.Time
 
 	// What was the UUID of the crawler that last crawled the domain
-	UuidOfQueued gocql.UUID
+	UUIDOfQueued gocql.UUID
 
 	// Number of (unique) links found in this domain
 	NumberLinksTotal int
@@ -400,14 +401,15 @@ type DomainInfo struct {
 	NumberLinksUncrawled int
 }
 
+// LinkInfo defines a row from the link or segment table
 type LinkInfo struct {
 	// URL of the link
-	Url string
+	URL string
 
 	// Status of the GET
 	Status int
 
-	// Any error reported during the get
+	// Any error reported when attempting to fetch the URL
 	Error string
 
 	// Was this excluded by robots
@@ -419,7 +421,7 @@ type LinkInfo struct {
 
 // TODO: comment these
 const DontSeedDomain = ""
-const DontSeedUrl = ""
+const DontSeedURL = ""
 const DontSeedIndex = 0
 
 //NOTE: part of this is cribbed from walker.datastore.go. Code share?
@@ -611,7 +613,7 @@ func (ds *Datastore) listDomainsImpl(seed string, limit int, working bool) ([]Do
 			reason = "Exclusion marked"
 		}
 
-		dinfos = append(dinfos, DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason})
+		dinfos = append(dinfos, DomainInfo{Domain: domain, UUIDOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason})
 	}
 	err := itr.Close()
 	if err != nil {
@@ -657,7 +659,7 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 		reason = "Exclusion marked"
 	}
 
-	dinfo := &DomainInfo{Domain: domain, UuidOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason}
+	dinfo := &DomainInfo{Domain: domain, UUIDOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason}
 	err := itr.Close()
 	if err != nil {
 		return dinfo, err
@@ -732,7 +734,7 @@ func (ds *Datastore) collectLinkInfos(linfos []LinkInfo, rtimes map[string]remem
 		}
 
 		linfo := LinkInfo{
-			Url:            urlString,
+			URL:            urlString,
 			Status:         status,
 			Error:          anerror,
 			RobotsExcluded: robotsExcluded,
@@ -762,7 +764,7 @@ type queryEntry struct {
 	args  []interface{}
 }
 
-func (ds *Datastore) ListLinks(domain string, seedUrl string, limit int, filterRegex string) ([]LinkInfo, error) {
+func (ds *Datastore) ListLinks(domain string, seedURL string, limit int, filterRegex string) ([]LinkInfo, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
 	}
@@ -783,7 +785,7 @@ func (ds *Datastore) ListLinks(domain string, seedUrl string, limit int, filterR
 	rtimes := map[string]rememberTimes{}
 	var table []queryEntry
 
-	if seedUrl == "" {
+	if seedURL == "" {
 		table = []queryEntry{
 			queryEntry{
 				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex
@@ -793,7 +795,7 @@ func (ds *Datastore) ListLinks(domain string, seedUrl string, limit int, filterR
 			},
 		}
 	} else {
-		u, err := walker.ParseURL(seedUrl)
+		u, err := walker.ParseURL(seedURL)
 		if err != nil {
 			return linfos, err
 		}
@@ -858,12 +860,12 @@ func (ds *Datastore) ListLinks(domain string, seedUrl string, limit int, filterR
 	return linfos, nil
 }
 
-func (ds *Datastore) ListLinkHistorical(linkUrl string, seedIndex int, limit int) ([]LinkInfo, int, error) {
+func (ds *Datastore) ListLinkHistorical(linkURL string, seedIndex int, limit int) ([]LinkInfo, int, error) {
 	if limit <= 0 {
 		return nil, seedIndex, fmt.Errorf("Bad value for limit parameter %d", limit)
 	}
 	db := ds.db
-	u, err := walker.ParseURL(linkUrl)
+	u, err := walker.ParseURL(linkURL)
 	if err != nil {
 		return nil, seedIndex, err
 	}
@@ -896,7 +898,7 @@ func (ds *Datastore) ListLinkHistorical(linkUrl string, seedIndex int, limit int
 
 		url, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
 		linfo := LinkInfo{
-			Url:            url.String(),
+			URL:            url.String(),
 			Status:         status,
 			Error:          getError,
 			RobotsExcluded: robotsExcluded,
