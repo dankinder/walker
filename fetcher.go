@@ -151,9 +151,12 @@ func ParseURL(ref string) (*URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	purell.NormalizeURL(u, purell.FlagsSafe)
-	u.Fragment = "" // remove # tags at the end of path
 
+	// Apply standard normalization filters to u. This call will
+	// modify u in place.
+	purell.NormalizeURL(u, purell.FlagsSafe|purell.FlagRemoveFragment)
+
+	// Filter the path to catch embedded session ids
 	if parseURLPathStrip != nil {
 		// Remove SID from path
 		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
