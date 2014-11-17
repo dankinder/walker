@@ -488,16 +488,8 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 		return true
 	}
 
-	// Replace the response body so the handler can read it. XXX: During
-	// normal operation the bytes copy below is NOT needed, the handler sees
-	// the body before the body is replaced by the next iteration. But to pass fetcher
-	// tests, it is needed so that the fr.Response.Body remains intact beyond
-	// this iteration.
-	{
-		var b = make([]byte, 0, f.readBuffer.Len())
-		b = append(b, f.readBuffer.Bytes()...)
-		fr.Response.Body = ioutil.NopCloser(bytes.NewReader(b))
-	}
+	// Replace the response body so the handler can read it.
+	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
 
 	//
 	// Get the fingerprint
