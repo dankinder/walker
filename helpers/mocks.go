@@ -1,7 +1,9 @@
 package helpers
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 
@@ -51,6 +53,13 @@ type MockHandler struct {
 }
 
 func (h *MockHandler) HandleResponse(fr *walker.FetchResults) {
+	// Copy response body so that the fetcher code can reuse readBuffer
+	var buffer bytes.Buffer
+	_, err := buffer.ReadFrom(fr.Response.Body)
+	if err != nil {
+		panic(err)
+	}
+	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(buffer.Bytes()))
 	h.Mock.Called(fr)
 }
 
@@ -82,6 +91,9 @@ type MockResponse struct {
 
 	//ContentType defaults to "text/html"
 	ContentType string
+
+	// How long is the content
+	ContentLength int
 }
 
 // MockHTTPHandler implements http.Handler to serve mock requests.
@@ -187,6 +199,10 @@ func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", res.ContentType)
+	if res.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", res.ContentLength))
+	}
+
 	w.WriteHeader(res.Status)
 
 	_, err := w.Write([]byte(res.Body))
