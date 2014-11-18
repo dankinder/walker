@@ -10,3 +10,6 @@ cassandra:
     keyspace: "walker_test"
     replication_factor: 1
     timeout: "10s"
+console:
+   template_directory: ../templates
+   public_folder: ../public

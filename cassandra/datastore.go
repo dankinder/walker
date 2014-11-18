@@ -361,20 +361,37 @@ func (ds *Datastore) hasDomain(dom string) bool {
 	return existsDB
 }
 
-// addDomain adds the domain to the domain_info table if it does not exist.
+// addDomain adds the domain to the domain_info table if it does not exist. If
+// it encounters an error it will log it and move on.
 func (ds *Datastore) addDomain(dom string) {
-	err := ds.db.Query(`INSERT INTO domain_info (dom, claim_tok, dispatched, priority)
-						VALUES (?, ?, ?, ?) IF NOT EXISTS`,
-		dom, gocql.UUID{}, false, 0).Exec()
+	err := ds.addDomainWithExcludeReason(dom, "")
 	if err != nil {
 		log4go.Error("Failed to add new dom %v: %v", dom, err)
-	} else {
-		ds.domainCache.Set(dom, true)
 	}
 }
 
+// addDomainWithExcludeReason adds a domain to the domain_info table if it does
+// not exist. If the domain already exists it will not change the exclusion
+// status.
+func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error {
+	query := `INSERT INTO domain_info (dom, claim_tok, dispatched,
+										priority, excluded, exclude_reason)
+				VALUES (?, ?, ?, ?, ?, ?) IF NOT EXISTS`
+	var err error
+	if reason != "" {
+		err = ds.db.Query(query, dom, gocql.UUID{}, false, 0, true, reason).Exec()
+	} else {
+		err = ds.db.Query(query, dom, gocql.UUID{}, false, 0, nil, nil).Exec()
+	}
+	if err != nil {
+		return fmt.Errorf("Failed to add new dom %v: %v", dom, err)
+	}
+	ds.domainCache.Set(dom, true)
+	return nil
+}
+
 //
-// Implementation of the console.Model interface
+// DomainInfo calls
 //
 
 // DomainInfo defines a row from the domain_info table
@@ -382,14 +399,17 @@ type DomainInfo struct {
 	// TLD+1
 	Domain string
 
+	// Is this domain excluded from the crawl?
+	Excluded bool
+
 	// Why did this domain get excluded, or empty if not excluded
 	ExcludeReason string
 
 	// When did this domain last get queued to be crawled. Or TimeQueed.IsZero() if not crawled
-	TimeQueued time.Time
+	ClaimTime time.Time
 
 	// What was the UUID of the crawler that last crawled the domain
-	UUIDOfQueued gocql.UUID
+	ClaimToken gocql.UUID
 
 	// Number of (unique) links found in this domain
 	NumberLinksTotal int
@@ -401,13 +421,195 @@ type DomainInfo struct {
 	NumberLinksUncrawled int
 }
 
+// DQ is a domain query struct used for getting domains from cassandra.
+// Zero-values mean use default behavior.
+type DQ struct {
+	// When listing domains, the seed should be the domain preceding the
+	// queried set. When paginating, use the last domain of the previous set as
+	// the seed.
+	// Default: select from the beginning
+	Seed string
+
+	// Limit the returned results, used for pagination.
+	// Default: no limit
+	Limit int
+
+	// Set to true to get only dispatched domains
+	// default: get all domains
+	Working bool
+
+	// Set to true to fetch statistics (ex. NumberLinksTotal), a potentially
+	// heavy operation.
+	// Default: do not fetch stats
+	GetStats bool
+}
+
+// FindDomain returns the DomainInfo for the specified domain
+func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
+	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason
+						FROM domain_info WHERE dom = ?`, domain).Iter()
+	var claim_tok gocql.UUID
+	var claim_time time.Time
+	var excluded bool
+	var exclude_reason string
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
+		err := itr.Close()
+		return nil, err
+	}
+
+	reason := ""
+	if exclude_reason != "" {
+		reason = exclude_reason
+	} else if excluded {
+		// This should just be a backstop in case someone doesn't set exclude_reason.
+		reason = "Exclusion marked"
+	}
+
+	dinfo := &DomainInfo{
+		Domain:        domain,
+		ClaimToken:    claim_tok,
+		ClaimTime:     claim_time,
+		Excluded:      excluded,
+		ExcludeReason: reason,
+	}
+	err := itr.Close()
+	if err != nil {
+		return dinfo, err
+	}
+
+	err = ds.annotateDomainInfo([]*DomainInfo{dinfo})
+	return dinfo, err
+}
+
+// ListDomains returns a slice of DomainInfo structs populated according to the
+// specified DQ (domain query)
+func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
+	conditions := []string{}
+	args := []interface{}{}
+	if query.Working {
+		conditions = append(conditions, "dispatched = true")
+	}
+
+	if query.Seed != "" {
+		conditions = append(conditions, "TOKEN(dom) > TOKEN(?)")
+		args = append(args, query.Seed)
+	}
+
+	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info"
+	if len(conditions) > 0 {
+		cql += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	if query.Limit > 0 {
+		cql += " LIMIT ?"
+		args = append(args, query.Limit)
+	}
+
+	log4go.Debug("Listing domains with query: %v %v", cql, args)
+	itr := ds.db.Query(cql, args...).Iter()
+
+	var dinfos []*DomainInfo
+	var domain, exclude_reason string
+	var claim_tok gocql.UUID
+	var claim_time time.Time
+	var excluded bool
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
+		reason := ""
+		if exclude_reason != "" {
+			reason = exclude_reason
+		} else if excluded {
+			// This should just be a backstop in case someone doesn't set exclude_reason.
+			reason = "Exclusion marked"
+		}
+
+		dinfos = append(dinfos, &DomainInfo{
+			Domain:        domain,
+			ClaimToken:    claim_tok,
+			ClaimTime:     claim_time,
+			Excluded:      excluded,
+			ExcludeReason: reason,
+		})
+	}
+	err := itr.Close()
+	if err != nil {
+		return dinfos, err
+	}
+	if query.GetStats {
+		err = ds.annotateDomainInfo(dinfos)
+	}
+
+	return dinfos, err
+}
+
+// countUniqueLinks counts
+//   (a) Total links for this domain
+//   (b) Total links for this domain, not-yet-crawled
+func (ds *Datastore) countUniqueLinks(domain string, table string) (linksTotal int, linksUncrawled int, err error) {
+	db := ds.db
+	q := fmt.Sprintf("SELECT subdom, path, proto, time FROM %s WHERE dom = ?", table)
+	itr := db.Query(q, domain).Iter()
+
+	var subdomain, path, protocol string
+	var crawlTime time.Time
+	found := map[string]time.Time{}
+	for itr.Scan(&subdomain, &path, &protocol, &crawlTime) {
+		key := fmt.Sprintf("%s:%s:%s", path, subdomain, protocol)
+		t, foundT := found[key]
+		if !foundT {
+			found[key] = crawlTime
+			if crawlTime.Equal(walker.NotYetCrawled) {
+				linksUncrawled++
+			}
+		} else if t.Before(crawlTime) {
+			found[key] = crawlTime
+			if t.Equal(walker.NotYetCrawled) {
+				linksUncrawled--
+			}
+		}
+	}
+	err = itr.Close()
+	linksTotal = len(found)
+
+	return
+}
+
+func (ds *Datastore) annotateDomainInfo(dinfos []*DomainInfo) error {
+	//
+	// Count Links
+	//
+	for i := range dinfos {
+		d := dinfos[i]
+
+		linkCount, linkUncrawled, err := ds.countUniqueLinks(d.Domain, "links")
+		if err != nil {
+			return err
+		}
+		d.NumberLinksTotal = linkCount
+		d.NumberLinksUncrawled = linkUncrawled
+
+		d.NumberLinksQueued, _, err = ds.countUniqueLinks(d.Domain, "segments")
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+//
+// LinkInfo calls
+//
+
 // LinkInfo defines a row from the link or segment table
 type LinkInfo struct {
 	// URL of the link
-	URL string
+	URL *walker.URL
 
-	// Status of the GET
+	// Status of the fetch
 	Status int
+
+	// When did this link get crawled
+	CrawlTime time.Time
 
 	// Any error reported when attempting to fetch the URL
 	Error string
@@ -415,38 +617,240 @@ type LinkInfo struct {
 	// Was this excluded by robots
 	RobotsExcluded bool
 
-	// When did this link get crawled
-	CrawlTime time.Time
+	// URL this link redirected to if it was a redirect
+	RedirectedTo string
+
+	// Whether this link was flagged for immediate fetching
+	GetNow bool
+
+	// Mime type (or Content-Type) of the returned data
+	Mime string
+
+	// FNV hash of the contents
+	FnvFingerprint int64
 }
 
-// TODO: comment these
-const DontSeedDomain = ""
-const DontSeedURL = ""
-const DontSeedIndex = 0
+// LQ is a link query struct used for gettings links from cassandra.
+// Zero-values mean use default behavior.
+type LQ struct {
+	// When listing links, the seed should be the URL preceding the queried
+	// set. When paginating, use the last URL of the previous set as the seed.
+	// Default: select from the beginning
+	Seed *walker.URL
 
-//NOTE: part of this is cribbed from walker.datastore.go. Code share?
-func (ds *Datastore) addDomainIfNew(domain string, excludeDomainReason string) error {
-	var count int
-	err := ds.db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = ?`, domain).Scan(&count)
+	// Limit the returned results, used for pagination.
+	// Default: no limit
+	Limit int
+
+	FilterRegex string
+}
+
+// rememberTimes is a map helper for showing only the latest link results
+type rememberTimes struct {
+	ctm time.Time
+	ind int
+}
+
+// FindLink returns a LinkInfo matching the given URL
+func (ds *Datastore) FindLink(u *walker.URL) (*LinkInfo, error) {
+	tld1, subtld1, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
-		return fmt.Errorf("seek; %v", err)
+		return nil, err
 	}
 
-	if count == 0 {
-		if excludeDomainReason == "" {
-			err = ds.db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, 0)`, domain).Exec()
-		} else {
-			err = ds.db.Query(`INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 0, true, ?)`, domain, excludeDomainReason).Exec()
+	itr := ds.db.Query(`SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
+						FROM links 
+						WHERE dom = ? AND
+							  subdom = ? AND
+							  path = ? AND
+							  proto = ?`, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
+	rtimes := map[string]rememberTimes{}
+	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil)
+	if err != nil {
+		itr.Close()
+		return nil, err
+	}
+
+	err = itr.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(linfos) == 0 {
+		return nil, nil
+	} else {
+		return linfos[0], nil
+	}
+}
+
+// Pagination note:
+// To paginate a single column you can do
+//
+//   SELECT a FROM table WHERE a > startingA
+//
+// If you have two columns though, it requires two queries
+//
+//   SELECT a,b from table WHERE a == startingA AND b > startingB
+//   SELECT a,b from table WHERE a > startingA
+//
+// With 3 columns it looks like this
+//
+//   SELECT a,b,c FROM table WHERE a == startingA AND b == startingB AND c > startingC
+//   SELECT a,b,c FROM table WHERE a == startingA AND b > startingB
+//   SELECT a,b,c FROM table WHERE a > startingA
+//
+// Particularly for our links table, with primary key domain, subdomain, path, protocol, crawl_time
+// For right now, ignore the crawl time we write
+//
+// SELECT * FROM links WHERE domain = startDomain AND subdomain = startSubDomain AND path = startPath
+//                           AND protocol > startProtocol
+// SELECT * FROM links WHERE domain = startDomain AND subdomain = startSubDomain AND path > startPath
+// SELECT * FROM links WHERE domain = startDomain AND subdomain > startSubDomain
+//
+// Now the only piece left, is that crawl_time is part of the primary key. Generally we're only going to take the latest crawl time. But see
+// Historical query
+//
+
+// queryEntry is a helper struct for the layered queries in ListLinks
+type queryEntry struct {
+	query string
+	args  []interface{}
+}
+
+// ListLinks fetches links for the given domain according to the given LQ (Link
+// Query)
+func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
+	if query.Limit <= 0 {
+		return nil, fmt.Errorf("Bad value for limit parameter %d", query.Limit)
+	}
+
+	var acceptLink func(string) bool = nil
+	if query.FilterRegex != "" {
+		re, err := regexp.Compile(query.FilterRegex)
+		if err != nil {
+			return nil, fmt.Errorf("FilterRegex compile error: %v", err)
 		}
-	} else if excludeDomainReason != "" {
-		err = ds.db.Query(`UPDATE domain_info SET excluded = ?, exclude_reason = ? WHERE dom = ?`, true, excludeDomainReason, domain).Exec()
+		acceptLink = func(s string) bool {
+			return re.MatchString(s)
+		}
 	}
 
+	var linfos []*LinkInfo
+	rtimes := map[string]rememberTimes{}
+	var table []queryEntry
+
+	if query.Seed == nil {
+		table = []queryEntry{
+			queryEntry{
+				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex
+                      FROM links 
+                      WHERE dom = ?`,
+				args: []interface{}{domain},
+			},
+		}
+	} else {
+		dom, sub, err := query.Seed.TLDPlusOneAndSubdomain()
+		if err != nil {
+			return linfos, err
+		}
+
+		pat := query.Seed.RequestURI()
+		pro := query.Seed.Scheme
+
+		table = []queryEntry{
+			queryEntry{
+				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex
+                      FROM links 
+                      WHERE dom = ? AND 
+                            subdom = ? AND 
+                            path = ? AND 
+                            proto > ?`,
+				args: []interface{}{dom, sub, pat, pro},
+			},
+			queryEntry{
+				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
+                      FROM links 
+                      WHERE dom = ? AND subdom = ? AND 
+                            path > ?`,
+				args: []interface{}{dom, sub, pat},
+			},
+			queryEntry{
+				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
+                      FROM links 
+                      WHERE dom = ? AND 
+                            subdom > ?`,
+				args: []interface{}{dom, sub},
+			},
+		}
+	}
+
+	var err error
+	for _, qt := range table {
+		itr := ds.db.Query(qt.query, qt.args...).Iter()
+		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, query.Limit, acceptLink)
+		if err != nil {
+			return linfos, err
+		}
+
+		err = itr.Close()
+		if err != nil {
+			return linfos, err
+		} else if len(linfos) >= query.Limit {
+			return linfos, nil
+		}
+	}
+
+	return linfos, nil
+}
+
+// ListLinkHistorical gets the crawl history of a specific link
+func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
+	query := `SELECT dom, subdom, path, proto, time, stat,
+						err, robot_ex, redto_url, getnow, mime, fnv
+              FROM links
+              WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`
+	tld1, subtld1, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
-		return fmt.Errorf("insert; %v", err)
+		return nil, err
 	}
 
-	return nil
+	itr := ds.db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
+
+	var linfos []*LinkInfo
+	var dom, sub, path, prot, getError, mime, redtoURL string
+	var crawlTime time.Time
+	var status int
+	var fnvFP int64
+	var robotsExcluded, getnow bool
+	for itr.Scan(&dom, &sub, &path, &prot, &crawlTime, &status,
+		&getError, &robotsExcluded, &redtoURL, &getnow, &mime, &fnvFP) {
+		// If we need pagination here at some point...
+		//if count < seedIndex {
+		//	count++
+		//	continue
+		//}
+
+		u, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
+		linfo := &LinkInfo{
+			URL:            u,
+			Status:         status,
+			Error:          getError,
+			CrawlTime:      crawlTime,
+			RobotsExcluded: robotsExcluded,
+			RedirectedTo:   redtoURL,
+			GetNow:         getnow,
+			Mime:           mime,
+			FnvFingerprint: fnvFP,
+		}
+		linfos = append(linfos, linfo)
+
+		//if len(linfos) >= limit {
+		//	break
+		//}
+	}
+	err = itr.Close()
+
+	return linfos, err
 }
 
 //NOTE: InsertLinks should try to insert as much information as possible
@@ -501,9 +905,9 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 		}
 
 		if !seen[d] {
-			err := ds.addDomainIfNew(d, excludeDomainReason)
+			err := ds.addDomainWithExcludeReason(d, excludeDomainReason)
 			if err != nil {
-				errList = append(errList, fmt.Errorf("%v # addDomainIfNew: %v", link, err))
+				errList = append(errList, fmt.Errorf("%v # add domain: %v", link, err))
 				continue
 			}
 		}
@@ -527,183 +931,6 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 	return errList
 }
 
-// countUniqueLinks counts
-//   (a) Total links for this domain
-//   (b) Total links for this domain, not-yet-crawled
-func (ds *Datastore) countUniqueLinks(domain string, table string) (linksTotal int, linksUncrawled int, err error) {
-	db := ds.db
-	q := fmt.Sprintf("SELECT subdom, path, proto, time FROM %s WHERE dom = ?", table)
-	itr := db.Query(q, domain).Iter()
-
-	var subdomain, path, protocol string
-	var crawlTime time.Time
-	found := map[string]time.Time{}
-	for itr.Scan(&subdomain, &path, &protocol, &crawlTime) {
-		key := fmt.Sprintf("%s:%s:%s", path, subdomain, protocol)
-		t, foundT := found[key]
-		if !foundT {
-			found[key] = crawlTime
-			if crawlTime.Equal(walker.NotYetCrawled) {
-				linksUncrawled++
-			}
-		} else if t.Before(crawlTime) {
-			found[key] = crawlTime
-			if t.Equal(walker.NotYetCrawled) {
-				linksUncrawled--
-			}
-		}
-	}
-	err = itr.Close()
-	linksTotal = len(found)
-
-	return
-}
-
-func (ds *Datastore) annotateDomainInfo(dinfos []DomainInfo) error {
-	//
-	// Count Links
-	//
-	for i := range dinfos {
-		d := &dinfos[i]
-
-		linkCount, linkUncrawled, err := ds.countUniqueLinks(d.Domain, "links")
-		if err != nil {
-			return err
-		}
-		d.NumberLinksTotal = linkCount
-		d.NumberLinksUncrawled = linkUncrawled
-
-		d.NumberLinksQueued, _, err = ds.countUniqueLinks(d.Domain, "segments")
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (ds *Datastore) listDomainsImpl(seed string, limit int, working bool) ([]DomainInfo, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
-	}
-	db := ds.db
-
-	var itr *gocql.Iter
-	if seed == "" && !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info LIMIT ?", limit).Iter()
-	} else if seed == "" {
-		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true LIMIT ?", limit).Iter()
-	} else if !working {
-		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
-	} else { //working==true AND seed != ""
-		itr = db.Query("SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dispatched = true AND TOKEN(dom) > TOKEN(?) LIMIT ?", seed, limit).Iter()
-	}
-
-	var dinfos []DomainInfo
-	var domain, exclude_reason string
-	var claim_tok gocql.UUID
-	var claim_time time.Time
-	var excluded bool
-	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
-		reason := ""
-		if exclude_reason != "" {
-			reason = exclude_reason
-		} else if excluded {
-			// This should just be a backstop in case someone doesn't set exclude_reason.
-			reason = "Exclusion marked"
-		}
-
-		dinfos = append(dinfos, DomainInfo{Domain: domain, UUIDOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason})
-	}
-	err := itr.Close()
-	if err != nil {
-		return dinfos, err
-	}
-	err = ds.annotateDomainInfo(dinfos)
-
-	return dinfos, err
-}
-
-func (ds *Datastore) ListDomains(seed string, limit int) ([]DomainInfo, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
-	}
-	return ds.listDomainsImpl(seed, limit, false)
-}
-
-func (ds *Datastore) ListWorkingDomains(seedDomain string, limit int) ([]DomainInfo, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
-	}
-	return ds.listDomainsImpl(seedDomain, limit, true)
-}
-
-//		itr = db.Query("SELECT domain, claim_tok, claim_time FROM domain_info WHERE dispatched = true AND TOKEN(domain) > TOKEN(?) LIMIT ?", seed, limit).Iter()
-func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
-	db := ds.db
-	itr := db.Query("SELECT claim_tok, claim_time, excluded, exclude_reason FROM domain_info WHERE dom = ?", domain).Iter()
-	var claim_tok gocql.UUID
-	var claim_time time.Time
-	var excluded bool
-	var exclude_reason string
-	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
-		err := itr.Close()
-		return nil, err
-	}
-
-	reason := ""
-	if exclude_reason != "" {
-		reason = exclude_reason
-	} else if excluded {
-		// This should just be a backstop in case someone doesn't set exclude_reason.
-		reason = "Exclusion marked"
-	}
-
-	dinfo := &DomainInfo{Domain: domain, UUIDOfQueued: claim_tok, TimeQueued: claim_time, ExcludeReason: reason}
-	err := itr.Close()
-	if err != nil {
-		return dinfo, err
-	}
-
-	dinfos := []DomainInfo{*dinfo}
-	err = ds.annotateDomainInfo(dinfos)
-	*dinfo = dinfos[0]
-	return dinfo, err
-}
-
-// Pagination note:
-// To paginate a single column you can do
-//
-//   SELECT a FROM table WHERE a > startingA
-//
-// If you have two columns though, it requires two queries
-//
-//   SELECT a,b from table WHERE a == startingA AND b > startingB
-//   SELECT a,b from table WHERE a > startingA
-//
-// With 3 columns it looks like this
-//
-//   SELECT a,b,c FROM table WHERE a == startingA AND b == startingB AND c > startingC
-//   SELECT a,b,c FROM table WHERE a == startingA AND b > startingB
-//   SELECT a,b,c FROM table WHERE a > startingA
-//
-// Particularly for our links table, with primary key domain, subdomain, path, protocol, crawl_time
-// For right now, ignore the crawl time we write
-//
-// SELECT * FROM links WHERE domain = startDomain AND subdomain = startSubDomain AND path = startPath
-//                           AND protocol > startProtocol
-// SELECT * FROM links WHERE domain = startDomain AND subdomain = startSubDomain AND path > startPath
-// SELECT * FROM links WHERE domain = startDomain AND subdomain > startSubDomain
-//
-// Now the only piece left, is that crawl_time is part of the primary key. Generally we're only going to take the latest crawl time. But see
-// Historical query
-//
-
-type rememberTimes struct {
-	ctm time.Time
-	ind int
-}
-
 //collectLinkInfos populates a []LinkInfo list given a cassandra iterator. Arguments are described as:
 // (a) linfos is the list of LinkInfo's to build on
 // (b) rtimes is scratch space used to filter most recent link
@@ -711,7 +938,7 @@ type rememberTimes struct {
 // (d) limit is the max length of linfos
 // (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [This is used
 //     to implement filterRegex on ListLinks]
-func (ds *Datastore) collectLinkInfos(linfos []LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkAccept func(string) bool) ([]LinkInfo, error) {
+func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkAccept func(string) bool) ([]*LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
@@ -733,8 +960,8 @@ func (ds *Datastore) collectLinkInfos(linfos []LinkInfo, rtimes map[string]remem
 			continue
 		}
 
-		linfo := LinkInfo{
-			URL:            urlString,
+		linfo := &LinkInfo{
+			URL:            u,
 			Status:         status,
 			Error:          anerror,
 			RobotsExcluded: robotsExcluded,
@@ -759,220 +986,23 @@ func (ds *Datastore) collectLinkInfos(linfos []LinkInfo, rtimes map[string]remem
 	return linfos, nil
 }
 
-type queryEntry struct {
-	query string
-	args  []interface{}
-}
-
-func (ds *Datastore) ListLinks(domain string, seedURL string, limit int, filterRegex string) ([]LinkInfo, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("Bad value for limit parameter %d", limit)
-	}
-
-	var acceptLink func(string) bool = nil
-	if filterRegex != "" {
-		re, err := regexp.Compile(filterRegex)
-		if err != nil {
-			return nil, fmt.Errorf("filterRegex compile error: %v", err)
-		}
-		acceptLink = func(s string) bool {
-			return re.MatchString(s)
-		}
-	}
-
-	db := ds.db
-	var linfos []LinkInfo
-	rtimes := map[string]rememberTimes{}
-	var table []queryEntry
-
-	if seedURL == "" {
-		table = []queryEntry{
-			queryEntry{
-				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex
-                      FROM links 
-                      WHERE dom = ?`,
-				args: []interface{}{domain},
-			},
-		}
-	} else {
-		u, err := walker.ParseURL(seedURL)
-		if err != nil {
-			return linfos, err
-		}
-
-		dom, err := u.ToplevelDomainPlusOne()
-		if err != nil {
-			return linfos, err
-		}
-
-		sub, err := u.Subdomain()
-		if err != nil {
-			return linfos, err
-		}
-
-		pat := u.RequestURI()
-		pro := u.Scheme
-
-		table = []queryEntry{
-			queryEntry{
-				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex
-                      FROM links 
-                      WHERE dom = ? AND 
-                            subdom = ? AND 
-                            path = ? AND 
-                            proto > ?`,
-				args: []interface{}{dom, sub, pat, pro},
-			},
-			queryEntry{
-				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
-                      FROM links 
-                      WHERE dom = ? AND 
-                            subdom = ? AND 
-                            path > ?`,
-				args: []interface{}{dom, sub, pat},
-			},
-			queryEntry{
-				query: `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
-                      FROM links 
-                      WHERE dom = ? AND 
-                            subdom > ?`,
-				args: []interface{}{dom, sub},
-			},
-		}
-	}
-
-	var err error
-	for _, qt := range table {
-		itr := db.Query(qt.query, qt.args...).Iter()
-		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, limit, acceptLink)
-		if err != nil {
-			return linfos, err
-		}
-
-		err = itr.Close()
-		if err != nil {
-			return linfos, err
-		} else if len(linfos) >= limit {
-			return linfos, nil
-		}
-	}
-
-	return linfos, nil
-}
-
-func (ds *Datastore) ListLinkHistorical(linkURL string, seedIndex int, limit int) ([]LinkInfo, int, error) {
-	if limit <= 0 {
-		return nil, seedIndex, fmt.Errorf("Bad value for limit parameter %d", limit)
-	}
-	db := ds.db
-	u, err := walker.ParseURL(linkURL)
-	if err != nil {
-		return nil, seedIndex, err
-	}
-
-	query := `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
-              FROM links
-              WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`
-	tld1, err := u.ToplevelDomainPlusOne()
-	if err != nil {
-		return nil, seedIndex, err
-	}
-	subtld1, err := u.Subdomain()
-	if err != nil {
-		return nil, seedIndex, err
-	}
-
-	itr := db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
-
-	var linfos []LinkInfo
-	var dom, sub, path, prot, getError string
-	var crawlTime time.Time
-	var status int
-	var robotsExcluded bool
-	count := 0
-	for itr.Scan(&dom, &sub, &path, &prot, &crawlTime, &status, &getError, &robotsExcluded) {
-		if count < seedIndex {
-			count++
-			continue
-		}
-
-		url, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
-		linfo := LinkInfo{
-			URL:            url.String(),
-			Status:         status,
-			Error:          getError,
-			RobotsExcluded: robotsExcluded,
-			CrawlTime:      crawlTime,
-		}
-		linfos = append(linfos, linfo)
-		if len(linfos) >= limit {
-			break
-		}
-	}
-	err = itr.Close()
-
-	return linfos, seedIndex + len(linfos), err
-}
-
-func (ds *Datastore) FindLink(link string) (*LinkInfo, error) {
-	db := ds.db
-	u, err := walker.ParseURL(link)
-	if err != nil {
-		return nil, err
-	}
-	query := `SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
-                      FROM links 
-                      WHERE dom = ? AND 
-                            subdom = ? AND 
-                            path = ? AND 
-                            proto = ?`
-
-	tld1, err := u.ToplevelDomainPlusOne()
-	if err != nil {
-		return nil, err
-	}
-
-	subtld1, err := u.Subdomain()
-	if err != nil {
-		return nil, err
-	}
-
-	itr := db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
-	rtimes := map[string]rememberTimes{}
-	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil)
-	if err != nil {
-		itr.Close()
-		return nil, err
-	}
-
-	err = itr.Close()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(linfos) == 0 {
-		return nil, nil
-	} else {
-		return &linfos[0], nil
-	}
-}
-
-func (ds *Datastore) UpdateDomainExclude(domain string, exclude bool, reason string) error {
-	db := ds.db
+// UpdateDomain updates the given domain with fields from `info`. If Excluded
+// is true, it automatically clears ExcludedReason.
+// TODO: currently only updates exclusion; do other fields
+func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo) error {
 	query := `UPDATE domain_info 
 			  SET 
 				  excluded = ?,
 				  exclude_reason = ?
 			  WHERE 
 				  dom = ?`
-	if !exclude {
+	reason := info.ExcludeReason
+	if !info.Excluded {
 		reason = ""
 	}
-	err := db.Query(query, exclude, reason, domain).Exec()
+	err := ds.db.Query(query, info.Excluded, reason, domain).Exec()
 	return err
 }
-
-// comment
 
 //
 // Extra helper methods

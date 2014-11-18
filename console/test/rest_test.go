@@ -11,6 +11,7 @@ import (
 
 	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/console"
+	"github.com/iParadigms/walker/helpers"
 )
 
 func restReq(url string, mp map[string]interface{}) (map[string]interface{}, int) {
@@ -88,7 +89,7 @@ func TestAdd(t *testing.T) {
 	}
 
 	for _, link := range links {
-		linfo, err := console.DS.FindLink(link)
+		linfo, err := console.DS.FindLink(helpers.Parse(link))
 		if err != nil {
 			t.Errorf("Expected to find link %q in datastore, but found an error %v instead", link, err)
 			continue
