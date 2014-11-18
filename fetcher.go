@@ -533,10 +533,10 @@ func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 	}
 
 	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
-	N, err := f.readBuffer.ReadFrom(limitReader)
+	n, err := f.readBuffer.ReadFrom(limitReader)
 	if err != nil {
 		return err
-	} else if N > Config.MaxHTTPContentSizeBytes {
+	} else if n > Config.MaxHTTPContentSizeBytes {
 		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 	}
 
