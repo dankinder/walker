@@ -67,6 +67,64 @@ func init() {
 	helpers.LoadTestConfig("test-walker.yaml")
 }
 
+func TestUrlParsing(t *testing.T) {
+	orig := walker.Config.PurgeSidList
+	defer func() {
+		walker.Config.PurgeSidList = orig
+		walker.PostConfigHooks()
+	}()
+	walker.Config.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.PostConfigHooks()
+
+	tests := []struct {
+		tag    string
+		input  string
+		expect string
+	}{
+		{
+			tag:    "UpCase",
+			input:  "HTTP://A.com/page1.com",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "Fragment",
+			input:  "http://a.com/page1.com#Fragment",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "PathSID",
+			input:  "http://a.com/page1.com;jsEssIoniD=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "PathSID2",
+			input:  "http://a.com/page1.com;phPseSsId=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "QuerySID",
+			input:  "http://a.com/page1.com?foo=bar&jsessionID=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
+			expect: "http://a.com/page1.com?baz=niffler&foo=bar",
+		},
+		{
+			tag:    "QuerySID2",
+			input:  "http://a.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+	}
+
+	for _, tst := range tests {
+		u, err := walker.ParseURL(tst.input)
+		if err != nil {
+			t.Fatalf("For tag %q ParseURL failed %v", tst.tag, err)
+		}
+		got := u.String()
+		if got != tst.expect {
+			t.Errorf("For tag %q link mismatch got %q, expected %q", tst.tag, got, tst.expect)
+		}
+	}
+}
+
 func TestBasicFetchManagerRun(t *testing.T) {
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("norobots.com").Once()
