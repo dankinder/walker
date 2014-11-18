@@ -225,9 +225,9 @@ crawl, regardless of the add_new_domains configuration setting.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			readConfig()
 
-			orig := walker.Config.AddNewDomains
-			defer func() { walker.Config.AddNewDomains = orig }()
-			walker.Config.AddNewDomains = true
+			orig := walker.Config.Cassandra.AddNewDomains
+			defer func() { walker.Config.Cassandra.AddNewDomains = orig }()
+			walker.Config.Cassandra.AddNewDomains = true
 
 			if seedURL == "" {
 				fatalf("Seed URL needed to execute; add on with --url/-u")

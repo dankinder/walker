@@ -64,18 +64,6 @@ type WalkerConfig struct {
 		MinLinkRefreshTime   string  `yaml:"min_link_refresh_time"`
 	} `yaml:"dispatcher"`
 
-	// TODO: consider these config items
-	// allowed schemes (file://, https://, etc.)
-	// allowed return content types (or file extensions)
-	// http timeout
-	// http max delays (how many attempts to give a webserver that's reporting 'busy')
-	// http content size limit
-	// ftp content limit
-	// ftp timeout
-	// regex matchers for hosts, paths, etc. to include or exclude
-	// max crawl delay (exclude or notify of sites that try to set a massive crawl delay)
-	// max simultaneous fetches/crawls/segments
-
 	Cassandra struct {
 		Hosts                 []string `yaml:"hosts"`
 		Keyspace              string   `yaml:"keyspace"`

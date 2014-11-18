@@ -44,9 +44,9 @@ func TestCommandsReadConfig(t *testing.T) {
 	for _, walkerCom := range walkerCommands {
 		helpers.LoadTestConfig("test-walker.yaml")
 		expectedDefaultAgent := "Walker (http://github.com/iParadigms/walker)"
-		if walker.Config.UserAgent != expectedDefaultAgent {
+		if walker.Config.Fetcher.UserAgent != expectedDefaultAgent {
 			t.Fatalf("Failed to reset default config value (user_agent), expected: %v\nBut got: %v",
-				expectedDefaultAgent, walker.Config.UserAgent)
+				expectedDefaultAgent, walker.Config.Fetcher.UserAgent)
 		}
 
 		conf := path.Join(helpers.GetTestFileDir(), "test-walker2.yaml")
@@ -64,9 +64,9 @@ func TestCommandsReadConfig(t *testing.T) {
 		Execute()
 
 		expectedTestAgent := "Test Agent (set in yaml)"
-		if walker.Config.UserAgent != expectedTestAgent {
+		if walker.Config.Fetcher.UserAgent != expectedTestAgent {
 			t.Errorf("Failed to set config value (user_agent) via yaml, expected: %v\nBut got: %v",
-				expectedTestAgent, walker.Config.UserAgent)
+				expectedTestAgent, walker.Config.Fetcher.UserAgent)
 		}
 	}
 }
