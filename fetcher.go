@@ -113,7 +113,7 @@ var parseURLPathStrip *regexp.Regexp
 var parseURLPurgeMap map[string]bool
 
 func setupParseURL() error {
-	if len(Config.PurgeSidList) == 0 {
+	if len(Config.Fetcher.PurgeSidList) == 0 {
 		parseURLPathStrip = nil
 	} else {
 		// Here we want to write a regexp that looks like
@@ -121,7 +121,7 @@ func setupParseURL() error {
 		var buffer bytes.Buffer
 		buffer.WriteString("(?i)") // case-insensitive
 		startedLoop := false
-		for _, sid := range Config.PurgeSidList {
+		for _, sid := range Config.Fetcher.PurgeSidList {
 			if startedLoop {
 				buffer.WriteRune('|')
 			}
@@ -138,7 +138,7 @@ func setupParseURL() error {
 	}
 
 	parseURLPurgeMap = map[string]bool{}
-	for _, p := range Config.PurgeSidList {
+	for _, p := range Config.Fetcher.PurgeSidList {
 		parseURLPurgeMap[strings.ToLower(p)] = true
 	}
 	return nil
@@ -274,19 +274,19 @@ func (fm *FetchManager) Start() {
 	}
 
 	var err error
-	fm.defCrawlDelay, err = time.ParseDuration(Config.DefaultCrawlDelay)
+	fm.defCrawlDelay, err = time.ParseDuration(Config.Fetcher.DefaultCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.maxCrawlDelay, err = time.ParseDuration(Config.MaxCrawlDelay)
+	fm.maxCrawlDelay, err = time.ParseDuration(Config.Fetcher.MaxCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.acceptFormats, err = mimetools.NewMatcher(Config.AcceptFormats)
+	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
@@ -294,7 +294,7 @@ func (fm *FetchManager) Start() {
 	fm.started = true
 
 	if fm.Transport == nil {
-		timeout, err := time.ParseDuration(Config.HttpTimeout)
+		timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 		if err != nil {
 			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 			panic(err)
@@ -314,12 +314,12 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = dnscache.Dial(t.Dial, Config.MaxDNSCacheEntries)
+		t.Dial = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
 
-	numFetchers := Config.NumSimultaneousFetchers
+	numFetchers := Config.Fetcher.NumSimultaneousFetchers
 	fm.fetchers = make([]*fetcher, numFetchers)
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
@@ -404,7 +404,7 @@ func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
-	timeout, err := time.ParseDuration(Config.HttpTimeout)
+	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 	if err != nil {
 		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 		panic(err)
@@ -419,16 +419,16 @@ func newFetcher(fm *FetchManager) *fetcher {
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})
 
-	if len(Config.ExcludeLinkPatterns) > 0 {
-		f.excludeLink, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+	if len(Config.Fetcher.ExcludeLinkPatterns) > 0 {
+		f.excludeLink, err = aggregateRegex(Config.Fetcher.ExcludeLinkPatterns, "exclude_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
 		}
 	}
 
-	if len(Config.IncludeLinkPatterns) > 0 {
-		f.includeLink, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+	if len(Config.Fetcher.IncludeLinkPatterns) > 0 {
+		f.includeLink, err = aggregateRegex(Config.Fetcher.IncludeLinkPatterns, "include_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
@@ -539,7 +539,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	//
 	//TODO: ReadAll is inefficient. We should use a properly sized
 	//		buffer here (determined by
-	//		Config.MaxHTTPContentSizeBytes or possibly
+	//		Config.Fetcher.MaxHTTPContentSizeBytes or possibly
 	//		Content-Length of the response)
 	var body []byte
 	body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
@@ -563,7 +563,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 		f.parseLinks(body, fr)
 	}
 
-	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
+	if !(Config.Fetcher.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
 		f.fm.Handler.HandleResponse(fr)
 	}
 
@@ -584,7 +584,7 @@ func (f *fetcher) initializeRobotsMap(host string) {
 
 	// Set default robots
 	rdata, _ := robotstxt.FromBytes([]byte("User-agent: *\n"))
-	f.defRobots = rdata.FindGroup(Config.UserAgent)
+	f.defRobots = rdata.FindGroup(Config.Fetcher.UserAgent)
 	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
 
 	// try read $host/robots.txt. Failure to GET, will just returns
@@ -633,7 +633,7 @@ func (f *fetcher) getRobots(host string) *robotstxt.Group {
 		return f.defRobots
 	}
 
-	grp := robots.FindGroup(Config.UserAgent)
+	grp := robots.FindGroup(Config.Fetcher.UserAgent)
 	max := f.fm.maxCrawlDelay
 	if grp.CrawlDelay > max {
 		grp.CrawlDelay = max
@@ -648,8 +648,8 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 		return nil, nil, fmt.Errorf("Failed to create new request object for %v): %v", u, err)
 	}
 
-	req.Header.Set("User-Agent", Config.UserAgent)
-	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
+	req.Header.Set("User-Agent", Config.Fetcher.UserAgent)
+	req.Header.Set("Accept", strings.Join(Config.Fetcher.AcceptFormats, ","))
 	if !u.LastCrawled.Equal(NotYetCrawled) {
 		// Date format used is RFC1123 as specified by
 		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
@@ -682,7 +682,7 @@ func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 		return false
 	}
 
-	for _, f := range Config.AcceptProtocols {
+	for _, f := range Config.Fetcher.AcceptProtocols {
 		if u.Scheme == f {
 			return true
 		}
@@ -747,7 +747,7 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 	}
 	defer conn.Close()
 
-	if Config.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
+	if Config.Fetcher.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
 		log4go.Debug("Host (%v) resolved to private IP address, blacklisting", host)
 		return true
 	}
@@ -782,7 +782,7 @@ func getIncludedTags() map[string]bool {
 		"object": true,
 		"embed":  true,
 	}
-	for _, t := range Config.IgnoreTags {
+	for _, t := range Config.Fetcher.IgnoreTags {
 		delete(tags, t)
 	}
 
@@ -889,7 +889,7 @@ func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) 
 			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
 			return
 		}
-		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
+		if !Config.Fetcher.HonorMetaNofollow || !(nNofollow || metaNofollow) {
 			links = append(links, nlinks...)
 		}
 	} else { //!docsrc
