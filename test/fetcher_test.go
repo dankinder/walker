@@ -80,6 +80,7 @@ type PerHost struct {
 type TestSpec struct {
 	perHost        []PerHost
 	hasParsedLinks bool
+	hasNoLinks     bool
 }
 
 type TestResults struct {
@@ -88,7 +89,7 @@ type TestResults struct {
 	server    *helpers.MockRemoteServer
 }
 
-func (self *TestResults) handlerResults() []*walker.FetchResults {
+func (self *TestResults) handlerCalls() []*walker.FetchResults {
 	var ret []*walker.FetchResults
 	for _, call := range self.handler.Calls {
 		fr := call.Arguments.Get(0).(*walker.FetchResults)
@@ -97,7 +98,7 @@ func (self *TestResults) handlerResults() []*walker.FetchResults {
 	return ret
 }
 
-func (self *TestResults) datastoreStoreParsedURLResults() ([]*walker.URL, []*walker.FetchResults) {
+func (self *TestResults) dsStoreParsedURLCalls() ([]*walker.URL, []*walker.FetchResults) {
 	var r1 []*walker.URL
 	var r2 []*walker.FetchResults
 	for _, call := range self.datastore.Calls {
@@ -111,7 +112,7 @@ func (self *TestResults) datastoreStoreParsedURLResults() ([]*walker.URL, []*wal
 	return r1, r2
 }
 
-func (self *TestResults) datastoreStoreURLFetchResults() []*walker.FetchResults {
+func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
 	var r1 []*walker.FetchResults
 	for _, call := range self.datastore.Calls {
 		if call.Method == "StoreURLFetchResults" {
@@ -143,16 +144,19 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Configure mocks
 	//
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	if !test.hasNoLinks {
+		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	}
 	if test.hasParsedLinks {
-		fmt.Printf("YEA %q\n", test.perHost[0].domain)
 		ds.On("StoreParsedURL",
 			mock.AnythingOfType("*walker.URL"),
 			mock.AnythingOfType("*walker.FetchResults")).Return()
 
 	}
 
-	h.On("HandleResponse", mock.Anything).Return()
+	if !test.hasNoLinks {
+		h.On("HandleResponse", mock.Anything).Return()
+	}
 	for _, host := range test.perHost {
 		ds.On("ClaimNewHost").Return(host.domain).Once()
 		var urls []*walker.URL
@@ -164,7 +168,9 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 				rs.SetResponse(link.url, link.response)
 			}
 		}
-		ds.On("LinksForHost", host.domain).Return(urls)
+		if !test.hasNoLinks {
+			ds.On("LinksForHost", host.domain).Return(urls)
+		}
 		ds.On("UnclaimHost", host.domain).Return()
 
 	}
@@ -291,7 +297,7 @@ func TestBasicNoRobots(t *testing.T) {
 	// Make sure expected results are there
 	//
 
-	for _, fr := range results.handlerResults() {
+	for _, fr := range results.handlerCalls() {
 		switch fr.URL.String() {
 		case "http://norobots.com/page1.html":
 			contents, _ := ioutil.ReadAll(fr.Response.Body)
@@ -344,13 +350,18 @@ func TestBasicRobots(t *testing.T) {
 	//
 	// Make sure expected results are there
 	//
-	for _, fr := range results.handlerResults() {
+	count := 0
+	for _, fr := range results.handlerCalls() {
+		count++
 		switch fr.URL.String() {
 		case "http://robotsdelay1.com/page4.html":
 		case "http://robotsdelay1.com/page5.html":
 		default:
 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
 		}
+	}
+	if count != 2 {
+		t.Errorf("Got %d handlerCalls, expected 2", count)
 	}
 
 	results.assertExpectations(t)
@@ -408,7 +419,7 @@ func TestBasicMimeType(t *testing.T) {
 	//
 	recvTextHtml := false
 	recvTextPlain := false
-	for _, fr := range results.handlerResults() {
+	for _, fr := range results.handlerCalls() {
 		switch fr.URL.String() {
 		case "http://accept.com/accept_html.html":
 			recvTextHtml = true
@@ -432,7 +443,7 @@ func TestBasicMimeType(t *testing.T) {
 		"http://accept.com/accept_html.html": "text/html",
 	}
 
-	for _, fr := range results.datastoreStoreURLFetchResults() {
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
 		link := fr.URL.String()
 		mime, mimeOk := expectedMimesFound[link]
 		if mimeOk {
@@ -480,7 +491,7 @@ func TestBasicLinkTest(t *testing.T) {
 	//
 	// Make sure expected results are there
 	//
-	for _, fr := range results.handlerResults() {
+	for _, fr := range results.handlerCalls() {
 		switch fr.URL.String() {
 		case "http://linktests.com/links/test.html":
 		default:
@@ -488,14 +499,15 @@ func TestBasicLinkTest(t *testing.T) {
 		}
 	}
 
-	ulst, frlst := results.datastoreStoreParsedURLResults()
+	ulst, frlst := results.dsStoreParsedURLCalls()
+	count := 0
 	for i := range ulst {
 		u := ulst[i]
 		fr := frlst[i]
 		if fr.URL.String() != "http://linktests.com/links/test.html" {
 			t.Fatalf("Expected linktest source only")
 		}
-
+		count++
 		switch u.String() {
 		case "http://linktests.com/links/relative-dir/":
 		case "http://linktests.com/links/relative-page/page.html":
@@ -509,343 +521,11 @@ func TestBasicLinkTest(t *testing.T) {
 		}
 	}
 
+	if count != 7 {
+		t.Errorf("Got %d results from datastoreStoreParsedUrlResults, expected 7")
+	}
+
 	results.assertExpectations(t)
-}
-
-// func TestBasicFetchManagerNew(t *testing.T) {
-// 	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
-
-// 	tests := TestSpec{
-// 		perHost: []PerHost{
-// 			PerHost{
-// 				domain: "norobots.com",
-// 				links: []PerLink{
-// 					PerLink{
-// 						url:      "http://norobots.com/robots.txt",
-// 						response: &helpers.MockResponse{Status: 404},
-// 						hidden:   true,
-// 					},
-// 					PerLink{
-// 						url:      "http://norobots.com/page1.html",
-// 						response: &helpers.MockResponse{Body: html_body},
-// 					},
-// 					PerLink{
-// 						url: "http://norobots.com/page2.html",
-// 					},
-// 					PerLink{
-// 						url: "http://norobots.com/page3.html",
-// 					},
-// 				},
-// 			},
-
-// 			PerHost{
-// 				domain: "robotsdelay1.com",
-// 				links: []PerLink{
-
-// 					PerLink{
-// 						url: "http://robotsdelay1.com/robots.txt",
-// 						response: &helpers.MockResponse{
-// 							Body: "User-agent: *\nCrawl-delay: 1\n",
-// 						},
-// 						hidden: true,
-// 					},
-
-// 					PerLink{
-// 						url: "http://robotsdelay1.com/page4.html",
-// 					},
-// 					PerLink{
-// 						url: "http://robotsdelay1.com/page5.html",
-// 					},
-// 				},
-// 			},
-
-// 			PerHost{
-// 				domain: "accept.com",
-// 				links: []PerLink{
-// 					PerLink{
-// 						url:      "http://accept.com/robots.txt",
-// 						response: &helpers.MockResponse{Status: 404},
-// 						hidden:   true,
-// 					},
-// 					PerLink{
-// 						url: "http://accept.com/accept_html.html",
-// 						response: &helpers.MockResponse{
-// 							ContentType: "text/html; charset=ISO-8859-4",
-// 							Body:        html_body_nolinks,
-// 						},
-// 					},
-// 					PerLink{
-// 						url: "http://accept.com/accept_text.txt",
-// 						response: &helpers.MockResponse{
-// 							ContentType: "text/plain",
-// 						},
-// 					},
-// 					PerLink{
-// 						url: "http://accept.com/donthandle",
-// 						response: &helpers.MockResponse{
-// 							ContentType: "foo/bar",
-// 						},
-// 					},
-// 				},
-// 			},
-
-// 			PerHost{
-// 				domain: "linktests.com",
-// 				links: []PerLink{
-// 					PerLink{
-// 						url: "http://linktests.com/links/test.html",
-// 						response: &helpers.MockResponse{
-// 							Body: html_test_links,
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
-
-// 	//
-// 	// Run the fetcher
-// 	//
-// 	results := runFetcher(tests, 3*time.Second, t)
-
-// 	//
-// 	// Make sure expected results are there
-// 	//
-// 	recvTextHtml := false
-// 	recvTextPlain := false
-// 	for _, fr := range results.handlerResults() {
-// 		switch fr.URL.String() {
-// 		case "http://norobots.com/page1.html":
-// 			contents, _ := ioutil.ReadAll(fr.Response.Body)
-// 			if string(contents) != html_body {
-// 				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
-// 					fr.URL, html_body, string(contents))
-// 			}
-// 		case "http://norobots.com/page2.html":
-// 		case "http://norobots.com/page3.html":
-// 		case "http://robotsdelay1.com/page4.html":
-// 		case "http://robotsdelay1.com/page5.html":
-// 		case "http://accept.com/accept_html.html":
-// 			recvTextHtml = true
-// 		case "http://accept.com/accept_text.txt":
-// 			recvTextPlain = true
-// 		case "http://linktests.com/links/test.html":
-// 		default:
-// 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
-// 		}
-// 	}
-// 	if !recvTextHtml {
-// 		t.Errorf("Failed to handle explicit Content-Type: text/html")
-// 	}
-// 	if !recvTextPlain {
-// 		t.Errorf("Failed to handle Content-Type: text/plain")
-// 	}
-
-// 	ulst, frlst := results.datastoreStoreParsedURLResults()
-// 	for i := range ulst {
-// 		u := ulst[i]
-// 		fr := frlst[i]
-// 		if fr.URL.String() != "http://linktests.com/links/test.html" {
-// 			continue
-// 		}
-
-// 		switch u.String() {
-// 		case "http://linktests.com/links/relative-dir/":
-// 		case "http://linktests.com/links/relative-page/page.html":
-// 		case "http://linktests.com/abs-relative-dir/":
-// 		case "http://linktests.com/abs-relative-page/page.html":
-// 		case "https://other.org/abs-dir/":
-// 		case "https://other.org/abs-page/page.html":
-// 		case "http:donot/ignore.html":
-// 		default:
-// 			t.Errorf("StoreParsedURL call we didn't expect: %v", u)
-// 		}
-// 	}
-
-// 	// Link tests to ensure we resolve URLs to proper absolute forms
-// 	expectedMimesFound := map[string]string{
-// 		"http://accept.com/donthandle":       "foo/bar",
-// 		"http://accept.com/accept_text.txt":  "text/plain",
-// 		"http://accept.com/accept_html.html": "text/html",
-// 	}
-
-// 	for _, fr := range results.datastoreStoreURLFetchResults() {
-// 		link := fr.URL.String()
-// 		mime, mimeOk := expectedMimesFound[link]
-// 		if mimeOk {
-// 			delete(expectedMimesFound, link)
-// 			if fr.MimeType != mime {
-// 				t.Errorf("StoreURLFetchResults for link %v, got mime type %q, expected %q",
-// 					link, fr.MimeType, mime)
-// 			}
-// 		}
-// 	}
-
-// 	for link := range expectedMimesFound {
-// 		t.Errorf("StoreURLFetchResults expected to find mime type for link %v, but didn't", link)
-// 	}
-
-// 	results.assertExpectations(t)
-// }
-
-func TestBasicFetchManagerRun(t *testing.T) {
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("norobots.com").Once()
-	ds.On("LinksForHost", "norobots.com").Return([]*walker.URL{
-		helpers.Parse("http://norobots.com/page1.html"),
-		helpers.Parse("http://norobots.com/page2.html"),
-		helpers.Parse("http://norobots.com/page3.html"),
-	})
-	ds.On("UnclaimHost", "norobots.com").Return()
-
-	ds.On("ClaimNewHost").Return("robotsdelay1.com").Once()
-	ds.On("LinksForHost", "robotsdelay1.com").Return([]*walker.URL{
-		helpers.Parse("http://robotsdelay1.com/page4.html"),
-		helpers.Parse("http://robotsdelay1.com/page5.html"),
-	})
-	ds.On("UnclaimHost", "robotsdelay1.com").Return()
-
-	ds.On("ClaimNewHost").Return("accept.com").Once()
-	ds.On("LinksForHost", "accept.com").Return([]*walker.URL{
-		helpers.Parse("http://accept.com/accept_html.html"),
-		helpers.Parse("http://accept.com/accept_text.txt"),
-		helpers.Parse("http://accept.com/donthandle"),
-	})
-	ds.On("UnclaimHost", "accept.com").Return()
-
-	ds.On("ClaimNewHost").Return("linktests.com").Once()
-	ds.On("LinksForHost", "linktests.com").Return([]*walker.URL{
-		helpers.Parse("http://linktests.com/links/test.html"),
-	})
-	ds.On("UnclaimHost", "linktests.com").Return()
-
-	// This last call will make ClaimNewHost return "" on each subsequent call,
-	// which will put the fetcher to sleep.
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse("http://norobots.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://norobots.com/page1.html", &helpers.MockResponse{
-		Body: html_body,
-	})
-	rs.SetResponse("http://robotsdelay1.com/robots.txt", &helpers.MockResponse{
-		Body: "User-agent: *\nCrawl-delay: 1\n",
-	})
-
-	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
-	rs.SetResponse("http://accept.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://accept.com/accept_html.html", &helpers.MockResponse{
-		ContentType: "text/html; charset=ISO-8859-4",
-		Body:        html_body_nolinks,
-	})
-	rs.SetResponse("http://accept.com/accept_text.txt", &helpers.MockResponse{
-		ContentType: "text/plain",
-	})
-	rs.SetResponse("http://accept.com/donthandle", &helpers.MockResponse{
-		ContentType: "foo/bar",
-	})
-	rs.SetResponse("http://linktests.com/links/test.html", &helpers.MockResponse{
-		Body: html_test_links,
-	})
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
-
-	go manager.Start()
-	time.Sleep(time.Second * 3)
-	manager.Stop()
-
-	rs.Stop()
-	recvTextHtml := false
-	recvTextPlain := false
-	for _, call := range h.Calls {
-		fr := call.Arguments.Get(0).(*walker.FetchResults)
-		switch fr.URL.String() {
-		case "http://norobots.com/page1.html":
-			contents, _ := ioutil.ReadAll(fr.Response.Body)
-			if string(contents) != html_body {
-				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
-					fr.URL, html_body, string(contents))
-			}
-		case "http://norobots.com/page2.html":
-		case "http://norobots.com/page3.html":
-		case "http://robotsdelay1.com/page4.html":
-		case "http://robotsdelay1.com/page5.html":
-		case "http://accept.com/accept_html.html":
-			recvTextHtml = true
-		case "http://accept.com/accept_text.txt":
-			recvTextPlain = true
-		case "http://linktests.com/links/test.html":
-		default:
-			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
-		}
-	}
-	if !recvTextHtml {
-		t.Errorf("Failed to handle explicit Content-Type: text/html")
-	}
-	if !recvTextPlain {
-		t.Errorf("Failed to handle Content-Type: text/plain")
-	}
-
-	// Link tests to ensure we resolve URLs to proper absolute forms
-	expectedMimesFound := map[string]string{
-		"http://accept.com/donthandle":       "foo/bar",
-		"http://accept.com/accept_text.txt":  "text/plain",
-		"http://accept.com/accept_html.html": "text/html",
-	}
-
-	for _, call := range ds.Calls {
-		switch call.Method {
-		case "StoreParsedURL":
-			u := call.Arguments.Get(0).(*walker.URL)
-			fr := call.Arguments.Get(1).(*walker.FetchResults)
-			if fr.URL.String() != "http://linktests.com/links/test.html" {
-				continue
-			}
-			switch u.String() {
-			case "http://linktests.com/links/relative-dir/":
-			case "http://linktests.com/links/relative-page/page.html":
-			case "http://linktests.com/abs-relative-dir/":
-			case "http://linktests.com/abs-relative-page/page.html":
-			case "https://other.org/abs-dir/":
-			case "https://other.org/abs-page/page.html":
-			case "http:donot/ignore.html":
-			default:
-				t.Errorf("StoreParsedURL call we didn't expect: %v", u)
-			}
-
-		case "StoreURLFetchResults":
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			link := fr.URL.String()
-			mime, mimeOk := expectedMimesFound[link]
-			if mimeOk {
-				delete(expectedMimesFound, link)
-				if fr.MimeType != mime {
-					t.Errorf("StoreURLFetchResults for link %v, got mime type %q, expected %q",
-						link, fr.MimeType, mime)
-				}
-			}
-		}
-	}
-	for link := range expectedMimesFound {
-		t.Errorf("StoreURLFetchResults expected to find mime type for link %v, but didn't", link)
-	}
-
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
 }
 
 func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
@@ -853,36 +533,31 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = true
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("private.com").Once()
-	ds.On("UnclaimHost", "private.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	h := &helpers.MockHandler{}
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+	tests := TestSpec{
+		hasNoLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "private.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://private.com/page1.html",
+						response: &helpers.MockResponse{
+							Body: html_test_links,
+						},
+					},
+				},
+			},
+		},
 	}
 
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
+	results := runFetcher(tests, defaultSleep, t)
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-	rs.Stop()
-
-	if len(h.Calls) != 0 {
+	if len(results.handlerCalls()) != 0 || len(results.dsStoreURLFetchResultsCalls()) != 0 {
 		t.Error("Did not expect any handler calls due to host resolving to private IP")
 	}
 
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
-	ds.AssertNotCalled(t, "LinksForHost", "private.com")
+	results.assertExpectations(t)
+	results.datastore.AssertNotCalled(t, "LinksForHost", "private.com")
 }
 
 func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
