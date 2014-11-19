@@ -73,6 +73,11 @@ default_crawl_delay: 1s
 # site's robots.txt file.
 max_crawl_delay: 5m
 
+# List of session ids to purge from a URL during normalization. If X is in purge_sid_list,
+# than both http://a.com/path;X=----- and http://a.com/path?X=---- will be turned into
+# http://a.com/path
+purge_sid_list: ["jsessionid", "phpsessid", "aspsessionid"]
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)

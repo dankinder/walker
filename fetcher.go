@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"code.google.com/p/go.net/html/charset"
 	"code.google.com/p/go.net/publicsuffix"
 	"code.google.com/p/log4go"
+	"github.com/PuerkitoBio/purell"
 	"github.com/iParadigms/walker/dnscache"
 	"github.com/iParadigms/walker/mimetools"
 	"github.com/temoto/robotstxt.go"
@@ -108,10 +110,73 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 	return u, nil
 }
 
-// ParseURL is the walker.URL equivalent of url.Parse
+var parseURLPathStrip *regexp.Regexp
+var parseURLPurgeMap map[string]bool
+
+func setupParseURL() error {
+	if len(Config.PurgeSidList) == 0 {
+		parseURLPathStrip = nil
+	} else {
+		// Here we want to write a regexp that looks like
+		// \;jsessionid=.*$|\;other=.*$
+		var buffer bytes.Buffer
+		buffer.WriteString("(?i)") // case-insensitive
+		startedLoop := false
+		for _, sid := range Config.PurgeSidList {
+			if startedLoop {
+				buffer.WriteRune('|')
+			}
+			startedLoop = true
+			buffer.WriteString(`\;`)
+			buffer.WriteString(sid)
+			buffer.WriteString(`\=.*$`)
+		}
+		var err error
+		parseURLPathStrip, err = regexp.Compile(buffer.String())
+		if err != nil {
+			return fmt.Errorf("Failed setupParseURL: %v", err)
+		}
+	}
+
+	parseURLPurgeMap = map[string]bool{}
+	for _, p := range Config.PurgeSidList {
+		parseURLPurgeMap[strings.ToLower(p)] = true
+	}
+	return nil
+}
+
+// ParseURL is the walker.URL equivalent of url.Parse. Note, all URL's should
+// be passed through this function so that we get consistency.
 func ParseURL(ref string) (*URL, error) {
 	u, err := url.Parse(ref)
-	return &URL{URL: u, LastCrawled: NotYetCrawled}, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply standard normalization filters to u. This call will
+	// modify u in place.
+	purell.NormalizeURL(u, purell.FlagsSafe|purell.FlagRemoveFragment)
+
+	// Filter the path to catch embedded session ids
+	if parseURLPathStrip != nil {
+		// Remove SID from path
+		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+	}
+
+	//Rewrite the query string to canonical order, removing SID's as needed.
+	if u.RawQuery != "" {
+		purge := parseURLPurgeMap
+		params := u.Query()
+		for k := range params {
+			if purge[strings.ToLower(k)] {
+				delete(params, k)
+			}
+		}
+		u.RawQuery = params.Encode()
+	}
+
+	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
+	return wurl, nil
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
@@ -289,7 +354,6 @@ type fetcher struct {
 	fm         *FetchManager
 	host       string
 	httpclient *http.Client
-	robots     *robotstxt.Group
 	crawldelay time.Duration
 
 	// quit signals the fetcher to stop
@@ -302,6 +366,16 @@ type fetcher struct {
 
 	excludeLink *regexp.Regexp
 	includeLink *regexp.Regexp
+
+	// defRobots holds the robots.txt definition used if a host doesn't
+	// publish a robots.txt file on it's own.
+	defRobots *robotstxt.Group
+
+	// robotsMap maps host -> robots.txt definition to use
+	robotsMap map[string]*robotstxt.Group
+
+	// Where to read content pages into
+	readBuffer bytes.Buffer
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -402,22 +476,11 @@ func (f *fetcher) crawlNewHost() bool {
 		return true
 	}
 
-	//
-	// Determine crawlDelay
-	//
-	f.fetchRobots(f.host)
-	f.crawldelay = f.fm.defCrawlDelay
-	if f.robots != nil {
-		max := f.fm.maxCrawlDelay
-		req := f.robots.CrawlDelay
-		if req < max {
-			f.crawldelay = req
-		} else {
-			f.crawldelay = max
-		}
-	}
+	// Set up robots map
 	log4go.Info("Crawling host: %v with crawl delay %v", f.host, f.crawldelay)
+	f.initializeRobotsMap(f.host)
 
+	// Loop through the links
 	for link := range f.fm.Datastore.LinksForHost(f.host) {
 		select {
 		case <-f.quit:
@@ -427,9 +490,10 @@ func (f *fetcher) crawlNewHost() bool {
 		default:
 		}
 
-		shouldDelay := f.fetchAndHandle(link)
+		robots := f.fetchRobots(link.Host)
+		shouldDelay := f.fetchAndHandle(link, robots)
 		if shouldDelay {
-			time.Sleep(f.crawldelay)
+			time.Sleep(robots.CrawlDelay)
 		}
 	}
 	return true
@@ -438,10 +502,10 @@ func (f *fetcher) crawlNewHost() bool {
 // fetchAndHandle takes care of fetching and processing a URL beginning to end.
 // Returns true if it did actually perform a fetch (even if it wasn't
 // successful), indicating that crawl-delay should be observed.
-func (f *fetcher) fetchAndHandle(link *URL) bool {
+func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	fr := &FetchResults{URL: link}
 
-	if f.robots != nil && !f.robots.Test(link.String()) {
+	if !robots.Test(link.String()) {
 		log4go.Debug("Not fetching due to robots rules: %v", link)
 		fr.ExcludedByRobots = true
 		f.fm.Datastore.StoreURLFetchResults(fr)
@@ -477,22 +541,21 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	//
 	// Nab the body of the request, and compute fingerprint
 	//
-	//TODO: ReadAll is inefficient. We should use a properly sized
-	//		buffer here (determined by
-	//		Config.MaxHTTPContentSizeBytes or possibly
-	//		Content-Length of the response)
-	var body []byte
-	body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+	fr.FetchError = f.fillReadBuffer(fr.Response.Body, fr.Response.Header)
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
 		return true
 	}
-	// Replace the response body so the handler can read it
-	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 
+	// Replace the response body so the handler can read it.
+	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
+
+	//
+	// Get the fingerprint
+	//
 	fnv := fnv.New64()
-	fnv.Write(body)
+	fnv.Write(f.readBuffer.Bytes())
 	fr.FnvFingerprint = int64(fnv.Sum64())
 
 	//
@@ -500,7 +563,7 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	//
 	if isHTML(fr.Response) {
 		log4go.Fine("Reading and parsing as HTML (%v)", link)
-		f.parseLinks(body, fr)
+		f.parseLinks(f.readBuffer.Bytes(), fr)
 	}
 
 	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
@@ -513,13 +576,72 @@ func (f *fetcher) fetchAndHandle(link *URL) bool {
 	return true
 }
 
+//
+// fillReadBuffer will fill up readBuffer with the contents of reader. Any
+// problems with the read will be returned in an error; including (and
+// importantly) if the content size would exceed MaxHTTPContentSizeBytes.
+//
+func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
+	f.readBuffer.Reset()
+	lenArr, lenOk := headers["Content-Length"]
+	if lenOk && len(lenArr) > 0 {
+		var size int64
+		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
+		if n != 1 || err != nil || size < 0 {
+			log4go.Error("Failed to process Content-Length: %v", err)
+		} else if size > Config.MaxHTTPContentSizeBytes {
+			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+		} else {
+			f.readBuffer.Grow(int(size))
+		}
+	}
+
+	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	n, err := f.readBuffer.ReadFrom(limitReader)
+	if err != nil {
+		return err
+	} else if n > Config.MaxHTTPContentSizeBytes {
+		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+	}
+
+	return nil
+}
+
 // stop signals a fetcher to stop and waits until completion.
 func (f *fetcher) stop() {
 	f.quit <- struct{}{}
 	<-f.done
 }
 
-func (f *fetcher) fetchRobots(host string) {
+// initializeRobotsMap inits the robotsMap system
+func (f *fetcher) initializeRobotsMap(host string) {
+
+	// Set default robots
+	rdata, _ := robotstxt.FromBytes([]byte("User-agent: *\n"))
+	f.defRobots = rdata.FindGroup(Config.UserAgent)
+	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
+
+	// try read $host/robots.txt. Failure to GET, will just returns
+	// f.defRobots before call
+	f.robotsMap = map[string]*robotstxt.Group{}
+	f.defRobots = f.getRobots(host)
+	f.robotsMap[host] = f.defRobots
+}
+
+// fetchRobots is a caching version of getRobots
+func (f *fetcher) fetchRobots(host string) *robotstxt.Group {
+	rob, robOk := f.robotsMap[host]
+	if !robOk {
+		rob = f.getRobots(host)
+		f.robotsMap[host] = rob
+	}
+	return rob
+}
+
+// getRobots will return the robotstxt.Group for the given host, or the
+// default robotstxt.Group if the host doesn't support robots.txt
+func (f *fetcher) getRobots(host string) *robotstxt.Group {
+
 	u := &URL{
 		URL: &url.URL{
 			Scheme: "http",
@@ -528,20 +650,30 @@ func (f *fetcher) fetchRobots(host string) {
 		},
 		LastCrawled: NotYetCrawled, //explicitly set this so that fetcher.fetch won't send If-Modified-Since
 	}
+
 	res, _, err := f.fetch(u)
-	if err != nil {
-		log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
-		f.robots = nil
-		return
+	gotRobots := err == nil && res.StatusCode >= 200 && res.StatusCode < 300
+	if !gotRobots {
+		if err != nil {
+			log4go.Debug("Could not fetch %v, assuming there is no robots.txt (error: %v)", u, err)
+		}
+		return f.defRobots
 	}
+
 	robots, err := robotstxt.FromResponse(res)
 	res.Body.Close()
 	if err != nil {
 		log4go.Debug("Error parsing robots.txt (%v) assuming there is no robots.txt: %v", u, err)
-		f.robots = nil
-		return
+		return f.defRobots
 	}
-	f.robots = robots.FindGroup(Config.UserAgent)
+
+	grp := robots.FindGroup(Config.UserAgent)
+	max := f.fm.maxCrawlDelay
+	if grp.CrawlDelay > max {
+		grp.CrawlDelay = max
+	}
+
+	return grp
 }
 
 func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
