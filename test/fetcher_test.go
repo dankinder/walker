@@ -78,7 +78,8 @@ type PerHost struct {
 	links  []PerLink
 }
 type TestSpec struct {
-	perHost []PerHost
+	perHost        []PerHost
+	hasParsedLinks bool
 }
 
 type TestResults struct {
@@ -132,7 +133,6 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	// Build mocks
 	//
 	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
 
 	rs, err := helpers.NewMockRemoteServer()
 	if err != nil {
@@ -144,9 +144,13 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	// Configure mocks
 	//
 	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
+	if test.hasParsedLinks {
+		fmt.Printf("YEA %q\n", test.perHost[0].domain)
+		ds.On("StoreParsedURL",
+			mock.AnythingOfType("*walker.URL"),
+			mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	}
 
 	h.On("HandleResponse", mock.Anything).Return()
 	for _, host := range test.perHost {
@@ -249,11 +253,11 @@ func TestUrlParsing(t *testing.T) {
 		}
 	}
 }
-
-func TestBasicFetchManagerNew(t *testing.T) {
+func TestBasicNoRobots(t *testing.T) {
 	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
 
 	tests := TestSpec{
+		hasParsedLinks: true,
 		perHost: []PerHost{
 			PerHost{
 				domain: "norobots.com",
@@ -275,7 +279,40 @@ func TestBasicFetchManagerNew(t *testing.T) {
 					},
 				},
 			},
+		},
+	}
 
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, 1*time.Second, t)
+
+	//
+	// Make sure expected results are there
+	//
+
+	for _, fr := range results.handlerResults() {
+		switch fr.URL.String() {
+		case "http://norobots.com/page1.html":
+			contents, _ := ioutil.ReadAll(fr.Response.Body)
+			if string(contents) != html_body {
+				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
+					fr.URL, html_body, string(contents))
+			}
+		case "http://norobots.com/page2.html":
+		case "http://norobots.com/page3.html":
+		default:
+			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+		}
+	}
+
+	results.assertExpectations(t)
+}
+
+func TestBasicRobots(t *testing.T) {
+	tests := TestSpec{
+		hasParsedLinks: false,
+		perHost: []PerHost{
 			PerHost{
 				domain: "robotsdelay1.com",
 				links: []PerLink{
@@ -296,7 +333,39 @@ func TestBasicFetchManagerNew(t *testing.T) {
 					},
 				},
 			},
+		},
+	}
 
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, 3*time.Second, t)
+
+	//
+	// Make sure expected results are there
+	//
+	for _, fr := range results.handlerResults() {
+		switch fr.URL.String() {
+		case "http://robotsdelay1.com/page4.html":
+		case "http://robotsdelay1.com/page5.html":
+		default:
+			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+		}
+	}
+
+	results.assertExpectations(t)
+}
+
+func TestBasicMimeType(t *testing.T) {
+	orig := walker.Config.AcceptFormats
+	defer func() {
+		walker.Config.AcceptFormats = orig
+	}()
+	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+
+	tests := TestSpec{
+		hasParsedLinks: false,
+		perHost: []PerHost{
 			PerHost{
 				domain: "accept.com",
 				links: []PerLink{
@@ -326,42 +395,25 @@ func TestBasicFetchManagerNew(t *testing.T) {
 					},
 				},
 			},
-
-			PerHost{
-				domain: "linktests.com",
-				links: []PerLink{
-					PerLink{
-						url: "http://linktests.com/links/test.html",
-						response: &helpers.MockResponse{
-							Body: html_test_links,
-						},
-					},
-				},
-			},
 		},
 	}
 
+	//
+	// Run the fetcher
+	//
 	results := runFetcher(tests, 3*time.Second, t)
 
+	//
+	// Make sure expected results are there
+	//
 	recvTextHtml := false
 	recvTextPlain := false
 	for _, fr := range results.handlerResults() {
 		switch fr.URL.String() {
-		case "http://norobots.com/page1.html":
-			contents, _ := ioutil.ReadAll(fr.Response.Body)
-			if string(contents) != html_body {
-				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
-					fr.URL, html_body, string(contents))
-			}
-		case "http://norobots.com/page2.html":
-		case "http://norobots.com/page3.html":
-		case "http://robotsdelay1.com/page4.html":
-		case "http://robotsdelay1.com/page5.html":
 		case "http://accept.com/accept_html.html":
 			recvTextHtml = true
 		case "http://accept.com/accept_text.txt":
 			recvTextPlain = true
-		case "http://linktests.com/links/test.html":
 		default:
 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
 		}
@@ -371,27 +423,6 @@ func TestBasicFetchManagerNew(t *testing.T) {
 	}
 	if !recvTextPlain {
 		t.Errorf("Failed to handle Content-Type: text/plain")
-	}
-
-	ulst, frlst := results.datastoreStoreParsedURLResults()
-	for i := range ulst {
-		u := ulst[i]
-		fr := frlst[i]
-		if fr.URL.String() != "http://linktests.com/links/test.html" {
-			continue
-		}
-
-		switch u.String() {
-		case "http://linktests.com/links/relative-dir/":
-		case "http://linktests.com/links/relative-page/page.html":
-		case "http://linktests.com/abs-relative-dir/":
-		case "http://linktests.com/abs-relative-page/page.html":
-		case "https://other.org/abs-dir/":
-		case "https://other.org/abs-page/page.html":
-		case "http:donot/ignore.html":
-		default:
-			t.Errorf("StoreParsedURL call we didn't expect: %v", u)
-		}
 	}
 
 	// Link tests to ensure we resolve URLs to proper absolute forms
@@ -419,6 +450,243 @@ func TestBasicFetchManagerNew(t *testing.T) {
 
 	results.assertExpectations(t)
 }
+
+func TestBasicLinkTest(t *testing.T) {
+	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+
+		perHost: []PerHost{
+			PerHost{
+				domain: "linktests.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://linktests.com/links/test.html",
+						response: &helpers.MockResponse{
+							Body: html_test_links,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, 3*time.Second, t)
+
+	//
+	// Make sure expected results are there
+	//
+	for _, fr := range results.handlerResults() {
+		switch fr.URL.String() {
+		case "http://linktests.com/links/test.html":
+		default:
+			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+		}
+	}
+
+	ulst, frlst := results.datastoreStoreParsedURLResults()
+	for i := range ulst {
+		u := ulst[i]
+		fr := frlst[i]
+		if fr.URL.String() != "http://linktests.com/links/test.html" {
+			t.Fatalf("Expected linktest source only")
+		}
+
+		switch u.String() {
+		case "http://linktests.com/links/relative-dir/":
+		case "http://linktests.com/links/relative-page/page.html":
+		case "http://linktests.com/abs-relative-dir/":
+		case "http://linktests.com/abs-relative-page/page.html":
+		case "https://other.org/abs-dir/":
+		case "https://other.org/abs-page/page.html":
+		case "http:donot/ignore.html":
+		default:
+			t.Errorf("StoreParsedURL call we didn't expect: %v", u)
+		}
+	}
+
+	results.assertExpectations(t)
+}
+
+// func TestBasicFetchManagerNew(t *testing.T) {
+// 	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+
+// 	tests := TestSpec{
+// 		perHost: []PerHost{
+// 			PerHost{
+// 				domain: "norobots.com",
+// 				links: []PerLink{
+// 					PerLink{
+// 						url:      "http://norobots.com/robots.txt",
+// 						response: &helpers.MockResponse{Status: 404},
+// 						hidden:   true,
+// 					},
+// 					PerLink{
+// 						url:      "http://norobots.com/page1.html",
+// 						response: &helpers.MockResponse{Body: html_body},
+// 					},
+// 					PerLink{
+// 						url: "http://norobots.com/page2.html",
+// 					},
+// 					PerLink{
+// 						url: "http://norobots.com/page3.html",
+// 					},
+// 				},
+// 			},
+
+// 			PerHost{
+// 				domain: "robotsdelay1.com",
+// 				links: []PerLink{
+
+// 					PerLink{
+// 						url: "http://robotsdelay1.com/robots.txt",
+// 						response: &helpers.MockResponse{
+// 							Body: "User-agent: *\nCrawl-delay: 1\n",
+// 						},
+// 						hidden: true,
+// 					},
+
+// 					PerLink{
+// 						url: "http://robotsdelay1.com/page4.html",
+// 					},
+// 					PerLink{
+// 						url: "http://robotsdelay1.com/page5.html",
+// 					},
+// 				},
+// 			},
+
+// 			PerHost{
+// 				domain: "accept.com",
+// 				links: []PerLink{
+// 					PerLink{
+// 						url:      "http://accept.com/robots.txt",
+// 						response: &helpers.MockResponse{Status: 404},
+// 						hidden:   true,
+// 					},
+// 					PerLink{
+// 						url: "http://accept.com/accept_html.html",
+// 						response: &helpers.MockResponse{
+// 							ContentType: "text/html; charset=ISO-8859-4",
+// 							Body:        html_body_nolinks,
+// 						},
+// 					},
+// 					PerLink{
+// 						url: "http://accept.com/accept_text.txt",
+// 						response: &helpers.MockResponse{
+// 							ContentType: "text/plain",
+// 						},
+// 					},
+// 					PerLink{
+// 						url: "http://accept.com/donthandle",
+// 						response: &helpers.MockResponse{
+// 							ContentType: "foo/bar",
+// 						},
+// 					},
+// 				},
+// 			},
+
+// 			PerHost{
+// 				domain: "linktests.com",
+// 				links: []PerLink{
+// 					PerLink{
+// 						url: "http://linktests.com/links/test.html",
+// 						response: &helpers.MockResponse{
+// 							Body: html_test_links,
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	//
+// 	// Run the fetcher
+// 	//
+// 	results := runFetcher(tests, 3*time.Second, t)
+
+// 	//
+// 	// Make sure expected results are there
+// 	//
+// 	recvTextHtml := false
+// 	recvTextPlain := false
+// 	for _, fr := range results.handlerResults() {
+// 		switch fr.URL.String() {
+// 		case "http://norobots.com/page1.html":
+// 			contents, _ := ioutil.ReadAll(fr.Response.Body)
+// 			if string(contents) != html_body {
+// 				t.Errorf("For %v, expected:\n%v\n\nBut got:\n%v\n",
+// 					fr.URL, html_body, string(contents))
+// 			}
+// 		case "http://norobots.com/page2.html":
+// 		case "http://norobots.com/page3.html":
+// 		case "http://robotsdelay1.com/page4.html":
+// 		case "http://robotsdelay1.com/page5.html":
+// 		case "http://accept.com/accept_html.html":
+// 			recvTextHtml = true
+// 		case "http://accept.com/accept_text.txt":
+// 			recvTextPlain = true
+// 		case "http://linktests.com/links/test.html":
+// 		default:
+// 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+// 		}
+// 	}
+// 	if !recvTextHtml {
+// 		t.Errorf("Failed to handle explicit Content-Type: text/html")
+// 	}
+// 	if !recvTextPlain {
+// 		t.Errorf("Failed to handle Content-Type: text/plain")
+// 	}
+
+// 	ulst, frlst := results.datastoreStoreParsedURLResults()
+// 	for i := range ulst {
+// 		u := ulst[i]
+// 		fr := frlst[i]
+// 		if fr.URL.String() != "http://linktests.com/links/test.html" {
+// 			continue
+// 		}
+
+// 		switch u.String() {
+// 		case "http://linktests.com/links/relative-dir/":
+// 		case "http://linktests.com/links/relative-page/page.html":
+// 		case "http://linktests.com/abs-relative-dir/":
+// 		case "http://linktests.com/abs-relative-page/page.html":
+// 		case "https://other.org/abs-dir/":
+// 		case "https://other.org/abs-page/page.html":
+// 		case "http:donot/ignore.html":
+// 		default:
+// 			t.Errorf("StoreParsedURL call we didn't expect: %v", u)
+// 		}
+// 	}
+
+// 	// Link tests to ensure we resolve URLs to proper absolute forms
+// 	expectedMimesFound := map[string]string{
+// 		"http://accept.com/donthandle":       "foo/bar",
+// 		"http://accept.com/accept_text.txt":  "text/plain",
+// 		"http://accept.com/accept_html.html": "text/html",
+// 	}
+
+// 	for _, fr := range results.datastoreStoreURLFetchResults() {
+// 		link := fr.URL.String()
+// 		mime, mimeOk := expectedMimesFound[link]
+// 		if mimeOk {
+// 			delete(expectedMimesFound, link)
+// 			if fr.MimeType != mime {
+// 				t.Errorf("StoreURLFetchResults for link %v, got mime type %q, expected %q",
+// 					link, fr.MimeType, mime)
+// 			}
+// 		}
+// 	}
+
+// 	for link := range expectedMimesFound {
+// 		t.Errorf("StoreURLFetchResults expected to find mime type for link %v, but didn't", link)
+// 	}
+
+// 	results.assertExpectations(t)
+// }
 
 func TestBasicFetchManagerRun(t *testing.T) {
 	ds := &helpers.MockDatastore{}
