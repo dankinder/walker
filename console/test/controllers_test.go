@@ -12,8 +12,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gorilla/mux"
-	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
+	"github.com/iParadigms/walker/helpers"
 )
 
 //
@@ -25,13 +26,10 @@ func spoofData() {
 		console.DS = nil
 	}
 
-	err := walker.ReadConfigFile("test-walker.yaml")
-	if err != nil {
-		panic(err)
-	}
+	helpers.LoadTestConfig("test-walker.yaml")
 
 	console.SpoofData()
-	ds, err := console.NewCqlModel()
+	ds, err := cassandra.NewDatastore()
 	if err != nil {
 		panic(fmt.Errorf("Failed to start data source: %v", err))
 	}
@@ -492,9 +490,10 @@ func TestListLinksSecondPage(t *testing.T) {
 	// OK now click on the next button
 	//
 	nextPage := "http://localhost:3000" + nextPagePath
-	doc, body, status = callController(nextPage, "", "/links/{domain}/{seedUrl}", console.LinksController)
+	doc, body, status = callController(nextPage, "", "/links/{domain}/{seedURL}", console.LinksController)
 	if status != http.StatusOK {
-		t.Errorf("TestListLinks bad status code got %d, expected %d", status, http.StatusOK)
+		t.Errorf("TestListLinks bad status code got %d, expected %d, link %v",
+			status, http.StatusOK, nextPage)
 		t.Log(body)
 		t.FailNow()
 	}
@@ -502,7 +501,7 @@ func TestListLinksSecondPage(t *testing.T) {
 	// Nab the tables
 	tables := doc.Find(".container table")
 	if tables.Size() != 1 {
-		t.Fatalf("[.container table] Bad size got %d, expected %d", tables.Size(), 2)
+		t.Fatalf("[.container table] Bad size got %d, expected %d", tables.Size(), 1)
 	}
 	linksTable := tables.Last()
 

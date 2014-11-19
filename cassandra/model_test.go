@@ -1,27 +1,24 @@
-package test
+package cassandra
+
+//
+// This test is specifically for elements of the Datastore that are used by the
+// console.
+//
+// TODO: there is likely still room to further synthesize these test and
+// 		 datastore_test.go (these tests were totally separate in console/test/
+// 		 before they were brought in here). For example we could consider
+// 		 building helpers.LoadTestData further into a robust fixtures
+// 		 infrastructure and incorporate it into datastore_test.go
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
-	"github.com/iParadigms/walker/console"
+	"github.com/iParadigms/walker/helpers"
 )
-
-//
-// Config alteration right up front
-//
-func modifyConfigDataSource() {
-	source := "test-walker.yaml"
-	err := walker.ReadConfigFile(source)
-	if err != nil {
-		panic(err)
-	}
-}
 
 //
 // Some global data
@@ -29,66 +26,66 @@ func modifyConfigDataSource() {
 var fooTime = time.Now().AddDate(0, 0, -1)
 var testTime = time.Now().AddDate(0, 0, -2)
 var bazUuid, _ = gocql.RandomUUID()
-var testComLinkOrder []console.LinkInfo
-var testComLinkHash = map[string]console.LinkInfo{
-	"http://test.com/page1.html": console.LinkInfo{
-		Url:            "http://test.com/page1.html",
+var testComLinkOrder []LinkInfo
+var testComLinkHash = map[string]LinkInfo{
+	"http://test.com/page1.html": LinkInfo{
+		URL:            helpers.Parse("http://test.com/page1.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page2.html": console.LinkInfo{
-		Url:            "http://test.com/page2.html",
+	"http://test.com/page2.html": LinkInfo{
+		URL:            helpers.Parse("http://test.com/page2.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page3.html": console.LinkInfo{
-		Url:            "http://test.com/page3.html",
+	"http://test.com/page3.html": LinkInfo{
+		URL:            helpers.Parse("http://test.com/page3.html"),
 		Status:         404,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page4.html": console.LinkInfo{
-		Url:            "http://test.com/page4.html",
+	"http://test.com/page4.html": LinkInfo{
+		URL:            helpers.Parse("http://test.com/page4.html"),
 		Status:         200,
 		Error:          "An Error",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page5.html": console.LinkInfo{
-		Url:            "http://test.com/page5.html",
+	"http://test.com/page5.html": LinkInfo{
+		URL:            helpers.Parse("http://test.com/page5.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: true,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://sub.test.com/page6.html": console.LinkInfo{
-		Url:            "http://sub.test.com/page6.html",
+	"http://sub.test.com/page6.html": LinkInfo{
+		URL:            helpers.Parse("http://sub.test.com/page6.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page7.html": console.LinkInfo{
-		Url:            "https://sub.test.com/page7.html",
+	"https://sub.test.com/page7.html": LinkInfo{
+		URL:            helpers.Parse("https://sub.test.com/page7.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page8.html": console.LinkInfo{
-		Url:            "https://sub.test.com/page8.html",
+	"https://sub.test.com/page8.html": LinkInfo{
+		URL:            helpers.Parse("https://sub.test.com/page8.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
@@ -96,36 +93,36 @@ var testComLinkHash = map[string]console.LinkInfo{
 	},
 }
 
-var bazLinkHistoryOrder []console.LinkInfo
+var bazLinkHistoryOrder []LinkInfo
 
-var bazLinkHistoryInit = []console.LinkInfo{
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+var bazLinkHistoryInit = []LinkInfo{
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: walker.NotYetCrawled,
 	},
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -1),
 	},
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -2),
 	},
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -3),
 	},
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -4),
 	},
-	console.LinkInfo{
-		Url:       "http://sub.baz.com/page1.html",
+	LinkInfo{
+		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -5),
 	},
@@ -137,7 +134,7 @@ type findTest struct {
 	omittest bool
 	tag      string
 	domain   string
-	expected *console.DomainInfo
+	expected *DomainInfo
 }
 
 type domainTest struct {
@@ -145,19 +142,19 @@ type domainTest struct {
 	tag      string
 	seed     string
 	limit    int
-	expected []console.DomainInfo
+	expected []DomainInfo
 }
 
 type linkTest struct {
 	omittest    bool
 	tag         string
 	domain      string
-	histUrl     string
+	histURL     *walker.URL
 	seed        int
-	seedUrl     string
+	seedURL     *walker.URL
 	filterRegex string
 	limit       int
-	expected    []console.LinkInfo
+	expected    []LinkInfo
 }
 
 const LIM = 50
@@ -173,56 +170,56 @@ func timeClose(l time.Time, r time.Time) bool {
 }
 
 //Shared Domain Information
-var bazDomain = console.DomainInfo{
+var bazDomain = DomainInfo{
 	Domain:               "baz.com",
 	NumberLinksTotal:     1,
 	NumberLinksQueued:    1,
 	NumberLinksUncrawled: 0,
-	TimeQueued:           testTime,
-	UuidOfQueued:         bazUuid,
+	ClaimTime:            testTime,
+	ClaimToken:           bazUuid,
 }
 
-var fooDomain = console.DomainInfo{
+var fooDomain = DomainInfo{
 	Domain:               "foo.com",
 	NumberLinksTotal:     2,
 	NumberLinksQueued:    0,
 	NumberLinksUncrawled: 0,
-	TimeQueued:           walker.NotYetCrawled,
+	ClaimTime:            walker.NotYetCrawled,
 }
 
-var barDomain = console.DomainInfo{
+var barDomain = DomainInfo{
 	Domain:               "bar.com",
 	NumberLinksTotal:     0,
 	NumberLinksQueued:    0,
 	NumberLinksUncrawled: 0,
-	TimeQueued:           walker.NotYetCrawled,
+	ClaimTime:            walker.NotYetCrawled,
 }
 
-var testDomain = console.DomainInfo{
+var testDomain = DomainInfo{
 	Domain:               "test.com",
 	NumberLinksTotal:     8,
 	NumberLinksQueued:    2,
 	NumberLinksUncrawled: 8,
-	TimeQueued:           testTime,
-	UuidOfQueued:         gocql.UUID{},
+	ClaimTime:            testTime,
+	ClaimToken:           gocql.UUID{},
 }
 
-var filterDomain = console.DomainInfo{
+var filterDomain = DomainInfo{
 	Domain:               "filter.com",
 	NumberLinksTotal:     7,
 	NumberLinksQueued:    0,
 	NumberLinksUncrawled: 7,
-	TimeQueued:           testTime,
+	ClaimTime:            testTime,
 }
 
-var excludedDomain = console.DomainInfo{
+var excludedDomain = DomainInfo{
 	Domain:               "excluded.com",
 	NumberLinksTotal:     0,
 	NumberLinksQueued:    0,
 	NumberLinksUncrawled: 0,
 	ExcludeReason:        "Reason for exclusion",
-	TimeQueued:           walker.NotYetCrawled,
-	UuidOfQueued:         gocql.UUID{},
+	ClaimTime:            walker.NotYetCrawled,
+	ClaimToken:           gocql.UUID{},
 }
 
 type updatedInDb struct {
@@ -241,54 +238,9 @@ type insertTest struct {
 //
 // Fixture generation
 //
-var initdb sync.Once
+func getModelTestDatastore(t *testing.T) *Datastore {
+	db := GetTestDB()
 
-func getDs(t *testing.T) *console.CqlModel {
-	modifyConfigDataSource()
-
-	initdb.Do(func() {
-		cluster := gocql.NewCluster(walker.Config.Cassandra.Hosts...)
-		db, err := cluster.CreateSession()
-		if err != nil {
-			panic(err)
-		}
-
-		// Just want to make sure no one makes a mistake with this code
-		if walker.Config.Cassandra.Keyspace == "walker" {
-			panic("Not allowed to spoof the walker keyspace")
-		}
-		err = db.Query(fmt.Sprintf("DROP KEYSPACE IF EXISTS %s", walker.Config.Cassandra.Keyspace)).Exec()
-		if err != nil {
-			panic(fmt.Errorf("Failed to drop %s keyspace: %v", walker.Config.Cassandra.Keyspace, err))
-		}
-		err = cassandra.CreateSchema()
-		if err != nil {
-			t.Fatalf(err.Error())
-		}
-
-		db.Close()
-	})
-
-	ds, err := console.NewCqlModel()
-	if err != nil {
-		panic(err)
-	}
-	db := ds.Db
-
-	//
-	// Clear out the tables first
-	//
-	tables := []string{"links", "segments", "domain_info"}
-	for _, table := range tables {
-		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
-		if err != nil {
-			t.Fatalf("Failed to truncate table %v: %v", table, err)
-		}
-	}
-
-	//
-	// Insert some data
-	//
 	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 0)`
 	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 0)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
@@ -366,7 +318,7 @@ func getDs(t *testing.T) *console.CqlModel {
 		}
 		testComLinkOrder = append(testComLinkOrder, linfo)
 	}
-	err = itr.Close()
+	err := itr.Close()
 	if err != nil {
 		panic(fmt.Errorf("testComLinkOrder iterator error: %v", err))
 	}
@@ -429,21 +381,20 @@ func getDs(t *testing.T) *console.CqlModel {
 		bazSeed = beforeBazComLink.String()
 	}
 
-	return ds
+	return getDS(t)
 }
 
 //
 // THE TESTS
 //
 func TestListDomains(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []domainTest{
 		domainTest{
 			tag:   "Basic Pull",
-			seed:  console.DontSeedDomain,
 			limit: LIM,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				bazDomain,
 				filterDomain,
 				fooDomain,
@@ -455,9 +406,8 @@ func TestListDomains(t *testing.T) {
 
 		domainTest{
 			tag:   "Limit Pull",
-			seed:  console.DontSeedDomain,
 			limit: 1,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				bazDomain,
 			},
 		},
@@ -466,7 +416,7 @@ func TestListDomains(t *testing.T) {
 			tag:   "Seeded Pull",
 			seed:  "foo.com",
 			limit: LIM,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				barDomain,
 				excludedDomain,
 				testDomain,
@@ -477,7 +427,7 @@ func TestListDomains(t *testing.T) {
 			tag:   "Seeded & Limited Pull",
 			seed:  "foo.com",
 			limit: 1,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				barDomain,
 			},
 		},
@@ -487,7 +437,11 @@ func TestListDomains(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		dinfos, err := store.ListDomains(test.seed, test.limit)
+		dinfos, err := store.ListDomains(DQ{
+			Seed:     test.seed,
+			Limit:    test.limit,
+			GetStats: true,
+		})
 		if err != nil {
 			t.Errorf("ListDomains direct error %v", err)
 			continue
@@ -510,11 +464,11 @@ func TestListDomains(t *testing.T) {
 			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 			}
-			if !timeClose(got.TimeQueued, exp.TimeQueued) {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' TimeQueued mismatch got %v, expected %v", got.Domain, test.tag, got.TimeQueued, exp.TimeQueued)
+			if !timeClose(got.ClaimTime, exp.ClaimTime) {
+				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimTime mismatch got %v, expected %v", got.Domain, test.tag, got.ClaimTime, exp.ClaimTime)
 			}
-			if got.UuidOfQueued != exp.UuidOfQueued {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' UuidOfQueued mismatch got %v, expected %v", got.Domain, test.tag, got.UuidOfQueued, exp.UuidOfQueued)
+			if got.ClaimToken != exp.ClaimToken {
+				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimToken mismatch got %v, expected %v", got.Domain, test.tag, got.ClaimToken, exp.ClaimToken)
 			}
 			if got.ExcludeReason != exp.ExcludeReason {
 				t.Errorf("ListDomains with domain '%s' for tag '%s' ExcludeReason mismatch got %v, expected %v", got.Domain, test.tag, got.ExcludeReason, exp.ExcludeReason)
@@ -525,7 +479,7 @@ func TestListDomains(t *testing.T) {
 }
 
 func TestFindDomain(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []findTest{
 		findTest{
@@ -579,11 +533,11 @@ func TestFindDomain(t *testing.T) {
 		if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
 			t.Errorf("FindDomain with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 		}
-		if !timeClose(got.TimeQueued, exp.TimeQueued) {
-			t.Errorf("FindDomain %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)
+		if !timeClose(got.ClaimTime, exp.ClaimTime) {
+			t.Errorf("FindDomain %s ClaimTime mismatch got %v, expected %v", test.tag, got.ClaimTime, exp.ClaimTime)
 		}
-		if got.UuidOfQueued != exp.UuidOfQueued {
-			t.Errorf("FindDomain %s UuidOfQueued mismatch got %v, expected %v", test.tag, got.UuidOfQueued, exp.UuidOfQueued)
+		if got.ClaimToken != exp.ClaimToken {
+			t.Errorf("FindDomain %s ClaimToken mismatch got %v, expected %v", test.tag, got.ClaimToken, exp.ClaimToken)
 		}
 		if got.ExcludeReason != exp.ExcludeReason {
 			t.Errorf("FindDomain %s ExcludeReason mismatch got %v, expected %v", test.tag, got.ExcludeReason, exp.ExcludeReason)
@@ -594,14 +548,13 @@ func TestFindDomain(t *testing.T) {
 }
 
 func TestListWorkingDomains(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []domainTest{
 		domainTest{
 			tag:   "Basic Pull",
-			seed:  console.DontSeedDomain,
 			limit: LIM,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				bazDomain,
 				filterDomain,
 				testDomain,
@@ -610,9 +563,8 @@ func TestListWorkingDomains(t *testing.T) {
 
 		domainTest{
 			tag:   "Limit Pull",
-			seed:  console.DontSeedDomain,
 			limit: 1,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				bazDomain,
 			},
 		},
@@ -621,7 +573,7 @@ func TestListWorkingDomains(t *testing.T) {
 			tag:   "Seeded Pull",
 			seed:  "baz.com",
 			limit: LIM,
-			expected: []console.DomainInfo{
+			expected: []DomainInfo{
 				filterDomain,
 				testDomain,
 			},
@@ -629,7 +581,12 @@ func TestListWorkingDomains(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		dinfos, err := store.ListWorkingDomains(test.seed, test.limit)
+		dinfos, err := store.ListDomains(DQ{
+			Seed:     test.seed,
+			Limit:    test.limit,
+			Working:  true,
+			GetStats: true,
+		})
 		if err != nil {
 			t.Errorf("ListWorkingDomains for tag %s direct error %v", test.tag, err)
 			continue
@@ -653,11 +610,11 @@ func TestListWorkingDomains(t *testing.T) {
 			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
 				t.Errorf("ListWorkingDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 			}
-			if !timeClose(got.TimeQueued, exp.TimeQueued) {
-				t.Errorf("ListWorkingDomains %s TimeQueued mismatch got %v, expected %v", test.tag, got.TimeQueued, exp.TimeQueued)
+			if !timeClose(got.ClaimTime, exp.ClaimTime) {
+				t.Errorf("ListWorkingDomains %s ClaimTime mismatch got %v, expected %v", test.tag, got.ClaimTime, exp.ClaimTime)
 			}
-			if got.UuidOfQueued != exp.UuidOfQueued {
-				t.Errorf("ListWorkingDomains %s UuidOfQueued mismatch got %v, expected %v", test.tag, got.UuidOfQueued, exp.UuidOfQueued)
+			if got.ClaimToken != exp.ClaimToken {
+				t.Errorf("ListWorkingDomains %s ClaimToken mismatch got %v, expected %v", test.tag, got.ClaimToken, exp.ClaimToken)
 			}
 			if got.ExcludeReason != exp.ExcludeReason {
 				t.Errorf("ListWorkingDomains %s ExcludeReason mismatch got %v, expected %v", test.tag, got.ExcludeReason, exp.ExcludeReason)
@@ -668,33 +625,31 @@ func TestListWorkingDomains(t *testing.T) {
 }
 
 func TestListLinks(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []linkTest{
 		linkTest{
 			tag:      "Basic Pull",
 			domain:   "test.com",
-			seedUrl:  console.DontSeedUrl,
 			limit:    LIM,
 			expected: testComLinkOrder,
 		},
 
 		linkTest{
-			tag:     "foo pull",
-			domain:  "foo.com",
-			seedUrl: console.DontSeedUrl,
-			limit:   LIM,
-			expected: []console.LinkInfo{
-				console.LinkInfo{
-					Url:            "http://sub.foo.com/page1.html",
+			tag:    "foo pull",
+			domain: "foo.com",
+			limit:  LIM,
+			expected: []LinkInfo{
+				LinkInfo{
+					URL:            helpers.Parse("http://sub.foo.com/page1.html"),
 					Status:         200,
 					Error:          "",
 					RobotsExcluded: false,
 					CrawlTime:      fooTime,
 				},
 
-				console.LinkInfo{
-					Url:            "http://sub.foo.com/page2.html",
+				LinkInfo{
+					URL:            helpers.Parse("http://sub.foo.com/page2.html"),
 					Status:         200,
 					Error:          "",
 					RobotsExcluded: false,
@@ -706,16 +661,14 @@ func TestListLinks(t *testing.T) {
 		linkTest{
 			tag:      "bar pull",
 			domain:   "bar.com",
-			seedUrl:  console.DontSeedUrl,
-			seed:     console.DontSeedIndex,
 			limit:    LIM,
-			expected: []console.LinkInfo{},
+			expected: []LinkInfo{},
 		},
 
 		linkTest{
 			tag:      "seeded pull",
 			domain:   "test.com",
-			seedUrl:  testComLinkOrder[len(testComLinkOrder)/2-1].Url,
+			seedURL:  testComLinkOrder[len(testComLinkOrder)/2-1].URL,
 			limit:    LIM,
 			expected: testComLinkOrder[len(testComLinkOrder)/2:],
 		},
@@ -723,7 +676,7 @@ func TestListLinks(t *testing.T) {
 		linkTest{
 			tag:      "seeded pull with limit",
 			domain:   "test.com",
-			seedUrl:  testComLinkOrder[len(testComLinkOrder)/2-1].Url,
+			seedURL:  testComLinkOrder[len(testComLinkOrder)/2-1].URL,
 			limit:    1,
 			expected: testComLinkOrder[len(testComLinkOrder)/2 : len(testComLinkOrder)/2+1],
 		},
@@ -734,7 +687,7 @@ func TestListLinks(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
+		linfos, err := store.ListLinks(test.domain, LQ{Seed: test.seedURL, Limit: test.limit})
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -746,8 +699,8 @@ func TestListLinks(t *testing.T) {
 		for i := range linfos {
 			got := linfos[i]
 			exp := test.expected[i]
-			if got.Url != exp.Url {
-				t.Errorf("ListLinks %s Url mismatch got %v, expected %v", test.tag, got.Url, exp.Url)
+			if got.URL.String() != exp.URL.String() {
+				t.Errorf("ListLinks %s URL mismatch got %v, expected %v", test.tag, got.URL, exp.URL)
 			}
 			if got.Status != exp.Status {
 				t.Errorf("ListLinks %s Status mismatch got %v, expected %v", test.tag, got.Status, exp.Status)
@@ -768,40 +721,39 @@ func TestListLinks(t *testing.T) {
 }
 
 func TestListLinkHistorical(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
+	// If we add pagination for ListLinkHistorical back in, we add these tests as well
 	tests := []linkTest{
 		linkTest{
 			tag:      "full read",
-			histUrl:  "http://sub.baz.com/page1.html",
-			seed:     console.DontSeedIndex,
+			histURL:  helpers.Parse("http://sub.baz.com/page1.html"),
 			limit:    LIM,
 			expected: bazLinkHistoryOrder,
 		},
 
-		linkTest{
-			tag:      "limit",
-			histUrl:  "http://sub.baz.com/page1.html",
-			seed:     console.DontSeedIndex,
-			limit:    4,
-			expected: bazLinkHistoryOrder[:4],
-		},
+		//linkTest{
+		//	tag:      "limit",
+		//	histURL:  "http://sub.baz.com/page1.html",
+		//	limit:    4,
+		//	expected: bazLinkHistoryOrder[:4],
+		//},
 
-		linkTest{
-			tag:      "seed",
-			histUrl:  "http://sub.baz.com/page1.html",
-			seed:     4,
-			limit:    LIM,
-			expected: bazLinkHistoryOrder[4:],
-		},
+		//linkTest{
+		//	tag:      "seed",
+		//	histURL:  "http://sub.baz.com/page1.html",
+		//	seed:     4,
+		//	limit:    LIM,
+		//	expected: bazLinkHistoryOrder[4:],
+		//},
 
-		linkTest{
-			tag:      "seed & limit",
-			histUrl:  "http://sub.baz.com/page1.html",
-			seed:     1,
-			limit:    2,
-			expected: bazLinkHistoryOrder[1:3],
-		},
+		//linkTest{
+		//	tag:      "seed & limit",
+		//	histURL:  "http://sub.baz.com/page1.html",
+		//	seed:     1,
+		//	limit:    2,
+		//	expected: bazLinkHistoryOrder[1:3],
+		//},
 	}
 
 	// run the tests
@@ -809,15 +761,15 @@ func TestListLinkHistorical(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, nextSeed, err := store.ListLinkHistorical(test.histUrl, test.seed, test.limit)
+		linfos, err := store.ListLinkHistorical(test.histURL)
 		if err != nil {
 			t.Errorf("ListLinkHistorical for tag %s direct error %v", test.tag, err)
 			continue
 		}
-		if nextSeed != test.seed+len(linfos) {
-			t.Errorf("ListLinkHistorical for tag %s bad nextSeed got %d, expected %d", test.tag, nextSeed, test.seed+len(linfos))
-			continue
-		}
+		//if nextSeed != test.seed+len(linfos) {
+		//	t.Errorf("ListLinkHistorical for tag %s bad nextSeed got %d, expected %d", test.tag, nextSeed, test.seed+len(linfos))
+		//	continue
+		//}
 		if len(linfos) != len(test.expected) {
 			t.Errorf("ListLinkHistorical for tag %s length mismatch got %d, expected %d", test.tag, len(linfos), len(test.expected))
 			continue
@@ -825,8 +777,8 @@ func TestListLinkHistorical(t *testing.T) {
 		for i := range linfos {
 			got := linfos[i]
 			exp := test.expected[i]
-			if got.Url != exp.Url {
-				t.Errorf("ListLinkHistorical %s Url mismatch got %v, expected %v", test.tag, got.Url, exp.Url)
+			if got.URL.String() != exp.URL.String() {
+				t.Errorf("ListLinkHistorical %s URL mismatch got %v, expected %v", test.tag, got.URL, exp.URL)
 			}
 			if got.Status != exp.Status {
 				t.Errorf("ListLinkHistorical %s Status mismatch got %v, expected %v", test.tag, got.Status, exp.Status)
@@ -845,7 +797,7 @@ func TestListLinkHistorical(t *testing.T) {
 }
 
 func TestInsertLinks(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []insertTest{
 		insertTest{
@@ -917,13 +869,13 @@ func TestInsertLinks(t *testing.T) {
 
 		allDomains := []string{}
 		for domain, exp := range expect {
-			linfos, err := store.ListLinks(domain, console.DontSeedUrl, LIM, "")
+			linfos, err := store.ListLinks(domain, LQ{Limit: LIM})
 			if err != nil {
 				t.Errorf("InsertLinks:ListLinks for tag %s direct error %v", test.tag, err)
 			}
 			gotHash := map[string]bool{}
 			for _, linfo := range linfos {
-				gotHash[linfo.Url] = true
+				gotHash[linfo.URL.String()] = true
 			}
 
 			for _, e := range exp {
@@ -935,7 +887,7 @@ func TestInsertLinks(t *testing.T) {
 			allDomains = append(allDomains, domain)
 		}
 
-		dinfos, err := store.ListDomains(console.DontSeedDomain, LIM)
+		dinfos, err := store.ListDomains(DQ{Limit: LIM, GetStats: true})
 		if err != nil {
 			t.Errorf("InsertLinks:ListDomains for tag %s direct error %v", test.tag, err)
 		}
@@ -955,7 +907,7 @@ func TestInsertLinks(t *testing.T) {
 }
 
 func TestInsertExcludedLinks(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 
 	tests := []insertTest{
 		insertTest{
@@ -999,14 +951,13 @@ func TestInsertExcludedLinks(t *testing.T) {
 }
 
 func TestCloseToLimitBug(t *testing.T) {
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 	tests := []linkTest{
 		linkTest{
 			domain:   "baz.com",
 			tag:      "bug exposed with limit 1",
-			seedUrl:  bazSeed,
 			limit:    1,
-			expected: []console.LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
+			expected: []LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
 		},
 	}
 
@@ -1015,7 +966,7 @@ func TestCloseToLimitBug(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, test.seedUrl, test.limit, "")
+		linfos, err := store.ListLinks(test.domain, LQ{Seed: test.seedURL, Limit: test.limit})
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -1027,8 +978,8 @@ func TestCloseToLimitBug(t *testing.T) {
 		for i := range linfos {
 			got := linfos[i]
 			exp := test.expected[i]
-			if got.Url != exp.Url {
-				t.Errorf("TestCloseToLimitBug %s Url mismatch got %v, expected %v", test.tag, got.Url, exp.Url)
+			if got.URL.String() != exp.URL.String() {
+				t.Errorf("TestCloseToLimitBug %s URL mismatch got %v, expected %v", test.tag, got.URL, exp.URL)
 			}
 			if got.Status != exp.Status {
 				t.Errorf("TestCloseToLimitBug %s Status mismatch got %v, expected %v", test.tag, got.Status, exp.Status)
@@ -1047,7 +998,7 @@ func TestCloseToLimitBug(t *testing.T) {
 }
 
 func TestFilterRegex(t *testing.T) {
-	filterUrls := []string{
+	filterURLs := []string{
 		"http://filter.com/1/2/A",
 		"http://filter.com/1111/2222/A",
 		"http://filter.com/1111/2222/B",
@@ -1058,23 +1009,23 @@ func TestFilterRegex(t *testing.T) {
 		"http://subd.filter.com/aaa.html",
 	}
 
-	// This function composes LinkInfo array from the urls in filterUrls. The
-	// index argument corresponds to  which element of filterUrls to include
+	// This function composes LinkInfo array from the urls in filterURLs. The
+	// index argument corresponds to  which element of filterURLs to include
 	// in the LinkInfo list.
-	pickFiltered := func(index ...int) []console.LinkInfo {
-		var r []console.LinkInfo
+	pickFiltered := func(index ...int) []LinkInfo {
+		var r []LinkInfo
 		for _, i := range index {
-			if i >= len(filterUrls) || i < 0 {
+			if i >= len(filterURLs) || i < 0 {
 				panic("INTERNAL ERROR")
 			}
-			r = append(r, console.LinkInfo{
-				Url: filterUrls[i],
+			r = append(r, LinkInfo{
+				URL: helpers.Parse(filterURLs[i]),
 			})
 		}
 		return r
 	}
 
-	store := getDs(t)
+	store := getModelTestDatastore(t)
 	tests := []linkTest{
 		linkTest{
 			domain:      "filter.com",
@@ -1146,7 +1097,10 @@ func TestFilterRegex(t *testing.T) {
 		if test.omittest {
 			continue
 		}
-		linfos, err := store.ListLinks(test.domain, "", test.limit, test.filterRegex)
+		linfos, err := store.ListLinks(test.domain, LQ{
+			Limit:       test.limit,
+			FilterRegex: test.filterRegex,
+		})
 		if err != nil {
 			t.Errorf("ListLinks for tag %s direct error %v", test.tag, err)
 			continue
@@ -1159,8 +1113,8 @@ func TestFilterRegex(t *testing.T) {
 		for i := range linfos {
 			got := linfos[i]
 			exp := test.expected[i]
-			if got.Url != exp.Url {
-				t.Errorf("ListLinks %s Url mismatch got %v, expected %v", test.tag, got.Url, exp.Url)
+			if got.URL.String() != exp.URL.String() {
+				t.Errorf("ListLinks %s URL mismatch got %v, expected %v", test.tag, got.URL, exp.URL)
 			}
 		}
 	}

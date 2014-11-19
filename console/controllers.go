@@ -13,7 +13,10 @@ import (
 	"code.google.com/p/log4go"
 	"github.com/gorilla/mux"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
+
+var DS *cassandra.Datastore
 
 type Route struct {
 	Path       string
@@ -31,7 +34,7 @@ func Routes() []Route {
 		Route{Path: "/add", Controller: AddLinkIndexController},
 		Route{Path: "/add/", Controller: AddLinkIndexController},
 		Route{Path: "/links/{domain}", Controller: LinksController},
-		Route{Path: "/links/{domain}/{seedUrl}", Controller: LinksController},
+		Route{Path: "/links/{domain}/{seedURL}", Controller: LinksController},
 		Route{Path: "/historical/{url}", Controller: LinksHistoricalController},
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
@@ -49,18 +52,19 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seed := vars["seed"]
 	prevButtonClass := ""
+
+	query := cassandra.DQ{Limit: PageWindowLength, GetStats: true}
 	if seed == "" {
-		seed = DontSeedDomain
 		prevButtonClass = "disabled"
 	} else {
 		var err error
-		seed, err = url.QueryUnescape(seed)
-		if err != nil {
-			seed = DontSeedDomain
+		s, err := url.QueryUnescape(seed)
+		if err == nil {
+			query.Seed = s
 		}
 	}
 
-	dinfos, err := DS.ListDomains(seed, PageWindowLength)
+	dinfos, err := DS.ListDomains(query)
 	if err != nil {
 		err = fmt.Errorf("ListDomains failed: %v", err)
 		replyServerError(w, err)
@@ -126,7 +130,7 @@ func FindDomainController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var dinfos []DomainInfo
+	var dinfos []*cassandra.DomainInfo
 	var errs []string
 	var info []string
 	for _, target := range targets {
@@ -141,7 +145,7 @@ func FindDomainController(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		dinfos = append(dinfos, *dinfo)
+		dinfos = append(dinfos, dinfo)
 	}
 
 	hasInfoMessage := len(info) > 0
@@ -251,11 +255,11 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-//IMPL NOTE: Why does linksController encode the seedUrl in base32, rather than URL encode it?
+//IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
-// seedUrl argument. First, it appears that the browser is unencoding the link BEFORE submitting it
+// seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
 // to the server. That looks like a problem with the browser to me. But in addition, the server appears
-// to be choking on the url-encoded text as well. For example if the url encoded seedUrl ends with
+// to be choking on the url-encoded text as well. For example if the url encoded seedURL ends with
 // .html, it appears that this is causing the server to throw a 301. Unknown why that is. But the net effect
 // is that, if I totally disguise the link in base32, everything works.
 
@@ -278,21 +282,26 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	seedUrl := vars["seedUrl"]
+	query := cassandra.LQ{Limit: PageWindowLength}
+
+	seedURL := vars["seedURL"]
 	needHeader := false
-	windowLength := PageWindowLength
 	prevButtonClass := ""
-	if seedUrl == "" {
+	if seedURL == "" {
 		needHeader = true
-		windowLength /= 2
+		query.Limit /= 2
 		prevButtonClass = "disabled"
 	} else {
-		ss, err := decode32(seedUrl)
+		ss, err := decode32(seedURL)
 		if err != nil {
 			replyServerError(w, fmt.Errorf("decode32: %v", err))
 			return
 		}
-		seedUrl = ss
+		query.Seed, err = walker.ParseURL(ss)
+		if err != nil {
+			replyServerError(w, err)
+			return
+		}
 	}
 
 	//
@@ -304,13 +313,13 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	filterRegex := ""
-	filterUrlSuffix := ""
+	filterURLSuffix := ""
 	filterRegexSuffix := ""
 	filterRegexArr, filterRegexOk := req.Form["filterRegex"]
 	if filterRegexOk && len(filterRegexArr) > 0 {
 		filterRegex = filterRegexArr[0]
-		filterUrlSuffix = "?filterRegex=" + filterRegex
-		filterRegex, err = decode32(filterRegex)
+		filterURLSuffix = "?filterRegex=" + filterRegex
+		query.FilterRegex, err = decode32(filterRegex)
 		if err != nil {
 			replyServerError(w, fmt.Errorf("decode32 error: %v", err))
 			return
@@ -321,7 +330,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Lets grab the links
 	//
-	linfos, err := DS.ListLinks(domain, seedUrl, windowLength, filterRegex)
+	linfos, err := DS.ListLinks(domain, query)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("ListLinks: %v", err))
 		return
@@ -330,16 +339,17 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Odds and ends
 	//
-	nextSeedUrl := ""
+	nextSeedURL := ""
 	nextButtonClass := "disabled"
-	if len(linfos) == windowLength {
-		nextSeedUrl = encode32(linfos[len(linfos)-1].Url)
+	if len(linfos) == query.Limit {
+		// Use the last link result as seed for next page
+		nextSeedURL = encode32(linfos[len(linfos)-1].URL.String())
 		nextButtonClass = ""
 	}
 
 	var historyLinks []string
 	for _, linfo := range linfos {
-		path := "/historical/" + encode32(linfo.Url)
+		path := "/historical/" + encode32(linfo.URL.String())
 		historyLinks = append(historyLinks, path)
 	}
 
@@ -361,8 +371,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"HasHeader":         needHeader,
 		"HasLinks":          len(linfos) > 0,
 		"Linfos":            linfos,
-		"NextSeedUrl":       nextSeedUrl,
-		"FilterUrlSuffix":   filterUrlSuffix,
+		"NextSeedURL":       nextSeedURL,
+		"FilterURLSuffix":   filterURLSuffix,
 		"FilterRegexSuffix": filterRegexSuffix,
 
 		"NextButtonClass": nextButtonClass,
@@ -389,16 +399,21 @@ func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("decode32 (%s): %v", url, err))
 		return
 	}
-	url = nurl
 
-	linfos, _, err := DS.ListLinkHistorical(url, DontSeedIndex, 500)
+	u, err := walker.ParseURL(nurl)
 	if err != nil {
-		replyServerError(w, fmt.Errorf("ListLinkHistorical (%s): %v", url, err))
+		replyServerError(w, err)
+		return
+	}
+
+	linfos, err := DS.ListLinkHistorical(u)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("ListLinkHistorical (%v): %v", u, err))
 		return
 	}
 
 	mp := map[string]interface{}{
-		"LinkTopic": url,
+		"LinkTopic": u.String(),
 		"Linfos":    linfos,
 	}
 	Render.HTML(w, http.StatusOK, "historical", mp)
@@ -427,14 +442,20 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	lines := strings.Split(text, "\n")
 	var info []string
 	var errs []string
-	var linfos []LinkInfo
+	var linfos []*cassandra.LinkInfo
 	for i := range lines {
-		u := strings.TrimSpace(lines[i])
-		if u == "" {
+		link := strings.TrimSpace(lines[i])
+		if link == "" {
 			continue
 		}
 
-		u, err := assureScheme(u)
+		link, err := assureScheme(link)
+		if err != nil {
+			errs = append(errs, err.Error())
+			continue
+		}
+
+		u, err := walker.ParseURL(link)
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
@@ -448,7 +469,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 			info = append(info, fmt.Sprintf("Failed to find link '%v'", u))
 			continue
 		}
-		linfos = append(linfos, *linfo)
+		linfos = append(linfos, linfo)
 	}
 
 	needErr := len(errs) > 0
@@ -470,7 +491,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 
 	var historyLinks []string
 	for _, linfo := range linfos {
-		path := "/historical/" + encode32(linfo.Url)
+		path := "/historical/" + encode32(linfo.URL.String())
 		historyLinks = append(historyLinks, path)
 	}
 
@@ -499,21 +520,20 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
 		return
 	}
-	var exclude bool
-	var reason string
+	info := &cassandra.DomainInfo{}
 	switch direction {
 	case "ex":
-		exclude = true
-		reason = "Manual exclude"
+		info.Excluded = true
+		info.ExcludeReason = "Manual exclude"
 	case "un":
-		exclude = false
-		reason = ""
+		info.Excluded = false
+		info.ExcludeReason = ""
 	default:
 		replyServerError(w, fmt.Errorf("Ill formed URL passed when trying to change domain exclusion"))
 		return
 	}
 
-	err := DS.UpdateDomainExclude(domain, exclude, reason)
+	err := DS.UpdateDomain(domain, info)
 	if err != nil {
 		replyServerError(w, err)
 		return
