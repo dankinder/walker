@@ -589,18 +589,18 @@ func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
 		if n != 1 || err != nil || size < 0 {
 			log4go.Error("Failed to process Content-Length: %v", err)
-		} else if size > Config.MaxHTTPContentSizeBytes {
+		} else if size > Config.Fetcher.MaxHTTPContentSizeBytes {
 			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 		} else {
 			f.readBuffer.Grow(int(size))
 		}
 	}
 
-	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	limitReader := io.LimitReader(reader, Config.Fetcher.MaxHTTPContentSizeBytes+1)
 	n, err := f.readBuffer.ReadFrom(limitReader)
 	if err != nil {
 		return err
-	} else if n > Config.MaxHTTPContentSizeBytes {
+	} else if n > Config.Fetcher.MaxHTTPContentSizeBytes {
 		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 	}
 

@@ -1331,11 +1331,11 @@ func TestNestedRobots(t *testing.T) {
 }
 
 func TestMaxContentSize(t *testing.T) {
-	orig := walker.Config.MaxHTTPContentSizeBytes
+	orig := walker.Config.Fetcher.MaxHTTPContentSizeBytes
 	defer func() {
-		walker.Config.MaxHTTPContentSizeBytes = orig
+		walker.Config.Fetcher.MaxHTTPContentSizeBytes = orig
 	}()
-	walker.Config.MaxHTTPContentSizeBytes = 10
+	walker.Config.Fetcher.MaxHTTPContentSizeBytes = 10
 
 	html := `<!DOCTYPE html>
 <html>
