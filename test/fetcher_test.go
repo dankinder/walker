@@ -78,15 +78,20 @@ type PerHost struct {
 	links  []PerLink
 }
 type TestSpec struct {
-	perHost        []PerHost
-	hasParsedLinks bool
-	hasNoLinks     bool
+	perHost []PerHost
+
+	// Flags that control how runFetcher does it's job
+	hasParsedLinks    bool
+	hasNoLinks        bool
+	suppressTransport bool
+	transport         http.RoundTripper
 }
 
 type TestResults struct {
+	server    *helpers.MockRemoteServer
 	datastore *helpers.MockDatastore
 	handler   *helpers.MockHandler
-	server    *helpers.MockRemoteServer
+	manager   *walker.FetchManager
 }
 
 func (self *TestResults) handlerCalls() []*walker.FetchResults {
@@ -181,10 +186,23 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Run the manager
 	//
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	var manager *walker.FetchManager
+	if test.suppressTransport {
+		manager = &walker.FetchManager{
+			Datastore: ds,
+			Handler:   h,
+		}
+	} else {
+		trans := test.transport
+		if trans == nil {
+			trans = helpers.GetFakeTransport()
+		}
+
+		manager = &walker.FetchManager{
+			Datastore: ds,
+			Handler:   h,
+			Transport: trans,
+		}
 	}
 
 	go manager.Start()
@@ -196,8 +214,9 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	// Return the mocks
 	//
 	return TestResults{
-		datastore: ds,
 		handler:   h,
+		datastore: ds,
+		manager:   manager,
 		server:    rs,
 	}
 }
@@ -522,7 +541,7 @@ func TestBasicLinkTest(t *testing.T) {
 	}
 
 	if count != 7 {
-		t.Errorf("Got %d results from datastoreStoreParsedUrlResults, expected 7")
+		t.Errorf("Got %d results from dsStoreParsedURLCalls, expected 7")
 	}
 
 	results.assertExpectations(t)
@@ -565,29 +584,23 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = true
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("a1234567890bcde.com").Once()
-	ds.On("LinksForHost", "a1234567890bcde.com").Return([]*walker.URL{
-		helpers.Parse("http://a1234567890bcde.com/"),
-	})
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("UnclaimHost", "a1234567890bcde.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	h := &helpers.MockHandler{}
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasNoLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "a1234567890bcde.com",
+				links: []PerLink{
+					PerLink{
+						url:      "http://a1234567890bcde.com/",
+						response: &helpers.MockResponse{Status: 404},
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
+	results := runFetcher(tests, defaultSleep, t)
+	results.assertExpectations(t)
 }
 
 func TestFetcherCreatesTransport(t *testing.T) {
@@ -595,37 +608,28 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
 	walker.Config.BlacklistPrivateIPs = false
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("localhost.localdomain").Once()
-	ds.On("LinksForHost", "localhost.localdomain").Return([]*walker.URL{
-		helpers.Parse("http://localhost.localdomain/"),
-	})
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("UnclaimHost", "localhost.localdomain").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+	tests := TestSpec{
+		hasParsedLinks:    false,
+		suppressTransport: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "localhost.localdomain",
+				links: []PerLink{
+					PerLink{
+						url:      "http://localhost.localdomain/",
+						response: &helpers.MockResponse{Status: 404},
+					},
+				},
+			},
+		},
 	}
 
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-	}
+	results := runFetcher(tests, defaultSleep, t)
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-	rs.Stop()
-
-	if manager.Transport == nil {
+	if results.manager.Transport == nil {
 		t.Fatalf("Expected Transport to get set")
 	}
-	_, ok := manager.Transport.(*http.Transport)
+	_, ok := results.manager.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("Expected Transport to get set to a *http.Transport")
 	}
@@ -633,8 +637,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	// It would be great to check that the DNS cache actually got used here,
 	// but with the current design there seems to be no way to check it
 
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
+	results.assertExpectations(t)
 }
 
 func TestRedirects(t *testing.T) {
@@ -650,31 +653,28 @@ func TestRedirects(t *testing.T) {
 		},
 	}
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("dom.com").Once()
-	ds.On("LinksForHost", "dom.com").Return([]*walker.URL{
-		helpers.Parse(link(1)),
-	})
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("UnclaimHost", "dom.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: &roundTriper,
+	tests := TestSpec{
+		hasParsedLinks: false,
+		transport:      &roundTriper,
+		perHost: []PerHost{
+			PerHost{
+				domain: "dom.com",
+				links: []PerLink{
+					PerLink{
+						url: link(1),
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-	if len(h.Calls) < 1 {
+	results := runFetcher(tests, defaultSleep, t)
+
+	frs := results.handlerCalls()
+	if len(frs) < 1 {
 		t.Fatalf("Expected to find calls made to handler, but didn't")
 	}
-	fr := h.Calls[0].Arguments.Get(0).(*walker.FetchResults)
+	fr := frs[0]
 
 	if fr.URL.String() != link(1) {
 		t.Errorf("URL mismatch, got %q, expected %q", fr.URL.String(), link(1))
@@ -689,8 +689,8 @@ func TestRedirects(t *testing.T) {
 		t.Errorf("RedirectedFrom[0] mismatch, got %q, expected %q", fr.RedirectedFrom[1].String(), link(3))
 	}
 
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
+	results.assertExpectations(t)
+
 }
 
 func TestHrefWithSpace(t *testing.T) {
@@ -712,53 +712,35 @@ func TestHrefWithSpace(t *testing.T) {
 </div>
 </html>`
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("t.com").Once()
-	ds.On("LinksForHost", "t.com").Return([]*walker.URL{
-		helpers.Parse(testPage),
-	})
-	ds.On("UnclaimHost", "t.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse(testPage, &helpers.MockResponse{
-		ContentType: "text/html",
-		Body:        html_with_href_space,
-	})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "t.com",
+				links: []PerLink{
+					PerLink{
+						url: testPage,
+						response: &helpers.MockResponse{
+							ContentType: "text/html",
+							Body:        html_with_href_space,
+						},
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-
-	rs.Stop()
+	results := runFetcher(tests, defaultSleep, t)
 
 	foundTCom := false
-	for _, call := range h.Calls {
-		fr := call.Arguments.Get(0).(*walker.FetchResults)
+	for _, fr := range results.handlerCalls() {
 		if fr.URL.String() == testPage {
 			foundTCom = true
 			break
 		}
 	}
 	if !foundTCom {
-		t.Fatalf("Failed to find pushed link 'http://t.com/page1.html'")
+		t.Fatalf("Failed to find pushed link %q", testPage)
 	}
 
 	expected := map[string]bool{
@@ -770,65 +752,34 @@ func TestHrefWithSpace(t *testing.T) {
 		"https://other.org/abs-page/page.html":     true,
 	}
 
-	for _, call := range ds.Calls {
-		if call.Method == "StoreParsedURL" {
-			u := call.Arguments.Get(0).(*walker.URL)
-			fr := call.Arguments.Get(1).(*walker.FetchResults)
-			if fr.URL.String() == testPage {
-				if expected[u.String()] {
-					delete(expected, u.String())
-				} else {
-					t.Errorf("StoreParsedURL mismatch found unexpected link %q", u.String())
-				}
+	ulst, frlst := results.dsStoreParsedURLCalls()
+	for i := range ulst {
+		u := ulst[i]
+		fr := frlst[i]
+		if fr.URL.String() == testPage {
+			if expected[u.String()] {
+				delete(expected, u.String())
+			} else {
+				t.Errorf("StoreParsedURL mismatch found unexpected link %q", u.String())
 			}
 		}
 	}
 
-	for link, _ := range expected {
+	for link := range expected {
 		t.Errorf("StoreParsedURL didn't find link %q", link)
 	}
 
-	ds.AssertExpectations(t)
-	h.AssertExpectations(t)
+	results.assertExpectations(t)
 }
 
 func TestHttpTimeout(t *testing.T) {
 	origTimeout := walker.Config.HttpTimeout
-	walker.Config.HttpTimeout = "200ms"
 	defer func() {
 		walker.Config.HttpTimeout = origTimeout
 	}()
+	walker.Config.HttpTimeout = "200ms"
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
-
-		ds := &helpers.MockDatastore{}
-		ds.On("ClaimNewHost").Return("t1.com").Once()
-		ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-			helpers.Parse("http://t1.com/page1.html"),
-		})
-		ds.On("UnclaimHost", "t1.com").Return()
-
-		ds.On("ClaimNewHost").Return("t2.com").Once()
-		ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
-			helpers.Parse("http://t2.com/page1.html"),
-		})
-		ds.On("UnclaimHost", "t2.com").Return()
-
-		ds.On("ClaimNewHost").Return("t3.com").Once()
-		ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
-			helpers.Parse("http://t3.com/page1.html"),
-		})
-		ds.On("UnclaimHost", "t3.com").Return()
-
-		ds.On("ClaimNewHost").Return("")
-
-		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-		ds.On("StoreParsedURL",
-			mock.AnythingOfType("*walker.URL"),
-			mock.AnythingOfType("*walker.FetchResults")).Return()
-
-		h := &helpers.MockHandler{}
-		h.On("HandleResponse", mock.Anything).Return()
 
 		var transport *helpers.CancelTrackingTransport
 		var closer io.Closer
@@ -838,15 +789,82 @@ func TestHttpTimeout(t *testing.T) {
 			transport, closer = helpers.GetStallingReadTransport()
 		}
 
-		manager := &walker.FetchManager{
-			Datastore: ds,
-			Handler:   h,
-			Transport: transport,
+		tests := TestSpec{
+			hasParsedLinks: true,
+			transport:      transport,
+			perHost: []PerHost{
+				PerHost{
+					domain: "t1.com",
+					links: []PerLink{
+						PerLink{
+							url:      "http://t1.com/page1.html",
+							response: &helpers.MockResponse{Status: 404},
+						},
+					},
+				},
+
+				PerHost{
+					domain: "t2.com",
+					links: []PerLink{
+						PerLink{
+							url:      "http://t2.com/page1.html",
+							response: &helpers.MockResponse{Status: 404},
+						},
+					},
+				},
+
+				PerHost{
+					domain: "t3.com",
+					links: []PerLink{
+						PerLink{
+							url:      "http://t3.com/page1.html",
+							response: &helpers.MockResponse{Status: 404},
+						},
+					},
+				},
+			},
 		}
 
-		go manager.Start()
-		time.Sleep(time.Second * 2)
-		manager.Stop()
+		// ds := &helpers.MockDatastore{}
+		// ds.On("ClaimNewHost").Return("t1.com").Once()
+		// ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+		// 	helpers.Parse("http://t1.com/page1.html"),
+		// })
+		// ds.On("UnclaimHost", "t1.com").Return()
+
+		// ds.On("ClaimNewHost").Return("t2.com").Once()
+		// ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
+		// 	helpers.Parse("http://t2.com/page1.html"),
+		// })
+		// ds.On("UnclaimHost", "t2.com").Return()
+
+		// ds.On("ClaimNewHost").Return("t3.com").Once()
+		// ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
+		// 	helpers.Parse("http://t3.com/page1.html"),
+		// })
+		// ds.On("UnclaimHost", "t3.com").Return()
+
+		// ds.On("ClaimNewHost").Return("")
+
+		// ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+		// ds.On("StoreParsedURL",
+		// 	mock.AnythingOfType("*walker.URL"),
+		// 	mock.AnythingOfType("*walker.FetchResults")).Return()
+
+		// h := &helpers.MockHandler{}
+		// h.On("HandleResponse", mock.Anything).Return()
+
+		// manager := &walker.FetchManager{
+		// 	Datastore: ds,
+		// 	Handler:   h,
+		// 	Transport: transport,
+		// }
+
+		// go manager.Start()
+		// time.Sleep(time.Second * 2)
+		// manager.Stop()
+
+		results := runFetcher(tests, defaultSleep, t)
 		closer.Close()
 
 		canceled := map[string]bool{}
@@ -866,7 +884,7 @@ func TestHttpTimeout(t *testing.T) {
 			}
 		}
 
-		if len(h.Calls) > 0 {
+		if len(results.handlerCalls()) > 0 {
 			t.Fatalf("For timeoutType %q Fetcher shouldn't have been able to connect, but did", timeoutType)
 		}
 	}
