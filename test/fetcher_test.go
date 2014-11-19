@@ -81,10 +81,11 @@ type TestSpec struct {
 	perHost []PerHost
 
 	// Flags that control how runFetcher does it's job
-	hasParsedLinks    bool
-	hasNoLinks        bool
-	suppressTransport bool
-	transport         http.RoundTripper
+	hasParsedLinks     bool
+	hasNoLinks         bool
+	suppressTransport  bool
+	transport          http.RoundTripper
+	suppressMockServer bool
 }
 
 type TestResults struct {
@@ -140,9 +141,13 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	h := &helpers.MockHandler{}
 
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+	var rs *helpers.MockRemoteServer
+	var err error
+	if !test.suppressMockServer {
+		rs, err = helpers.NewMockRemoteServer()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	ds := &helpers.MockDatastore{}
 
@@ -169,7 +174,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 			if !link.hidden {
 				urls = append(urls, helpers.Parse(link.url))
 			}
-			if link.response != nil {
+			if link.response != nil && !test.suppressMockServer {
 				rs.SetResponse(link.url, link.response)
 			}
 		}
@@ -208,7 +213,9 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	go manager.Start()
 	time.Sleep(duration)
 	manager.Stop()
-	rs.Stop()
+	if !test.suppressMockServer {
+		rs.Stop()
+	}
 
 	//
 	// Return the mocks
@@ -790,15 +797,15 @@ func TestHttpTimeout(t *testing.T) {
 		}
 
 		tests := TestSpec{
-			hasParsedLinks: true,
-			transport:      transport,
+			hasParsedLinks:     true,
+			transport:          transport,
+			suppressMockServer: true,
 			perHost: []PerHost{
 				PerHost{
 					domain: "t1.com",
 					links: []PerLink{
 						PerLink{
-							url:      "http://t1.com/page1.html",
-							response: &helpers.MockResponse{Status: 404},
+							url: "http://t1.com/page1.html",
 						},
 					},
 				},
@@ -807,8 +814,7 @@ func TestHttpTimeout(t *testing.T) {
 					domain: "t2.com",
 					links: []PerLink{
 						PerLink{
-							url:      "http://t2.com/page1.html",
-							response: &helpers.MockResponse{Status: 404},
+							url: "http://t2.com/page1.html",
 						},
 					},
 				},
@@ -817,54 +823,14 @@ func TestHttpTimeout(t *testing.T) {
 					domain: "t3.com",
 					links: []PerLink{
 						PerLink{
-							url:      "http://t3.com/page1.html",
-							response: &helpers.MockResponse{Status: 404},
+							url: "http://t3.com/page1.html",
 						},
 					},
 				},
 			},
 		}
 
-		// ds := &helpers.MockDatastore{}
-		// ds.On("ClaimNewHost").Return("t1.com").Once()
-		// ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		// 	helpers.Parse("http://t1.com/page1.html"),
-		// })
-		// ds.On("UnclaimHost", "t1.com").Return()
-
-		// ds.On("ClaimNewHost").Return("t2.com").Once()
-		// ds.On("LinksForHost", "t2.com").Return([]*walker.URL{
-		// 	helpers.Parse("http://t2.com/page1.html"),
-		// })
-		// ds.On("UnclaimHost", "t2.com").Return()
-
-		// ds.On("ClaimNewHost").Return("t3.com").Once()
-		// ds.On("LinksForHost", "t3.com").Return([]*walker.URL{
-		// 	helpers.Parse("http://t3.com/page1.html"),
-		// })
-		// ds.On("UnclaimHost", "t3.com").Return()
-
-		// ds.On("ClaimNewHost").Return("")
-
-		// ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-		// ds.On("StoreParsedURL",
-		// 	mock.AnythingOfType("*walker.URL"),
-		// 	mock.AnythingOfType("*walker.FetchResults")).Return()
-
-		// h := &helpers.MockHandler{}
-		// h.On("HandleResponse", mock.Anything).Return()
-
-		// manager := &walker.FetchManager{
-		// 	Datastore: ds,
-		// 	Handler:   h,
-		// 	Transport: transport,
-		// }
-
-		// go manager.Start()
-		// time.Sleep(time.Second * 2)
-		// manager.Stop()
-
-		results := runFetcher(tests, defaultSleep, t)
+		results := runFetcher(tests, 2*time.Second, t)
 		closer.Close()
 
 		canceled := map[string]bool{}
@@ -942,55 +908,85 @@ func TestMetaNos(t *testing.T) {
 </div>
 </html>`
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("t1.com").Once()
-	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		helpers.Parse("http://t1.com/nofollow.html"),
-		helpers.Parse("http://t1.com/noindex.html"),
-		helpers.Parse("http://t1.com/both.html"),
-	})
-	ds.On("UnclaimHost", "t1.com").Return()
-	ds.On("ClaimNewHost").Return("")
+	// ds := &helpers.MockDatastore{}
+	// ds.On("ClaimNewHost").Return("t1.com").Once()
+	// ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
+	// 	helpers.Parse("http://t1.com/nofollow.html"),
+	// 	helpers.Parse("http://t1.com/noindex.html"),
+	// 	helpers.Parse("http://t1.com/both.html"),
+	// })
+	// ds.On("UnclaimHost", "t1.com").Return()
+	// ds.On("ClaimNewHost").Return("")
 
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
+	// ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	// ds.On("StoreParsedURL",
+	// 	mock.AnythingOfType("*walker.URL"),
+	// 	mock.AnythingOfType("*walker.FetchResults")).Return()
 
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
+	// h := &helpers.MockHandler{}
+	// h.On("HandleResponse", mock.Anything).Return()
 
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+	// rs, err := helpers.NewMockRemoteServer()
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// rs.SetResponse("http://t1.com/nofollow.html", &helpers.MockResponse{
+	// 	Body: nofollowHtml,
+	// })
+	// rs.SetResponse("http://t1.com/noindex.html", &helpers.MockResponse{
+	// 	Body: noindexHtml,
+	// })
+	// rs.SetResponse("http://t1.com/both.html", &helpers.MockResponse{
+	// 	Body: bothHtml,
+	// })
+
+	// manager := &walker.FetchManager{
+	// 	Datastore: ds,
+	// 	Handler:   h,
+	// 	Transport: helpers.GetFakeTransport(),
+	// }
+
+	// go manager.Start()
+	// time.Sleep(defaultSleep)
+	// manager.Stop()
+	// rs.Stop()
+
+	tests := TestSpec{
+		hasParsedLinks: false,
+		perHost: []PerHost{
+			PerHost{
+				domain: "t1.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://t1.com/nofollow.html",
+						response: &helpers.MockResponse{
+							Body: nofollowHtml,
+						},
+					},
+					PerLink{
+						url: "http://t1.com/noindex.html",
+						response: &helpers.MockResponse{
+							Body: noindexHtml,
+						},
+					},
+
+					PerLink{
+						url: "http://t1.com/both.html",
+						response: &helpers.MockResponse{
+							Body: bothHtml,
+						},
+					},
+				},
+			},
+		},
 	}
-	rs.SetResponse("http://t1.com/nofollow.html", &helpers.MockResponse{
-		Body: nofollowHtml,
-	})
-	rs.SetResponse("http://t1.com/noindex.html", &helpers.MockResponse{
-		Body: noindexHtml,
-	})
-	rs.SetResponse("http://t1.com/both.html", &helpers.MockResponse{
-		Body: bothHtml,
-	})
 
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
-
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-
-	rs.Stop()
+	results := runFetcher(tests, defaultSleep, t)
 
 	// Did the fetcher honor noindex (if noindex is set
 	// the handler shouldn't be called)
 	callCount := 0
-	for _, call := range h.Calls {
-		fr := call.Arguments.Get(0).(*walker.FetchResults)
+	for _, fr := range results.handlerCalls() {
 		link := fr.URL.String()
 		switch link {
 		case "http://t1.com/nofollow.html":
@@ -1005,12 +1001,8 @@ func TestMetaNos(t *testing.T) {
 
 	// Did the fetcher honor nofollow (if nofollow is set fetcher
 	// shouldn't follow any links)
-	callCount = 0
-	for _, call := range ds.Calls {
-		if call.Method == "StoreParsedURL" {
-			callCount++
-		}
-	}
+	ulst, _ := results.dsStoreParsedURLCalls()
+	callCount = len(ulst)
 	if callCount != 0 {
 		t.Errorf("Fetcher did not honor nofollow in meta: expected 0 callCount, found %d", callCount)
 	}
