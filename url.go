@@ -47,7 +47,7 @@ var parseURLPathStrip *regexp.Regexp
 var parseURLPurgeMap map[string]bool
 
 func setupParseURL() error {
-	if len(Config.PurgeSidList) == 0 {
+	if len(Config.Fetcher.PurgeSidList) == 0 {
 		parseURLPathStrip = nil
 	} else {
 		// Here we want to write a regexp that looks like
@@ -55,7 +55,7 @@ func setupParseURL() error {
 		var buffer bytes.Buffer
 		buffer.WriteString("(?i)") // case-insensitive
 		startedLoop := false
-		for _, sid := range Config.PurgeSidList {
+		for _, sid := range Config.Fetcher.PurgeSidList {
 			if startedLoop {
 				buffer.WriteRune('|')
 			}
@@ -72,7 +72,7 @@ func setupParseURL() error {
 	}
 
 	parseURLPurgeMap = map[string]bool{}
-	for _, p := range Config.PurgeSidList {
+	for _, p := range Config.Fetcher.PurgeSidList {
 		parseURLPurgeMap[strings.ToLower(p)] = true
 	}
 	return nil

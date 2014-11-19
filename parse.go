@@ -56,7 +56,7 @@ func getIncludedTags() map[string]bool {
 		"object": true,
 		"embed":  true,
 	}
-	for _, t := range Config.IgnoreTags {
+	for _, t := range Config.Fetcher.IgnoreTags {
 		delete(tags, t)
 	}
 
@@ -163,7 +163,7 @@ func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) 
 			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
 			return
 		}
-		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
+		if !Config.Fetcher.HonorMetaNofollow || !(nNofollow || metaNofollow) {
 			links = append(links, nlinks...)
 		}
 	} else { //!docsrc
