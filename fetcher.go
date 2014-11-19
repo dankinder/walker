@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net"
@@ -372,6 +373,9 @@ type fetcher struct {
 
 	// robotsMap maps host -> robots.txt definition to use
 	robotsMap map[string]*robotstxt.Group
+
+	// Where to read content pages into
+	readBuffer bytes.Buffer
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -537,22 +541,21 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	//
 	// Nab the body of the request, and compute fingerprint
 	//
-	//TODO: ReadAll is inefficient. We should use a properly sized
-	//		buffer here (determined by
-	//		Config.Fetcher.MaxHTTPContentSizeBytes or possibly
-	//		Content-Length of the response)
-	var body []byte
-	body, fr.FetchError = ioutil.ReadAll(fr.Response.Body)
+	fr.FetchError = f.fillReadBuffer(fr.Response.Body, fr.Response.Header)
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
 		return true
 	}
-	// Replace the response body so the handler can read it
-	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(body))
 
+	// Replace the response body so the handler can read it.
+	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
+
+	//
+	// Get the fingerprint
+	//
 	fnv := fnv.New64()
-	fnv.Write(body)
+	fnv.Write(f.readBuffer.Bytes())
 	fr.FnvFingerprint = int64(fnv.Sum64())
 
 	//
@@ -560,7 +563,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	//
 	if isHTML(fr.Response) {
 		log4go.Fine("Reading and parsing as HTML (%v)", link)
-		f.parseLinks(body, fr)
+		f.parseLinks(f.readBuffer.Bytes(), fr)
 	}
 
 	if !(Config.Fetcher.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
@@ -571,6 +574,37 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 	log4go.Fine("Storing fetch results for %v", link)
 	f.fm.Datastore.StoreURLFetchResults(fr)
 	return true
+}
+
+//
+// fillReadBuffer will fill up readBuffer with the contents of reader. Any
+// problems with the read will be returned in an error; including (and
+// importantly) if the content size would exceed MaxHTTPContentSizeBytes.
+//
+func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
+	f.readBuffer.Reset()
+	lenArr, lenOk := headers["Content-Length"]
+	if lenOk && len(lenArr) > 0 {
+		var size int64
+		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
+		if n != 1 || err != nil || size < 0 {
+			log4go.Error("Failed to process Content-Length: %v", err)
+		} else if size > Config.MaxHTTPContentSizeBytes {
+			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+		} else {
+			f.readBuffer.Grow(int(size))
+		}
+	}
+
+	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	n, err := f.readBuffer.ReadFrom(limitReader)
+	if err != nil {
+		return err
+	} else if n > Config.MaxHTTPContentSizeBytes {
+		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
+	}
+
+	return nil
 }
 
 // stop signals a fetcher to stop and waits until completion.

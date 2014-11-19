@@ -1278,6 +1278,7 @@ func TestNestedRobots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	rs.SetResponse("http://dom.com/robots.txt", &helpers.MockResponse{
 		Body: "User-agent: *\n",
 	})
@@ -1326,5 +1327,104 @@ func TestNestedRobots(t *testing.T) {
 		} else if !tst.fetched && req {
 			t.Errorf("Expected NOT to have requested link %q, but did", tst.link)
 		}
+	}
+}
+
+func TestMaxContentSize(t *testing.T) {
+	orig := walker.Config.MaxHTTPContentSizeBytes
+	defer func() {
+		walker.Config.MaxHTTPContentSizeBytes = orig
+	}()
+	walker.Config.MaxHTTPContentSizeBytes = 10
+
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a.com").Once()
+	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
+		helpers.Parse("http://a.com/page1.html"),
+		helpers.Parse("http://a.com/page2.html"),
+	})
+	ds.On("UnclaimHost", "a.com").Return()
+
+	// This last call will make ClaimNewHost return "" on each subsequent call,
+	// which will put the fetcher to sleep.
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{
+		Body: html,
+	})
+	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{
+		Body:          "0123456789 ",
+		ContentType:   "text/html",
+		ContentLength: 11,
+	})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+	rs.Stop()
+
+	if len(h.Calls) != 0 {
+		links := ""
+		for _, call := range h.Calls {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			links += "\t"
+			links += fr.URL.String()
+			links += "\n"
+		}
+		t.Fatalf("Expected handler to be called 0 times, instead it was called %d times for links\n%s\n", len(h.Calls), links)
+	}
+
+	page1Ok := false
+	page2Ok := false
+	for _, call := range ds.Calls {
+		if call.Method == "StoreURLFetchResults" {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			link := fr.URL.String()
+			switch link {
+			case "http://a.com/page1.html":
+				page1Ok = true
+			case "http://a.com/page2.html":
+				page2Ok = true
+			default:
+				t.Errorf("Unexpected stored url %q", link)
+			}
+		}
+	}
+	if !page1Ok {
+		t.Errorf("Didn't find link http://a.com/page1.html in datastore calls, but expected too")
+	}
+	if !page2Ok {
+		t.Errorf("Didn't find link http://a.com/page2.html in datastore calls, but expected too")
 	}
 }
