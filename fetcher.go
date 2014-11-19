@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 	"io"
 	"io/ioutil"
-	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,11 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"code.google.com/p/go.net/html"
-	"code.google.com/p/go.net/html/charset"
-	"code.google.com/p/go.net/publicsuffix"
 	"code.google.com/p/log4go"
-	"github.com/PuerkitoBio/purell"
 	"github.com/iParadigms/walker/dnscache"
 	"github.com/iParadigms/walker/mimetools"
 	"github.com/temoto/robotstxt.go"
@@ -79,157 +74,6 @@ type FetchResults struct {
 	FnvFingerprint int64
 }
 
-// URL is the walker URL object, which embeds *url.URL but has extra data and
-// capabilities used by walker. Note that LastCrawled should not be set to its
-// zero value, it should be set to NotYetCrawled.
-type URL struct {
-	*url.URL
-
-	// LastCrawled is the last time we crawled this URL, for example to use a
-	// Last-Modified header.
-	LastCrawled time.Time
-}
-
-// CreateURL creates a walker URL from values usually pulled out of the
-// datastore. subdomain may optionally include a trailing '.', and path may
-// optionally include a prefixed '/'.
-func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) (*URL, error) {
-	if subdomain != "" && !strings.HasSuffix(subdomain, ".") {
-		subdomain = subdomain + "."
-	}
-	if path != "" && !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	ref := fmt.Sprintf("%s://%s%s%s", protocol, subdomain, domain, path)
-	u, err := ParseURL(ref)
-	if err != nil {
-		return nil, err
-	}
-	u.LastCrawled = lastcrawled
-	return u, nil
-}
-
-var parseURLPathStrip *regexp.Regexp
-var parseURLPurgeMap map[string]bool
-
-func setupParseURL() error {
-	if len(Config.PurgeSidList) == 0 {
-		parseURLPathStrip = nil
-	} else {
-		// Here we want to write a regexp that looks like
-		// \;jsessionid=.*$|\;other=.*$
-		var buffer bytes.Buffer
-		buffer.WriteString("(?i)") // case-insensitive
-		startedLoop := false
-		for _, sid := range Config.PurgeSidList {
-			if startedLoop {
-				buffer.WriteRune('|')
-			}
-			startedLoop = true
-			buffer.WriteString(`\;`)
-			buffer.WriteString(sid)
-			buffer.WriteString(`\=.*$`)
-		}
-		var err error
-		parseURLPathStrip, err = regexp.Compile(buffer.String())
-		if err != nil {
-			return fmt.Errorf("Failed setupParseURL: %v", err)
-		}
-	}
-
-	parseURLPurgeMap = map[string]bool{}
-	for _, p := range Config.PurgeSidList {
-		parseURLPurgeMap[strings.ToLower(p)] = true
-	}
-	return nil
-}
-
-// ParseURL is the walker.URL equivalent of url.Parse. Note, all URL's should
-// be passed through this function so that we get consistency.
-func ParseURL(ref string) (*URL, error) {
-	u, err := url.Parse(ref)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply standard normalization filters to u. This call will
-	// modify u in place.
-	purell.NormalizeURL(u, purell.FlagsSafe|purell.FlagRemoveFragment)
-
-	// Filter the path to catch embedded session ids
-	if parseURLPathStrip != nil {
-		// Remove SID from path
-		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
-	}
-
-	//Rewrite the query string to canonical order, removing SID's as needed.
-	if u.RawQuery != "" {
-		purge := parseURLPurgeMap
-		params := u.Query()
-		for k := range params {
-			if purge[strings.ToLower(k)] {
-				delete(params, k)
-			}
-		}
-		u.RawQuery = params.Encode()
-	}
-
-	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
-	return wurl, nil
-}
-
-// ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
-// defined by https://publicsuffix.org/, plus one extra domain component.
-//
-// For example the TLD of http://www.bbc.co.uk/ is 'co.uk', plus one is
-// 'bbc.co.uk'. Walker uses these TLD+1 domains as the primary unit of
-// grouping.
-func (u *URL) ToplevelDomainPlusOne() (string, error) {
-	return publicsuffix.EffectiveTLDPlusOne(u.Host)
-}
-
-// Subdomain provides the remaining subdomain after removing the
-// ToplevelDomainPlusOne. For example http://www.bbc.co.uk/ will return 'www'
-// as the subdomain (note that there is no trailing period). If there is no
-// subdomain it will return "".
-func (u *URL) Subdomain() (string, error) {
-	dom, err := u.ToplevelDomainPlusOne()
-	if err != nil {
-		return "", err
-	}
-	if len(u.Host) == len(dom) {
-		return "", nil
-	}
-	return strings.TrimSuffix(u.Host, "."+dom), nil
-}
-
-// TLDPlusOneAndSubdomain is a convenience function that calls
-// ToplevelDomainPlusOne and Subdomain, returning an error if we could not get
-// either one.
-// The first return is the TLD+1 and second is the subdomain
-func (u *URL) TLDPlusOneAndSubdomain() (string, string, error) {
-	dom, err := u.ToplevelDomainPlusOne()
-	if err != nil {
-		return "", "", err
-	}
-	subdom, err := u.Subdomain()
-	if err != nil {
-		return "", "", err
-	}
-	return dom, subdom, nil
-}
-
-// MakeAbsolute uses URL.ResolveReference to make this URL object an absolute
-// reference (having Schema and Host), if it is not one already. It is
-// resolved using `base` as the base URL.
-func (u *URL) MakeAbsolute(base *URL) {
-	if u.IsAbs() {
-		return
-	}
-	u.URL = base.URL.ResolveReference(u.URL)
-}
-
 // FetchManager configures and runs the crawl.
 //
 // The calling code must create a FetchManager, set a Datastore and handlers,
@@ -275,19 +119,19 @@ func (fm *FetchManager) Start() {
 	}
 
 	var err error
-	fm.defCrawlDelay, err = time.ParseDuration(Config.DefaultCrawlDelay)
+	fm.defCrawlDelay, err = time.ParseDuration(Config.Fetcher.DefaultCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.maxCrawlDelay, err = time.ParseDuration(Config.MaxCrawlDelay)
+	fm.maxCrawlDelay, err = time.ParseDuration(Config.Fetcher.MaxCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.acceptFormats, err = mimetools.NewMatcher(Config.AcceptFormats)
+	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
@@ -295,7 +139,7 @@ func (fm *FetchManager) Start() {
 	fm.started = true
 
 	if fm.Transport == nil {
-		timeout, err := time.ParseDuration(Config.HttpTimeout)
+		timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 		if err != nil {
 			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 			panic(err)
@@ -315,12 +159,12 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = dnscache.Dial(t.Dial, Config.MaxDNSCacheEntries)
+		t.Dial = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
 
-	numFetchers := Config.NumSimultaneousFetchers
+	numFetchers := Config.Fetcher.NumSimultaneousFetchers
 	fm.fetchers = make([]*fetcher, numFetchers)
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
@@ -408,7 +252,7 @@ func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
-	timeout, err := time.ParseDuration(Config.HttpTimeout)
+	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 	if err != nil {
 		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 		panic(err)
@@ -423,16 +267,16 @@ func newFetcher(fm *FetchManager) *fetcher {
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})
 
-	if len(Config.ExcludeLinkPatterns) > 0 {
-		f.excludeLink, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+	if len(Config.Fetcher.ExcludeLinkPatterns) > 0 {
+		f.excludeLink, err = aggregateRegex(Config.Fetcher.ExcludeLinkPatterns, "exclude_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
 		}
 	}
 
-	if len(Config.IncludeLinkPatterns) > 0 {
-		f.includeLink, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+	if len(Config.Fetcher.IncludeLinkPatterns) > 0 {
+		f.includeLink, err = aggregateRegex(Config.Fetcher.IncludeLinkPatterns, "include_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
@@ -566,7 +410,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 		f.parseLinks(f.readBuffer.Bytes(), fr)
 	}
 
-	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
+	if !(Config.Fetcher.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
 		f.fm.Handler.HandleResponse(fr)
 	}
 
@@ -589,18 +433,18 @@ func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
 		if n != 1 || err != nil || size < 0 {
 			log4go.Error("Failed to process Content-Length: %v", err)
-		} else if size > Config.MaxHTTPContentSizeBytes {
+		} else if size > Config.Fetcher.MaxHTTPContentSizeBytes {
 			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 		} else {
 			f.readBuffer.Grow(int(size))
 		}
 	}
 
-	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	limitReader := io.LimitReader(reader, Config.Fetcher.MaxHTTPContentSizeBytes+1)
 	n, err := f.readBuffer.ReadFrom(limitReader)
 	if err != nil {
 		return err
-	} else if n > Config.MaxHTTPContentSizeBytes {
+	} else if n > Config.Fetcher.MaxHTTPContentSizeBytes {
 		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 	}
 
@@ -618,7 +462,7 @@ func (f *fetcher) initializeRobotsMap(host string) {
 
 	// Set default robots
 	rdata, _ := robotstxt.FromBytes([]byte("User-agent: *\n"))
-	f.defRobots = rdata.FindGroup(Config.UserAgent)
+	f.defRobots = rdata.FindGroup(Config.Fetcher.UserAgent)
 	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
 
 	// try read $host/robots.txt. Failure to GET, will just returns
@@ -667,7 +511,7 @@ func (f *fetcher) getRobots(host string) *robotstxt.Group {
 		return f.defRobots
 	}
 
-	grp := robots.FindGroup(Config.UserAgent)
+	grp := robots.FindGroup(Config.Fetcher.UserAgent)
 	max := f.fm.maxCrawlDelay
 	if grp.CrawlDelay > max {
 		grp.CrawlDelay = max
@@ -682,8 +526,8 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 		return nil, nil, fmt.Errorf("Failed to create new request object for %v): %v", u, err)
 	}
 
-	req.Header.Set("User-Agent", Config.UserAgent)
-	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
+	req.Header.Set("User-Agent", Config.Fetcher.UserAgent)
+	req.Header.Set("Accept", strings.Join(Config.Fetcher.AcceptFormats, ","))
 	if !u.LastCrawled.Equal(NotYetCrawled) {
 		// Date format used is RFC1123 as specified by
 		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
@@ -716,40 +560,13 @@ func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 		return false
 	}
 
-	for _, f := range Config.AcceptProtocols {
+	for _, f := range Config.Fetcher.AcceptProtocols {
 		if u.Scheme == f {
 			return true
 		}
 	}
 
 	return false
-}
-
-// parseLinks tries to parse the http response in the given FetchResults for
-// links and stores them in the datastore.
-func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
-	outlinks, noindex, nofollow, err := parseHtml(body)
-	if err != nil {
-		log4go.Debug("error parsing HTML for page %v: %v", fr.URL, err)
-		return
-	}
-
-	if noindex {
-		fr.MetaNoIndex = true
-		log4go.Fine("Page has noindex meta tag: %v", fr.URL)
-	}
-	if nofollow {
-		fr.MetaNoFollow = true
-		log4go.Fine("Page has nofollow meta tag: %v", fr.URL)
-	}
-
-	for _, outlink := range outlinks {
-		outlink.MakeAbsolute(fr.URL)
-		if f.shouldStoreParsedLink(outlink) {
-			log4go.Fine("Storing parsed link: %v", outlink)
-			f.fm.Datastore.StoreParsedURL(outlink, fr)
-		}
-	}
 }
 
 // checkForBlacklisting returns true if this site is blacklisted or should be
@@ -781,7 +598,7 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 	}
 	defer conn.Close()
 
-	if Config.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
+	if Config.Fetcher.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
 		log4go.Debug("Host (%v) resolved to private IP address, blacklisting", host)
 		return true
 	}
@@ -797,319 +614,5 @@ func (f *fetcher) isHandleable(r *http.Response) bool {
 	}
 	ctype := strings.Join(r.Header["Content-Type"], ",")
 	log4go.Fine("URL (%v) did not match accepted content types, had: %v", r.Request.URL, ctype)
-	return false
-}
-
-// getIncludedTags gets a map of tags we should check for outlinks. It uses
-// ignored_tags in the config to exclude ones we don't want. Tags are []byte
-// types (not strings) because []byte is what the parser uses.
-func getIncludedTags() map[string]bool {
-	tags := map[string]bool{
-		"a":      true,
-		"area":   true,
-		"form":   true,
-		"frame":  true,
-		"iframe": true,
-		"script": true,
-		"link":   true,
-		"img":    true,
-		"object": true,
-		"embed":  true,
-	}
-	for _, t := range Config.IgnoreTags {
-		delete(tags, t)
-	}
-
-	tags["meta"] = true
-	return tags
-}
-
-// parseHtml processes the html stored in content.
-// It returns:
-//     (a) a list of `links` on the page
-//     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
-//     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
-func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
-	utf8Reader, err := charset.NewReader(bytes.NewReader(body), "text/html")
-	if err != nil {
-		return
-	}
-	tokenizer := html.NewTokenizer(utf8Reader)
-
-	tags := getIncludedTags()
-
-	for {
-		tokenType := tokenizer.Next()
-		switch tokenType {
-		case html.ErrorToken:
-			//TODO: should use tokenizer.Err() to see if this is io.EOF
-			//		(meaning success) or an actual error
-			return
-		case html.StartTagToken, html.SelfClosingTagToken:
-			tagNameB, hasAttrs := tokenizer.TagName()
-			tagName := string(tagNameB)
-			if hasAttrs && tags[tagName] {
-				switch tagName {
-				case "a":
-					if !metaNofollow {
-						links = parseAnchorAttrs(tokenizer, links)
-					}
-
-				case "embed":
-					if !metaNofollow {
-						links = parseObjectOrEmbed(tokenizer, links, true)
-					}
-
-				case "iframe":
-					links = parseIframe(tokenizer, links, metaNofollow)
-
-				case "meta":
-					isRobots, index, follow := parseMetaAttrs(tokenizer)
-					if isRobots {
-						metaNoindex = metaNoindex || index
-						metaNofollow = metaNofollow || follow
-					}
-
-				case "object":
-					if !metaNofollow {
-						links = parseObjectOrEmbed(tokenizer, links, false)
-					}
-
-				}
-			}
-		}
-	}
-
-	return
-}
-
-func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
-	var ln *URL
-	var err error
-	if isEmbed {
-		ln, err = parseEmbedAttrs(tokenizer)
-	} else {
-		ln, err = parseObjectAttrs(tokenizer)
-	}
-
-	if err != nil {
-		label := "parseEmbedAttrs"
-		if !isEmbed {
-			label = "parseObjectAttrs"
-		}
-		log4go.Debug("%s encountered an error: %v", label, err)
-	} else {
-		links = append(links, ln)
-	}
-
-	return links
-}
-
-// parseIframe takes 3 arguments
-// (a) tokenizer
-// (b) list of links already collected
-// (c) a flag indicating if the parser is currently in a nofollow state
-// and returns a possibly extended list of links.
-func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) (links []*URL) {
-	links = in_links
-	docsrc, body, err := parseIframeAttrs(tokenizer)
-	if err != nil {
-		return
-	} else if docsrc {
-		var nlinks []*URL
-		var nNofollow bool
-		nlinks, _, nNofollow, err = parseHtml([]byte(body))
-		if err != nil {
-			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
-			return
-		}
-		if !Config.HonorMetaNofollow || !(nNofollow || metaNofollow) {
-			links = append(links, nlinks...)
-		}
-	} else { //!docsrc
-		if !metaNofollow {
-			var u *URL
-			u, err = ParseURL(body)
-			if err != nil {
-				log4go.Error("parseEmbed failed to parse src: %v", err)
-				return
-			}
-			links = append(links, u)
-		}
-	}
-
-	return
-}
-
-// A set of words used by the parse* routines below
-var contentWordBytes = []byte("content")
-var dataWordBytes = []byte("data")
-var nameWordBytes = []byte("name")
-var noindexWordBytes = []byte("noindex")
-var nofollowWordBytes = []byte("nofollow")
-var robotsWordBytes = []byte("robots")
-var srcWordBytes = []byte("src")
-var srcdocWordBytes = []byte("srcdoc")
-
-func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
-	for {
-		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, nameWordBytes) == 0 {
-			name := bytes.ToLower(val)
-			isRobots = bytes.Compare(name, robotsWordBytes) == 0
-		} else if bytes.Compare(key, contentWordBytes) == 0 {
-			content := bytes.ToLower(val)
-			// This will match ill-formatted contents like "noindexnofollow",
-			// but I don't expect that to be a big deal.
-			noIndex = bytes.Contains(content, noindexWordBytes)
-			noFollow = bytes.Contains(content, nofollowWordBytes)
-		}
-		if !moreAttr {
-			break
-		}
-	}
-	return
-}
-
-// parse object tag attributes
-func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
-	for {
-		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, dataWordBytes) == 0 {
-			return ParseURL(string(val))
-		}
-
-		if !moreAttr {
-			break
-		}
-	}
-	return nil, fmt.Errorf("Failed to find data attribute in object tag")
-}
-
-// parse embed tag attributes
-func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
-	for {
-		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, srcWordBytes) == 0 {
-			return ParseURL(string(val))
-		}
-
-		if !moreAttr {
-			break
-		}
-	}
-	return nil, fmt.Errorf("Failed to find src attribute in embed tag")
-}
-
-// parseIframeAttrs parses iframe attributes. An iframe can have a src attribute, which
-// holds a url to an second document. An iframe can also have a srcdoc attribute which
-// include html inline in a string. The method below returns 3 results
-// (a) a boolean indicating if the iframe had a srcdoc attribute (true means srcdoc, false
-//     means src)
-// (b) the body of whichever src or srcdoc attribute was read
-// (c) any errors that arise during processing.
-func parseIframeAttrs(tokenizer *html.Tokenizer) (srcdoc bool, body string, err error) {
-	for {
-		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, srcWordBytes) == 0 {
-			srcdoc = false
-			body = string(val)
-			return
-		} else if bytes.Compare(key, srcdocWordBytes) == 0 {
-			srcdoc = true
-			body = string(val)
-			return
-		}
-
-		if !moreAttr {
-			break
-		}
-	}
-	err = fmt.Errorf("Failed to find src or srcdoc attribute in iframe tag")
-	return
-}
-
-// parseAnchorAttrs iterates over all of the attributes in the current anchor token.
-// If a href is found, it adds the link value to the links slice.
-// Returns the new link slice.
-func parseAnchorAttrs(tokenizer *html.Tokenizer, links []*URL) []*URL {
-	//TODO: rework this to be cleaner, passing in `links` to be appended to
-	//isn't great
-	for {
-		key, val, moreAttr := tokenizer.TagAttr()
-		if bytes.Compare(key, []byte("href")) == 0 {
-			u, err := ParseURL(strings.TrimSpace(string(val)))
-			if err == nil {
-				links = append(links, u)
-			}
-		}
-		if !moreAttr {
-			return links
-		}
-	}
-}
-
-// getMimeType attempts to get the mime type (i.e. "Content-Type") from the
-// response. Returns an empty string if unable to.
-func getMimeType(r *http.Response) string {
-	ctype, ctypeOk := r.Header["Content-Type"]
-	if ctypeOk && len(ctype) > 0 {
-		mediaType, _, err := mime.ParseMediaType(ctype[0])
-		if err != nil {
-			log4go.Debug("Failed to parse mime header %q: %v", ctype[0], err)
-		} else {
-			return mediaType
-		}
-	}
-	return ""
-}
-
-func isHTML(r *http.Response) bool {
-	if r == nil {
-		return false
-	}
-	for _, ct := range r.Header["Content-Type"] {
-		if strings.HasPrefix(ct, "text/html") {
-			return true
-		}
-	}
-	return false
-}
-
-var privateNetworks = []*net.IPNet{
-	parseCIDR("10.0.0.0/8"),
-	parseCIDR("192.168.0.0/16"),
-	parseCIDR("172.16.0.0/12"),
-	parseCIDR("127.0.0.0/8"),
-}
-
-// parseCIDR is a convenience for creating our static private IPNet ranges
-func parseCIDR(netstring string) *net.IPNet {
-	_, network, err := net.ParseCIDR(netstring)
-	if err != nil {
-		panic(err.Error())
-	}
-	return network
-}
-
-// isPrivateAddr determines whether the input address belongs to any of the
-// private networks specified in privateNetworkStrings. It returns an error
-// if the input string does not represent an IP address.
-func isPrivateAddr(addr string) bool {
-	// Remove the port number if there is one
-	if index := strings.LastIndex(addr, ":"); index != -1 {
-		addr = addr[:index]
-	}
-
-	thisIP := net.ParseIP(addr)
-	if thisIP == nil {
-		log4go.Error("Failed to parse as IP address: %v", addr)
-		return false
-	}
-	for _, network := range privateNetworks {
-		if network.Contains(thisIP) {
-			return true
-		}
-	}
 	return false
 }

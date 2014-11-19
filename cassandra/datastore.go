@@ -46,7 +46,7 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create cassandra datastore: %v", err)
 	}
-	ds.domainCache = lrucache.New(walker.Config.AddedDomainsCacheSize)
+	ds.domainCache = lrucache.New(walker.Config.Cassandra.AddedDomainsCacheSize)
 
 	u, err := gocql.RandomUUID()
 	if err != nil {
@@ -326,7 +326,7 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 
 	exists := ds.hasDomain(dom)
 
-	if !exists && walker.Config.AddNewDomains {
+	if !exists && walker.Config.Cassandra.AddNewDomains {
 		log4go.Debug("Adding new domain to system: %v", dom)
 		ds.addDomain(dom)
 		exists = true
