@@ -335,12 +335,12 @@ func (f *fetcher) crawlNewHost() bool {
 		}
 
 		robots := f.fetchRobots(link.Host)
-		shouldDelay, fetchTime := f.fetchAndHandle(link, robots)
+		shouldDelay, crawlDelayClockStart := f.fetchAndHandle(link, robots)
 		if shouldDelay {
 			// fetchTime is the last server GET (not counting robots.txt GET's). So
 			// delta represents the amount of the CrawlDelay that still needs to be
 			// waited
-			delta := robots.CrawlDelay - time.Now().Sub(fetchTime)
+			delta := robots.CrawlDelay - time.Now().Sub(crawlDelayClockStart)
 			if delta > 0 {
 				time.Sleep(delta)
 			}
@@ -351,7 +351,8 @@ func (f *fetcher) crawlNewHost() bool {
 
 // fetchAndHandle takes care of fetching and processing a URL beginning to end.
 // Returns true if it did actually perform a fetch (even if it wasn't
-// successful), indicating that crawl-delay should be observed.
+// successful), indicating that crawl-delay should be observed. Returns, also,
+// the time we start the clock for a return visit to the server.
 func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time.Time) {
 	fr := &FetchResults{URL: link}
 
@@ -359,7 +360,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 		log4go.Debug("Not fetching due to robots rules: %v", link)
 		fr.ExcludedByRobots = true
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return false, time.Time{}
+		return false, time.Now()
 	}
 
 	fr.FetchTime = time.Now()
@@ -367,7 +368,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 	if fr.FetchError != nil {
 		log4go.Debug("Error fetching %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return true, fr.FetchTime
+		return true, time.Now()
 	}
 	log4go.Debug("Fetched %v -- %v", link, fr.Response.Status)
 
@@ -383,10 +384,8 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 		// always returns false. May need to address in the future.
 		f.fm.Handler.HandleResponse(fr)
 
-		return true, fr.FetchTime
+		return true, time.Now()
 	}
-
-	fr.MimeType = getMimeType(fr.Response)
 
 	//
 	// Nab the body of the request, and compute fingerprint
@@ -395,8 +394,14 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 	if fr.FetchError != nil {
 		log4go.Debug("Error reading body of %v: %v", link, fr.FetchError)
 		f.fm.Datastore.StoreURLFetchResults(fr)
-		return true, fr.FetchTime
+		return true, time.Now()
 	}
+
+	// At this point, we are certain the complete response has been read from
+	// the remote server. Start the Crawl-Delay clock
+	crawlDelayClockStart := time.Now()
+
+	fr.MimeType = getMimeType(fr.Response)
 
 	// Replace the response body so the handler can read it.
 	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
@@ -423,7 +428,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 	//TODO: Wrap the reader and check for read error here
 	log4go.Fine("Storing fetch results for %v", link)
 	f.fm.Datastore.StoreURLFetchResults(fr)
-	return true, fr.FetchTime
+	return true, crawlDelayClockStart
 }
 
 //
