@@ -588,7 +588,7 @@ func assureScheme(url string) (string, error) {
 	}
 
 	scheme := url[:index]
-	for _, f := range walker.Config.AcceptProtocols {
+	for _, f := range walker.Config.Fetcher.AcceptProtocols {
 		if scheme == f {
 			return url, nil
 		}

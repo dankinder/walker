@@ -3,7 +3,8 @@
 # This yaml file is used to test the config loader.
 
 # Test value set here so we can make sure it gets picked up
-user_agent: "Test Agent (set in yaml)"
+fetcher:
+    user_agent: "Test Agent (set in yaml)"
 console:
    template_directory: ../console/templates
    public_folder: ../console/public

@@ -119,19 +119,19 @@ func (fm *FetchManager) Start() {
 	}
 
 	var err error
-	fm.defCrawlDelay, err = time.ParseDuration(Config.DefaultCrawlDelay)
+	fm.defCrawlDelay, err = time.ParseDuration(Config.Fetcher.DefaultCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.maxCrawlDelay, err = time.ParseDuration(Config.MaxCrawlDelay)
+	fm.maxCrawlDelay, err = time.ParseDuration(Config.Fetcher.MaxCrawlDelay)
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
 	}
 
-	fm.acceptFormats, err = mimetools.NewMatcher(Config.AcceptFormats)
+	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
@@ -139,7 +139,7 @@ func (fm *FetchManager) Start() {
 	fm.started = true
 
 	if fm.Transport == nil {
-		timeout, err := time.ParseDuration(Config.HttpTimeout)
+		timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 		if err != nil {
 			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 			panic(err)
@@ -159,12 +159,12 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = dnscache.Dial(t.Dial, Config.MaxDNSCacheEntries)
+		t.Dial = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
 
-	numFetchers := Config.NumSimultaneousFetchers
+	numFetchers := Config.Fetcher.NumSimultaneousFetchers
 	fm.fetchers = make([]*fetcher, numFetchers)
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
@@ -252,7 +252,7 @@ func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
-	timeout, err := time.ParseDuration(Config.HttpTimeout)
+	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
 	if err != nil {
 		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
 		panic(err)
@@ -267,16 +267,16 @@ func newFetcher(fm *FetchManager) *fetcher {
 	f.quit = make(chan struct{})
 	f.done = make(chan struct{})
 
-	if len(Config.ExcludeLinkPatterns) > 0 {
-		f.excludeLink, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
+	if len(Config.Fetcher.ExcludeLinkPatterns) > 0 {
+		f.excludeLink, err = aggregateRegex(Config.Fetcher.ExcludeLinkPatterns, "exclude_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
 		}
 	}
 
-	if len(Config.IncludeLinkPatterns) > 0 {
-		f.includeLink, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
+	if len(Config.Fetcher.IncludeLinkPatterns) > 0 {
+		f.includeLink, err = aggregateRegex(Config.Fetcher.IncludeLinkPatterns, "include_link_patterns")
 		if err != nil {
 			// This shouldn't happen b/c it's already been checked when loading config
 			panic(err)
@@ -410,7 +410,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) bool {
 		f.parseLinks(f.readBuffer.Bytes(), fr)
 	}
 
-	if !(Config.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
+	if !(Config.Fetcher.HonorMetaNoindex && fr.MetaNoIndex) && f.isHandleable(fr.Response) {
 		f.fm.Handler.HandleResponse(fr)
 	}
 
@@ -433,18 +433,18 @@ func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 		n, err := fmt.Sscanf(lenArr[0], "%d", &size)
 		if n != 1 || err != nil || size < 0 {
 			log4go.Error("Failed to process Content-Length: %v", err)
-		} else if size > Config.MaxHTTPContentSizeBytes {
+		} else if size > Config.Fetcher.MaxHTTPContentSizeBytes {
 			return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 		} else {
 			f.readBuffer.Grow(int(size))
 		}
 	}
 
-	limitReader := io.LimitReader(reader, Config.MaxHTTPContentSizeBytes+1)
+	limitReader := io.LimitReader(reader, Config.Fetcher.MaxHTTPContentSizeBytes+1)
 	n, err := f.readBuffer.ReadFrom(limitReader)
 	if err != nil {
 		return err
-	} else if n > Config.MaxHTTPContentSizeBytes {
+	} else if n > Config.Fetcher.MaxHTTPContentSizeBytes {
 		return fmt.Errorf("Content size exceeded MaxHTTPContentSizeBytes")
 	}
 
@@ -462,7 +462,7 @@ func (f *fetcher) initializeRobotsMap(host string) {
 
 	// Set default robots
 	rdata, _ := robotstxt.FromBytes([]byte("User-agent: *\n"))
-	f.defRobots = rdata.FindGroup(Config.UserAgent)
+	f.defRobots = rdata.FindGroup(Config.Fetcher.UserAgent)
 	f.defRobots.CrawlDelay = f.fm.defCrawlDelay
 
 	// try read $host/robots.txt. Failure to GET, will just returns
@@ -511,7 +511,7 @@ func (f *fetcher) getRobots(host string) *robotstxt.Group {
 		return f.defRobots
 	}
 
-	grp := robots.FindGroup(Config.UserAgent)
+	grp := robots.FindGroup(Config.Fetcher.UserAgent)
 	max := f.fm.maxCrawlDelay
 	if grp.CrawlDelay > max {
 		grp.CrawlDelay = max
@@ -526,8 +526,8 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 		return nil, nil, fmt.Errorf("Failed to create new request object for %v): %v", u, err)
 	}
 
-	req.Header.Set("User-Agent", Config.UserAgent)
-	req.Header.Set("Accept", strings.Join(Config.AcceptFormats, ","))
+	req.Header.Set("User-Agent", Config.Fetcher.UserAgent)
+	req.Header.Set("Accept", strings.Join(Config.Fetcher.AcceptFormats, ","))
 	if !u.LastCrawled.Equal(NotYetCrawled) {
 		// Date format used is RFC1123 as specified by
 		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3.1
@@ -560,7 +560,7 @@ func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 		return false
 	}
 
-	for _, f := range Config.AcceptProtocols {
+	for _, f := range Config.Fetcher.AcceptProtocols {
 		if u.Scheme == f {
 			return true
 		}
@@ -598,7 +598,7 @@ func (f *fetcher) checkForBlacklisting(host string) bool {
 	}
 	defer conn.Close()
 
-	if Config.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
+	if Config.Fetcher.BlacklistPrivateIPs && isPrivateAddr(conn.RemoteAddr().String()) {
 		log4go.Debug("Host (%v) resolved to private IP address, blacklisting", host)
 		return true
 	}
