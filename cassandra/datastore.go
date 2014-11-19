@@ -15,8 +15,8 @@ import (
 )
 
 // Datastore is the primary walker Datastore implementation, using Apache
-// Cassandra as a highly scalable backend. It implements the walker.Datastore
-// and console.Model interfaces.
+// Cassandra as a highly scalable backend. It provides extra access calls for
+// the database for use in the console and other applications.
 //
 // NewDatastore should be used to create one.
 type Datastore struct {
