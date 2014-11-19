@@ -67,6 +67,64 @@ func init() {
 	helpers.LoadTestConfig("test-walker.yaml")
 }
 
+func TestUrlParsing(t *testing.T) {
+	orig := walker.Config.Fetcher.PurgeSidList
+	defer func() {
+		walker.Config.Fetcher.PurgeSidList = orig
+		walker.PostConfigHooks()
+	}()
+	walker.Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.PostConfigHooks()
+
+	tests := []struct {
+		tag    string
+		input  string
+		expect string
+	}{
+		{
+			tag:    "UpCase",
+			input:  "HTTP://A.com/page1.com",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "Fragment",
+			input:  "http://a.com/page1.com#Fragment",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "PathSID",
+			input:  "http://a.com/page1.com;jsEssIoniD=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "PathSID2",
+			input:  "http://a.com/page1.com;phPseSsId=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+		{
+			tag:    "QuerySID",
+			input:  "http://a.com/page1.com?foo=bar&jsessionID=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
+			expect: "http://a.com/page1.com?baz=niffler&foo=bar",
+		},
+		{
+			tag:    "QuerySID2",
+			input:  "http://a.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a.com/page1.com",
+		},
+	}
+
+	for _, tst := range tests {
+		u, err := walker.ParseURL(tst.input)
+		if err != nil {
+			t.Fatalf("For tag %q ParseURL failed %v", tst.tag, err)
+		}
+		got := u.String()
+		if got != tst.expect {
+			t.Errorf("For tag %q link mismatch got %q, expected %q", tst.tag, got, tst.expect)
+		}
+	}
+}
+
 func TestBasicFetchManagerRun(t *testing.T) {
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("norobots.com").Once()
@@ -122,7 +180,7 @@ func TestBasicFetchManagerRun(t *testing.T) {
 		Body: "User-agent: *\nCrawl-delay: 1\n",
 	})
 
-	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 	rs.SetResponse("http://accept.com/robots.txt", &helpers.MockResponse{Status: 404})
 	rs.SetResponse("http://accept.com/accept_html.html", &helpers.MockResponse{
 		ContentType: "text/html; charset=ISO-8859-4",
@@ -228,9 +286,9 @@ func TestBasicFetchManagerRun(t *testing.T) {
 }
 
 func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = true
+	orig := walker.Config.Fetcher.BlacklistPrivateIPs
+	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
+	walker.Config.Fetcher.BlacklistPrivateIPs = true
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("private.com").Once()
@@ -265,9 +323,9 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 }
 
 func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = true
+	orig := walker.Config.Fetcher.BlacklistPrivateIPs
+	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
+	walker.Config.Fetcher.BlacklistPrivateIPs = true
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("a1234567890bcde.com").Once()
@@ -295,9 +353,9 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 }
 
 func TestFetcherCreatesTransport(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = false
+	orig := walker.Config.Fetcher.BlacklistPrivateIPs
+	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
+	walker.Config.Fetcher.BlacklistPrivateIPs = false
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("localhost.localdomain").Once()
@@ -497,10 +555,10 @@ func TestHrefWithSpace(t *testing.T) {
 }
 
 func TestHttpTimeout(t *testing.T) {
-	origTimeout := walker.Config.HttpTimeout
-	walker.Config.HttpTimeout = "200ms"
+	origTimeout := walker.Config.Fetcher.HttpTimeout
+	walker.Config.Fetcher.HttpTimeout = "200ms"
 	defer func() {
-		walker.Config.HttpTimeout = origTimeout
+		walker.Config.Fetcher.HttpTimeout = origTimeout
 	}()
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
@@ -577,14 +635,14 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
-	origHonorNoindex := walker.Config.HonorMetaNoindex
-	origHonorNofollow := walker.Config.HonorMetaNofollow
+	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.HonorMetaNoindex = origHonorNoindex
-		walker.Config.HonorMetaNofollow = origHonorNofollow
+		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.HonorMetaNoindex = true
-	walker.Config.HonorMetaNofollow = true
+	walker.Config.Fetcher.HonorMetaNoindex = true
+	walker.Config.Fetcher.HonorMetaNofollow = true
 
 	const nofollowHtml string = `<!DOCTYPE html>
 <html>
@@ -703,11 +761,11 @@ func TestMetaNos(t *testing.T) {
 }
 
 func TestFetchManagerFastShutdown(t *testing.T) {
-	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
+	origDefaultCrawlDelay := walker.Config.Fetcher.DefaultCrawlDelay
 	defer func() {
-		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
+		walker.Config.Fetcher.DefaultCrawlDelay = origDefaultCrawlDelay
 	}()
-	walker.Config.DefaultCrawlDelay = "1s"
+	walker.Config.Fetcher.DefaultCrawlDelay = "1s"
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("test.com").Once()
@@ -752,14 +810,14 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 }
 
 func TestObjectEmbedIframeTags(t *testing.T) {
-	origHonorNoindex := walker.Config.HonorMetaNoindex
-	origHonorNofollow := walker.Config.HonorMetaNofollow
+	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.HonorMetaNoindex = origHonorNoindex
-		walker.Config.HonorMetaNofollow = origHonorNofollow
+		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.HonorMetaNoindex = true
-	walker.Config.HonorMetaNofollow = true
+	walker.Config.Fetcher.HonorMetaNoindex = true
+	walker.Config.Fetcher.HonorMetaNofollow = true
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -842,14 +900,14 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 }
 
 func TestPathInclusion(t *testing.T) {
-	origHonorNoindex := walker.Config.ExcludeLinkPatterns
-	origHonorNofollow := walker.Config.IncludeLinkPatterns
+	origHonorNoindex := walker.Config.Fetcher.ExcludeLinkPatterns
+	origHonorNofollow := walker.Config.Fetcher.IncludeLinkPatterns
 	defer func() {
-		walker.Config.ExcludeLinkPatterns = origHonorNoindex
-		walker.Config.IncludeLinkPatterns = origHonorNofollow
+		walker.Config.Fetcher.ExcludeLinkPatterns = origHonorNoindex
+		walker.Config.Fetcher.IncludeLinkPatterns = origHonorNofollow
 	}()
-	walker.Config.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
-	walker.Config.IncludeLinkPatterns = []string{`\.keep$`}
+	walker.Config.Fetcher.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
+	walker.Config.Fetcher.IncludeLinkPatterns = []string{`\.keep$`}
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -939,14 +997,14 @@ func TestMaxCrawlDealy(t *testing.T) {
 	// the host, and set a small MaxCrawlDelay in config. Then only allow the
 	// fetcher to run long enough to get all the links IF the fetcher is honoring
 	// the MaxCrawlDelay
-	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
-	origMaxCrawlDelay := walker.Config.MaxCrawlDelay
+	origDefaultCrawlDelay := walker.Config.Fetcher.DefaultCrawlDelay
+	origMaxCrawlDelay := walker.Config.Fetcher.MaxCrawlDelay
 	defer func() {
-		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
-		walker.Config.MaxCrawlDelay = origMaxCrawlDelay
+		walker.Config.Fetcher.DefaultCrawlDelay = origDefaultCrawlDelay
+		walker.Config.Fetcher.MaxCrawlDelay = origMaxCrawlDelay
 	}()
-	walker.Config.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
-	walker.Config.DefaultCrawlDelay = "0s"
+	walker.Config.Fetcher.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
+	walker.Config.Fetcher.DefaultCrawlDelay = "0s"
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("a.com").Once()
@@ -1220,6 +1278,7 @@ func TestNestedRobots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	rs.SetResponse("http://dom.com/robots.txt", &helpers.MockResponse{
 		Body: "User-agent: *\n",
 	})
@@ -1268,5 +1327,104 @@ func TestNestedRobots(t *testing.T) {
 		} else if !tst.fetched && req {
 			t.Errorf("Expected NOT to have requested link %q, but did", tst.link)
 		}
+	}
+}
+
+func TestMaxContentSize(t *testing.T) {
+	orig := walker.Config.Fetcher.MaxHTTPContentSizeBytes
+	defer func() {
+		walker.Config.Fetcher.MaxHTTPContentSizeBytes = orig
+	}()
+	walker.Config.Fetcher.MaxHTTPContentSizeBytes = 10
+
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	ds := &helpers.MockDatastore{}
+	ds.On("ClaimNewHost").Return("a.com").Once()
+	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
+		helpers.Parse("http://a.com/page1.html"),
+		helpers.Parse("http://a.com/page2.html"),
+	})
+	ds.On("UnclaimHost", "a.com").Return()
+
+	// This last call will make ClaimNewHost return "" on each subsequent call,
+	// which will put the fetcher to sleep.
+	ds.On("ClaimNewHost").Return("")
+
+	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+	ds.On("StoreParsedURL",
+		mock.AnythingOfType("*walker.URL"),
+		mock.AnythingOfType("*walker.FetchResults")).Return()
+
+	h := &helpers.MockHandler{}
+	h.On("HandleResponse", mock.Anything).Return()
+
+	rs, err := helpers.NewMockRemoteServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
+	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{
+		Body: html,
+	})
+	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{
+		Body:          "0123456789 ",
+		ContentType:   "text/html",
+		ContentLength: 11,
+	})
+
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: helpers.GetFakeTransport(),
+	}
+
+	go manager.Start()
+	time.Sleep(time.Second * 1)
+	manager.Stop()
+	rs.Stop()
+
+	if len(h.Calls) != 0 {
+		links := ""
+		for _, call := range h.Calls {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			links += "\t"
+			links += fr.URL.String()
+			links += "\n"
+		}
+		t.Fatalf("Expected handler to be called 0 times, instead it was called %d times for links\n%s\n", len(h.Calls), links)
+	}
+
+	page1Ok := false
+	page2Ok := false
+	for _, call := range ds.Calls {
+		if call.Method == "StoreURLFetchResults" {
+			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			link := fr.URL.String()
+			switch link {
+			case "http://a.com/page1.html":
+				page1Ok = true
+			case "http://a.com/page2.html":
+				page2Ok = true
+			default:
+				t.Errorf("Unexpected stored url %q", link)
+			}
+		}
+	}
+	if !page1Ok {
+		t.Errorf("Didn't find link http://a.com/page1.html in datastore calls, but expected too")
+	}
+	if !page2Ok {
+		t.Errorf("Didn't find link http://a.com/page2.html in datastore calls, but expected too")
 	}
 }

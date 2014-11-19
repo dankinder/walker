@@ -6,72 +6,71 @@
 # defaults. If no walker.yaml file is provided, or if keys are left out, then
 # these values will be used.
 
-# Whether to dynamically add new-found domains (or their links) to the crawl (a
-# broad crawl) or discard them, assuming desired domains are manually seeded.
-add_new_domains: false
 
-# The number of entries to keep in the cassandra datastore's LRU cache of
-# domains, preventing us from querying too frequently to see if we already have
-# them.
-added_domains_cache_size: 20000
 
-# Maximum number of entries to hold when we cache domain name resolutions
-max_dns_cache_entries: 20000
+fetcher:
+    # Maximum number of entries to hold when we cache domain name resolutions
+    max_dns_cache_entries: 20000
 
-# Configure the User-Agent header
-user_agent: Walker (http://github.com/iParadigms/walker)
+    # Configure the User-Agent header
+    user_agent: Walker (http://github.com/iParadigms/walker)
 
-# Configure which formats this crawler Accepts
-accept_formats: ["text/html", "text/*"]
+    # Configure which formats this crawler Accepts
+    accept_formats: ["text/html", "text/*"]
 
-# Which link to accept based on protocol (a.k.a. schema)
-accept_protocols: ["http", "https"]
+    # Which link to accept based on protocol (a.k.a. schema)
+    accept_protocols: ["http", "https"]
 
-# Maximum size of http content
-max_http_content_size_bytes: 20971520 # 20MB
+    # Maximum size of http content
+    max_http_content_size_bytes: 20971520 # 20MB
 
-# For the purpose of parsing out links for crawling, walker looks at the
-# following tags:
-#   - a, area, form, frame, iframe, script, link, img
-# It ignores several by default.
-ignore_tags: [script, img, link]
+    # For the purpose of parsing out links for crawling, walker looks at the
+    # following tags:
+    #   - a, area, form, frame, iframe, script, link, img
+    # It ignores several by default.
+    ignore_tags: [script, img, link]
 
-# The maximum number of links to parse from a page for further crawling.
-max_links_per_page: 1000
+    # The maximum number of links to parse from a page for further crawling.
+    max_links_per_page: 1000
 
-# How many simultaneous fetchers will your crawlmanager run
-num_simultaneous_fetchers: 10
+    # How many simultaneous fetchers will your crawlmanager run
+    num_simultaneous_fetchers: 10
 
-# If true, walker will not crawl domains that resolve in private IP ranges
-blacklist_private_ips: true
+    # If true, walker will not crawl domains that resolve in private IP ranges
+    blacklist_private_ips: true
 
-# The duration the the complete http-Get is allowed to run before being
-# canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
-http_timeout: 30s
+    # The duration the the complete http-Get is allowed to run before being
+    # canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
+    http_timeout: 30s
 
-# If true, walker will honor the website authors 
-# <meta name="ROBOTS" content="noindex"> tags
-honor_meta_noindex: true
+    # If true, walker will honor the website authors 
+    # <meta name="ROBOTS" content="noindex"> tags
+    honor_meta_noindex: true
 
-# If true, walker will honor the website authors 
-# <meta name="ROBOTS" content="nofollow"> tags
-honor_meta_nofollow: false
+    # If true, walker will honor the website authors 
+    # <meta name="ROBOTS" content="nofollow"> tags
+    honor_meta_nofollow: false
 
-# A list of regex patterns to exclude from the crawl. If a link matches a
-# pattern in this list, but not one in the include_link_patterns
-# list, than it is excluded.
-exclude_link_patterns: []
+    # A list of regex patterns to exclude from the crawl. If a link matches a
+    # pattern in this list, but not one in the include_link_patterns
+    # list, than it is excluded.
+    exclude_link_patterns: []
 
-# A list of regex patterns that override excludes listed in exclude_link_patterns
-include_link_patterns: []
+    # A list of regex patterns that override excludes listed in exclude_link_patterns
+    include_link_patterns: []
 
-# Crawl delay duration to use when unspecified by robots.txt. 
-default_crawl_delay: 1s
+    # Crawl delay duration to use when unspecified by robots.txt. 
+    default_crawl_delay: 1s
 
-# Max crawl delay accepted. To compute the actual crawl delay, walker will use
-# the minimum of max_crawl_delay, and the Crawl-Delay header read out of a
-# site's robots.txt file.
-max_crawl_delay: 5m
+    # Max crawl delay accepted. To compute the actual crawl delay, walker will use
+    # the minimum of max_crawl_delay, and the Crawl-Delay header read out of a
+    # site's robots.txt file.
+    max_crawl_delay: 5m
+
+    # List of session ids to purge from a URL during normalization. If X is in purge_sid_list,
+    # than both http://a.com/path;X=----- and http://a.com/path?X=---- will be turned into
+    # http://a.com/path
+    purge_sid_list: ["jsessionid", "phpsessid", "aspsessionid"]
 
 # Dispatcher configuration
 dispatcher:
@@ -112,6 +111,15 @@ cassandra:
 
     # replication_factor is used when defining the initial keyspace.
     replication_factor: 3
+
+    # Whether to dynamically add new-found domains (or their links) to the crawl (a
+    # broad crawl) or discard them, assuming desired domains are manually seeded.
+    add_new_domains: false
+
+    # The number of entries to keep in the cassandra datastore's LRU cache of
+    # domains, preventing us from querying too frequently to see if we already have
+    # them.
+    added_domains_cache_size: 20000
 
 # Console specific config
 console:

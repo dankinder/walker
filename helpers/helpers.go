@@ -213,11 +213,8 @@ func Parse(ref string) *walker.URL {
 // UrlParse is similar to `parse` but gives a Go builtin URL type (not a walker
 // URL)
 func UrlParse(ref string) *url.URL {
-	u, err := url.Parse(ref)
-	if err != nil {
-		panic("Failed to parse url.URL: " + ref)
-	}
-	return u
+	u := Parse(ref)
+	return u.URL
 }
 
 func Response404() *http.Response {

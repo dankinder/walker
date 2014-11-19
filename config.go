@@ -34,25 +34,28 @@ func init() {
 // walker. It reads values straight from the config file (walker.yaml by
 // default). See sample-walker.yaml for explanations and default values.
 type WalkerConfig struct {
-	AddNewDomains           bool     `yaml:"add_new_domains"`
-	AddedDomainsCacheSize   int      `yaml:"added_domains_cache_size"`
-	MaxDNSCacheEntries      int      `yaml:"max_dns_cache_entries"`
-	UserAgent               string   `yaml:"user_agent"`
-	AcceptFormats           []string `yaml:"accept_formats"`
-	AcceptProtocols         []string `yaml:"accept_protocols"`
-	MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
-	IgnoreTags              []string `yaml:"ignore_tags"`
+
 	//TODO: allow -1 as a no max value
-	MaxLinksPerPage         int      `yaml:"max_links_per_page"`
-	NumSimultaneousFetchers int      `yaml:"num_simultaneous_fetchers"`
-	BlacklistPrivateIPs     bool     `yaml:"blacklist_private_ips"`
-	HttpTimeout             string   `yaml:"http_timeout"`
-	HonorMetaNoindex        bool     `yaml:"honor_meta_noindex"`
-	HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
-	ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
-	IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
-	DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
-	MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
+
+	Fetcher struct {
+		MaxDNSCacheEntries      int      `yaml:"max_dns_cache_entries"`
+		UserAgent               string   `yaml:"user_agent"`
+		AcceptFormats           []string `yaml:"accept_formats"`
+		AcceptProtocols         []string `yaml:"accept_protocols"`
+		MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
+		IgnoreTags              []string `yaml:"ignore_tags"`
+		MaxLinksPerPage         int      `yaml:"max_links_per_page"`
+		NumSimultaneousFetchers int      `yaml:"num_simultaneous_fetchers"`
+		BlacklistPrivateIPs     bool     `yaml:"blacklist_private_ips"`
+		HttpTimeout             string   `yaml:"http_timeout"`
+		HonorMetaNoindex        bool     `yaml:"honor_meta_noindex"`
+		HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
+		ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
+		IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
+		DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
+		MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
+		PurgeSidList            []string `yaml:"purge_sid_list"`
+	} `yaml:"fetcher"`
 
 	Dispatcher struct {
 		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
@@ -61,31 +64,20 @@ type WalkerConfig struct {
 		MinLinkRefreshTime   string  `yaml:"min_link_refresh_time"`
 	} `yaml:"dispatcher"`
 
-	// TODO: consider these config items
-	// allowed schemes (file://, https://, etc.)
-	// allowed return content types (or file extensions)
-	// http timeout
-	// http max delays (how many attempts to give a webserver that's reporting 'busy')
-	// http content size limit
-	// ftp content limit
-	// ftp timeout
-	// regex matchers for hosts, paths, etc. to include or exclude
-	// max crawl delay (exclude or notify of sites that try to set a massive crawl delay)
-	// max simultaneous fetches/crawls/segments
-
 	Cassandra struct {
-		Hosts             []string `yaml:"hosts"`
-		Keyspace          string   `yaml:"keyspace"`
-		ReplicationFactor int      `yaml:"replication_factor"`
-		Timeout           string   `yaml:"timeout"`
-		CQLVersion        string   `yaml:"cql_version"`
-		ProtoVersion      int      `yaml:"proto_version"`
-		Port              int      `yaml:"port"`
-		NumConns          int      `yaml:"num_conns"`
-		NumStreams        int      `yaml:"num_streams"`
-		DiscoverHosts     bool     `yaml:"discover_hosts"`
-		MaxPreparedStmts  int      `yaml:"max_prepared_stmts"`
-
+		Hosts                 []string `yaml:"hosts"`
+		Keyspace              string   `yaml:"keyspace"`
+		ReplicationFactor     int      `yaml:"replication_factor"`
+		Timeout               string   `yaml:"timeout"`
+		CQLVersion            string   `yaml:"cql_version"`
+		ProtoVersion          int      `yaml:"proto_version"`
+		Port                  int      `yaml:"port"`
+		NumConns              int      `yaml:"num_conns"`
+		NumStreams            int      `yaml:"num_streams"`
+		DiscoverHosts         bool     `yaml:"discover_hosts"`
+		MaxPreparedStmts      int      `yaml:"max_prepared_stmts"`
+		AddNewDomains         bool     `yaml:"add_new_domains"`
+		AddedDomainsCacheSize int      `yaml:"added_domains_cache_size"`
 		//TODO: Currently only exposing values needed for testing; should expose more?
 		//Consistency      Consistency
 		//Compressor       Compressor
@@ -113,24 +105,23 @@ func SetDefaultConfig() {
 	// nil it and then fill in the default value if yaml.Unmarshal did not fill
 	// anything in
 
-	Config.AddNewDomains = false
-	Config.AddedDomainsCacheSize = 20000
-	Config.MaxDNSCacheEntries = 20000
-	Config.UserAgent = "Walker (http://github.com/iParadigms/walker)"
-	Config.AcceptFormats = []string{"text/html", "text/*;"} //NOTE you can add quality factors by doing "text/html; q=0.4"
-	Config.AcceptProtocols = []string{"http", "https"}
-	Config.MaxHTTPContentSizeBytes = 20 * 1024 * 1024 // 20MB
-	Config.IgnoreTags = []string{"script", "img", "link"}
-	Config.MaxLinksPerPage = 1000
-	Config.NumSimultaneousFetchers = 10
-	Config.BlacklistPrivateIPs = true
-	Config.HttpTimeout = "30s"
-	Config.HonorMetaNoindex = true
-	Config.HonorMetaNofollow = false
-	Config.ExcludeLinkPatterns = nil
-	Config.IncludeLinkPatterns = nil
-	Config.DefaultCrawlDelay = "1s"
-	Config.MaxCrawlDelay = "5m"
+	Config.Fetcher.MaxDNSCacheEntries = 20000
+	Config.Fetcher.UserAgent = "Walker (http://github.com/iParadigms/walker)"
+	Config.Fetcher.AcceptFormats = []string{"text/html", "text/*;"} //NOTE you can add quality factors by doing "text/html; q=0.4"
+	Config.Fetcher.AcceptProtocols = []string{"http", "https"}
+	Config.Fetcher.MaxHTTPContentSizeBytes = 20 * 1024 * 1024 // 20MB
+	Config.Fetcher.IgnoreTags = []string{"script", "img", "link"}
+	Config.Fetcher.MaxLinksPerPage = 1000
+	Config.Fetcher.NumSimultaneousFetchers = 10
+	Config.Fetcher.BlacklistPrivateIPs = true
+	Config.Fetcher.HttpTimeout = "30s"
+	Config.Fetcher.HonorMetaNoindex = true
+	Config.Fetcher.HonorMetaNofollow = false
+	Config.Fetcher.ExcludeLinkPatterns = nil
+	Config.Fetcher.IncludeLinkPatterns = nil
+	Config.Fetcher.DefaultCrawlDelay = "1s"
+	Config.Fetcher.MaxCrawlDelay = "5m"
+	Config.Fetcher.PurgeSidList = nil
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -148,6 +139,8 @@ func SetDefaultConfig() {
 	Config.Cassandra.NumStreams = 128
 	Config.Cassandra.DiscoverHosts = false
 	Config.Cassandra.MaxPreparedStmts = 1000
+	Config.Cassandra.AddNewDomains = false
+	Config.Cassandra.AddedDomainsCacheSize = 20000
 
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"
@@ -171,6 +164,8 @@ func MustReadConfigFile(path string) {
 
 func assertConfigInvariants() error {
 	var errs []string
+	var err error
+
 	dis := &Config.Dispatcher
 	if dis.RefreshPercentage < 0.0 || dis.RefreshPercentage > 100.0 {
 		errs = append(errs, "Dispatcher.RefreshPercentage must be a floating point number b/w 0 and 100")
@@ -181,44 +176,39 @@ func assertConfigInvariants() error {
 	if dis.NumConcurrentDomains < 1 {
 		errs = append(errs, "Dispatcher.NumConcurrentDomains must be greater than 0")
 	}
+	_, err = time.ParseDuration(dis.MinLinkRefreshTime)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
+	}
 
-	_, err := time.ParseDuration(Config.HttpTimeout)
+	fet := &Config.Fetcher
+	_, err = time.ParseDuration(fet.HttpTimeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("HttpTimeout failed to parse: %v", err))
+	}
+	_, err = aggregateRegex(fet.ExcludeLinkPatterns, "exclude_link_patterns")
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	_, err = aggregateRegex(fet.IncludeLinkPatterns, "include_link_patterns")
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	def, err := time.ParseDuration(fet.DefaultCrawlDelay)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("DefaultCrawlDelay failed to parse: %v", err))
+	}
+	max, err := time.ParseDuration(fet.MaxCrawlDelay)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("MaxCrawlDelay failed to parse: %v", err))
+	}
+	if def > max {
+		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
 	}
 
 	_, err = time.ParseDuration(Config.Cassandra.Timeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
-	}
-
-	_, err = aggregateRegex(Config.ExcludeLinkPatterns, "exclude_link_patterns")
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-
-	_, err = aggregateRegex(Config.IncludeLinkPatterns, "include_link_patterns")
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-
-	_, err = time.ParseDuration(Config.Dispatcher.MinLinkRefreshTime)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
-	}
-
-	def, err := time.ParseDuration(Config.DefaultCrawlDelay)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("DefaultCrawlDelay failed to parse: %v", err))
-	}
-
-	max, err := time.ParseDuration(Config.MaxCrawlDelay)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("MaxCrawlDelay failed to parse: %v", err))
-	}
-
-	if def > max {
-		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
 	}
 
 	if len(errs) > 0 {
@@ -235,13 +225,27 @@ func assertConfigInvariants() error {
 	return nil
 }
 
+// This function allows code to set up data structures that depend on the
+// config. It is always called right after the config file is consumed. But
+// it's also public so if you modify the config in a test, you may need to
+// call this function. This function is idempotent; so you can call it as many
+// times as you like.
+func PostConfigHooks() {
+	err := setupParseURL()
+	if err != nil {
+		panic(err)
+	}
+}
+
 func readConfig() error {
 	SetDefaultConfig()
 
 	// See NOTE in SetDefaultConfig regarding sequence values
-	Config.AcceptFormats = []string{}
-	Config.AcceptProtocols = []string{}
-	Config.IgnoreTags = []string{}
+	Config.Fetcher.AcceptFormats = []string{}
+	Config.Fetcher.AcceptProtocols = []string{}
+	Config.Fetcher.IgnoreTags = []string{}
+	Config.Fetcher.PurgeSidList = []string{}
+
 	Config.Cassandra.Hosts = []string{}
 
 	data, err := ioutil.ReadFile(ConfigName)
@@ -254,15 +258,20 @@ func readConfig() error {
 	}
 
 	// See NOTE in SetDefaultConfig regarding sequence values
-	if len(Config.AcceptFormats) == 0 {
-		Config.AcceptFormats = []string{"text/html", "text/*;"}
+	fet := &Config.Fetcher
+	if len(fet.AcceptFormats) == 0 {
+		fet.AcceptFormats = []string{"text/html", "text/*;"}
 	}
-	if len(Config.AcceptProtocols) == 0 {
-		Config.AcceptProtocols = []string{"http", "https"}
+	if len(fet.AcceptProtocols) == 0 {
+		fet.AcceptProtocols = []string{"http", "https"}
 	}
-	if len(Config.IgnoreTags) == 0 {
-		Config.IgnoreTags = []string{"script", "img", "link"}
+	if len(fet.IgnoreTags) == 0 {
+		fet.IgnoreTags = []string{"script", "img", "link"}
 	}
+	if len(fet.PurgeSidList) == 0 {
+		fet.PurgeSidList = []string{"jsessionid", "phpsessid", "aspsessionid"}
+	}
+
 	if len(Config.Cassandra.Hosts) == 0 {
 		Config.Cassandra.Hosts = []string{"localhost"}
 	}
@@ -271,5 +280,8 @@ func readConfig() error {
 	if err != nil {
 		log4go.Info("Loaded config file %v", ConfigName)
 	}
+
+	PostConfigHooks()
+
 	return err
 }
