@@ -578,6 +578,12 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 
 			PerHost{
 				domain: "a1234567890bcde.com",
+				links: []PerLink{
+					PerLink{
+						url:      "http://a1234567890bcde.com/page1.html",
+						response: &helpers.MockResponse{Status: 404},
+					},
+				},
 			},
 		},
 	}
@@ -591,30 +597,6 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 	results.assertExpectations(t)
 	results.datastore.AssertNotCalled(t, "LinksForHost", "private.com")
 }
-
-// func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
-// 	orig := walker.Config.BlacklistPrivateIPs
-// 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-// 	walker.Config.BlacklistPrivateIPs = true
-
-// 	tests := TestSpec{
-// 		hasNoLinks: true,
-// 		perHost: []PerHost{
-// 			PerHost{
-// 				domain: "a1234567890bcde.com",
-// 				links: []PerLink{
-// 					PerLink{
-// 						url:      "http://a1234567890bcde.com/",
-// 						response: &helpers.MockResponse{Status: 404},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
-
-// 	results := runFetcher(tests, defaultSleep, t)
-// 	results.assertExpectations(t)
-// }
 
 func TestFetcherCreatesTransport(t *testing.T) {
 	orig := walker.Config.Fetcher.BlacklistPrivateIPs
@@ -1114,59 +1096,38 @@ func TestPathInclusion(t *testing.T) {
 </body>
 </html>`
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("t1.com").Once()
-	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		helpers.Parse("http://t1.com/target.html"),
-	})
-	ds.On("UnclaimHost", "t1.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "t1.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://t1.com/target.html",
+						response: &helpers.MockResponse{
+							Body: html,
+						},
+					},
+				},
+			},
+		},
 	}
-	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
-		Body: html,
-	})
+
+	results := runFetcher(tests, defaultSleep, t)
+
 	expectedPaths := map[string]bool{
 		"/foo/bar.html":      true,
 		"/foo/mov.bar":       true,
 		"/foo/bang/baz.keep": true,
 		"/root/more":         true,
 	}
-	for path := range expectedPaths {
-		rs.SetResponse(fmt.Sprintf("http://t1.com%s", path), &helpers.MockResponse{Status: 404})
-	}
 
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
-
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-
-	rs.Stop()
-
-	for _, call := range ds.Calls {
-		if call.Method == "StoreParsedURL" {
-			u := call.Arguments.Get(0).(*walker.URL)
-			if expectedPaths[u.RequestURI()] {
-				delete(expectedPaths, u.RequestURI())
-			} else {
-				t.Errorf("Unexected call to StoreParsedURL for link %v", u)
-			}
+	ulst, _ := results.dsStoreParsedURLCalls()
+	for _, u := range ulst {
+		if expectedPaths[u.RequestURI()] {
+			delete(expectedPaths, u.RequestURI())
+		} else {
+			t.Errorf("Unexected call to StoreParsedURL for link %v", u)
 		}
 	}
 
@@ -1190,48 +1151,34 @@ func TestMaxCrawlDelay(t *testing.T) {
 	walker.Config.Fetcher.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
 	walker.Config.Fetcher.DefaultCrawlDelay = "0s"
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("a.com").Once()
-	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
-		helpers.Parse("http://a.com/page1.html"),
-		helpers.Parse("http://a.com/page2.html"),
-		helpers.Parse("http://a.com/page3.html"),
-	})
-	ds.On("UnclaimHost", "a.com").Return()
-
-	// This last call will make ClaimNewHost return "" on each subsequent call,
-	// which will put the fetcher to sleep.
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{
-		Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
-	})
-	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://a.com/page3.html", &helpers.MockResponse{Status: 404})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "a.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://a.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
+						},
+						hidden: true,
+					},
+					PerLink{
+						url: "http://a.com/page1.html",
+					},
+					PerLink{
+						url: "http://a.com/page2.html",
+					},
+					PerLink{
+						url: "http://a.com/page3.html",
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(time.Second * 1)
-	manager.Stop()
-	rs.Stop()
+	results := runFetcher(tests, time.Second, t)
 
 	expectedPages := map[string]bool{
 		"/page1.html": true,
@@ -1239,22 +1186,19 @@ func TestMaxCrawlDelay(t *testing.T) {
 		"/page3.html": true,
 	}
 
-	for _, call := range ds.Calls {
-		if call.Method == "StoreURLFetchResults" {
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			domain, err := fr.URL.ToplevelDomainPlusOne()
-			if err != nil {
-				panic(err)
-			}
-			path := fr.URL.RequestURI()
-			if domain != "a.com" {
-				t.Fatalf("Domain mismatch -- this shouldn't happen")
-			}
-			if !expectedPages[path] {
-				t.Errorf("Path mistmatch, didn't find path %q in expectedPages", path)
-			} else {
-				delete(expectedPages, path)
-			}
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		domain, err := fr.URL.ToplevelDomainPlusOne()
+		if err != nil {
+			panic(err)
+		}
+		path := fr.URL.RequestURI()
+		if domain != "a.com" {
+			t.Fatalf("Domain mismatch -- this shouldn't happen")
+		}
+		if !expectedPages[path] {
+			t.Errorf("Path mistmatch, didn't find path %q in expectedPages", path)
+		} else {
+			delete(expectedPages, path)
 		}
 	}
 
