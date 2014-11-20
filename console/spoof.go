@@ -56,14 +56,10 @@ func spoofDataLong() {
 		panic(err)
 	}
 
-	//
-	// Build data store
-	//
-	ds, err := NewCqlModel()
+	db, err := cassandra.GetConfig().CreateSession()
 	if err != nil {
-		panic(fmt.Errorf("Failed to start data source: %v", err))
+		panic(err)
 	}
-	db := ds.Db
 
 	//
 	// Clear out the tables first
