@@ -134,6 +134,31 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 	self.handler.AssertExpectations(t)
 }
 
+func singlePerHost(link string, response *helpers.MockResponse) PerHost {
+	u := helpers.Parse(link)
+	domain, err := u.ToplevelDomainPlusOne()
+	if err != nil {
+		panic(err)
+	}
+
+	return PerHost{
+		domain: domain,
+		links: []PerLink{
+			PerLink{
+				url:      link,
+				response: response,
+			},
+		},
+	}
+
+}
+
+func singlePerHostArr(link string, response *helpers.MockResponse) []PerHost {
+	return []PerHost{
+		singlePerHost(link, response),
+	}
+}
+
 func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults {
 
 	//
@@ -495,20 +520,9 @@ func TestBasicLinkTest(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-
-		perHost: []PerHost{
-			PerHost{
-				domain: "linktests.com",
-				links: []PerLink{
-					PerLink{
-						url: "http://linktests.com/links/test.html",
-						response: &helpers.MockResponse{
-							Body: html_test_links,
-						},
-					},
-				},
-			},
-		},
+		perHost: singlePerHostArr("http://linktests.com/links/test.html", &helpers.MockResponse{
+			Body: html_test_links,
+		}),
 	}
 
 	//
@@ -564,27 +578,8 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 	tests := TestSpec{
 		hasNoLinks: true,
 		perHost: []PerHost{
-			PerHost{
-				domain: "private.com",
-				links: []PerLink{
-					PerLink{
-						url: "http://private.com/page1.html",
-						response: &helpers.MockResponse{
-							Body: html_test_links,
-						},
-					},
-				},
-			},
-
-			PerHost{
-				domain: "a1234567890bcde.com",
-				links: []PerLink{
-					PerLink{
-						url:      "http://a1234567890bcde.com/page1.html",
-						response: &helpers.MockResponse{Status: 404},
-					},
-				},
-			},
+			singlePerHost("http://private.com/page1.html", &helpers.MockResponse{Body: html_test_links}),
+			singlePerHost("http://a1234567890bcde.com/page1.html", &helpers.MockResponse{Status: 404}),
 		},
 	}
 
@@ -606,17 +601,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks:    false,
 		suppressTransport: true,
-		perHost: []PerHost{
-			PerHost{
-				domain: "localhost.localdomain",
-				links: []PerLink{
-					PerLink{
-						url:      "http://localhost.localdomain/",
-						response: &helpers.MockResponse{Status: 404},
-					},
-				},
-			},
-		},
+		perHost:           singlePerHostArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -651,16 +636,7 @@ func TestRedirects(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		transport:      &roundTriper,
-		perHost: []PerHost{
-			PerHost{
-				domain: "dom.com",
-				links: []PerLink{
-					PerLink{
-						url: link(1),
-					},
-				},
-			},
-		},
+		perHost:        singlePerHostArr(link(1), nil),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -709,20 +685,10 @@ func TestHrefWithSpace(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
-				domain: "t.com",
-				links: []PerLink{
-					PerLink{
-						url: testPage,
-						response: &helpers.MockResponse{
-							ContentType: "text/html",
-							Body:        html_with_href_space,
-						},
-					},
-				},
-			},
-		},
+		perHost: singlePerHostArr(testPage, &helpers.MockResponse{
+			ContentType: "text/html",
+			Body:        html_with_href_space,
+		}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -789,32 +755,9 @@ func TestHttpTimeout(t *testing.T) {
 			transport:          transport,
 			suppressMockServer: true,
 			perHost: []PerHost{
-				PerHost{
-					domain: "t1.com",
-					links: []PerLink{
-						PerLink{
-							url: "http://t1.com/page1.html",
-						},
-					},
-				},
-
-				PerHost{
-					domain: "t2.com",
-					links: []PerLink{
-						PerLink{
-							url: "http://t2.com/page1.html",
-						},
-					},
-				},
-
-				PerHost{
-					domain: "t3.com",
-					links: []PerLink{
-						PerLink{
-							url: "http://t3.com/page1.html",
-						},
-					},
-				},
+				singlePerHost("http://t1.com/page1.html", nil),
+				singlePerHost("http://t2.com/page1.html", nil),
+				singlePerHost("http://t3.com/page1.html", nil),
 			},
 		}
 
@@ -1029,19 +972,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	// are failing. But the version I have above does work (even though it's wonky)
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
-				domain: "t1.com",
-				links: []PerLink{
-					PerLink{
-						url: "http://t1.com/target.html",
-						response: &helpers.MockResponse{
-							Body: html,
-						},
-					},
-				},
-			},
-		},
+		perHost:        singlePerHostArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, 250*time.Millisecond, t)
@@ -1098,19 +1029,7 @@ func TestPathInclusion(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
-				domain: "t1.com",
-				links: []PerLink{
-					PerLink{
-						url: "http://t1.com/target.html",
-						response: &helpers.MockResponse{
-							Body: html,
-						},
-					},
-				},
-			},
-		},
+		perHost:        singlePerHostArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
