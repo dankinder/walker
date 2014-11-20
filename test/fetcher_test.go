@@ -18,68 +18,26 @@ import (
 
 const defaultSleep time.Duration = time.Millisecond * 40
 
-const html_body string = `<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>Test norobots site</title>
-</head>
-
-<div id="menu">
-	<a href="/dir1/">Dir1</a>
-	<a href="/dir2/">Dir2</a>
-	<a id="other" href="http://other.com/" title="stuff">Other</a>
-</div>
-</html>`
-
-const html_body_nolinks string = `<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>No Links</title>
-</head>
-<div id="menu">
-</div>
-</html>`
-
-const html_test_links string = `<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>Test links page</title>
-</head>
-
-<div id="menu">
-	<a href="relative-dir/">link</a>
-	<a href="relative-page/page.html">link</a>
-	<a href="/abs-relative-dir/">link</a>
-	<a href="/abs-relative-page/page.html">link</a>
-	<a href="https://other.org/abs-dir/">link</a>
-	<a href="https://other.org/abs-page/page.html">link</a>
-	<a href="javascript:doStuff();">link</a>
-	<a href="ftp:ignoreme.zip;">link</a>
-	<a href="ftP:ignoreme.zip;">link</a>
-	<a href="hTTP:donot/ignore.html">link</a>
-</div>
-</html>`
-
 func init() {
 	helpers.LoadTestConfig("test-walker.yaml")
 }
 
-type PerLink struct {
+//
+// Test table structs
+//
+type LinkSpec struct {
 	url         string
 	lastCrawled time.Time
 	response    *helpers.MockResponse
-	hidden      bool
+	robots      bool
 }
 
-type PerHost struct {
+type HostSpec struct {
 	domain string
-	links  []PerLink
+	links  []LinkSpec
 }
 type TestSpec struct {
-	perHost []PerHost
+	perHost []HostSpec
 
 	// Flags that control how runFetcher does it's job
 	hasParsedLinks     bool
@@ -89,6 +47,9 @@ type TestSpec struct {
 	suppressMockServer bool
 }
 
+//
+// Test result class
+//
 type TestResults struct {
 	server    *helpers.MockRemoteServer
 	datastore *helpers.MockDatastore
@@ -135,17 +96,20 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 	self.handler.AssertExpectations(t)
 }
 
-func singlePerHost(link string, response *helpers.MockResponse) PerHost {
+//
+// Couple convenience functions to generate HostSpecs in one line.
+//
+func singleLinkHostSpec(link string, response *helpers.MockResponse) HostSpec {
 	u := helpers.Parse(link)
 	domain, err := u.ToplevelDomainPlusOne()
 	if err != nil {
 		panic(err)
 	}
 
-	return PerHost{
+	return HostSpec{
 		domain: domain,
-		links: []PerLink{
-			PerLink{
+		links: []LinkSpec{
+			LinkSpec{
 				url:      link,
 				response: response,
 			},
@@ -154,12 +118,16 @@ func singlePerHost(link string, response *helpers.MockResponse) PerHost {
 
 }
 
-func singlePerHostArr(link string, response *helpers.MockResponse) []PerHost {
-	return []PerHost{
-		singlePerHost(link, response),
+func singleLinkHostSpecArr(link string, response *helpers.MockResponse) []HostSpec {
+	return []HostSpec{
+		singleLinkHostSpec(link, response),
 	}
 }
 
+//
+// runFetcher interprets a TestSpec and runs a FetchManager in accordance with
+// that specification.
+//
 func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults {
 
 	//
@@ -197,7 +165,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		ds.On("ClaimNewHost").Return(host.domain).Once()
 		var urls []*walker.URL
 		for _, link := range host.links {
-			if !link.hidden {
+			if !link.robots {
 				u := helpers.Parse(link.url)
 				zero := time.Time{}
 				if link.lastCrawled != zero {
@@ -223,23 +191,19 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Run the manager
 	//
-	var manager *walker.FetchManager
-	if test.suppressTransport {
-		manager = &walker.FetchManager{
-			Datastore: ds,
-			Handler:   h,
+	var transport http.RoundTripper
+	if !test.suppressTransport {
+		if test.transport != nil {
+			transport = test.transport
+		} else {
+			transport = helpers.GetFakeTransport()
 		}
-	} else {
-		trans := test.transport
-		if trans == nil {
-			trans = helpers.GetFakeTransport()
-		}
+	}
 
-		manager = &walker.FetchManager{
-			Datastore: ds,
-			Handler:   h,
-			Transport: trans,
-		}
+	manager := &walker.FetchManager{
+		Datastore: ds,
+		Handler:   h,
+		Transport: transport,
 	}
 
 	go manager.Start()
@@ -318,25 +282,39 @@ func TestUrlParsing(t *testing.T) {
 	}
 }
 func TestBasicNoRobots(t *testing.T) {
+	const html_body string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Test norobots site</title>
+</head>
+
+<div id="menu">
+	<a href="/dir1/">Dir1</a>
+	<a href="/dir2/">Dir2</a>
+	<a id="other" href="http://other.com/" title="stuff">Other</a>
+</div>
+</html>`
+
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "norobots.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url:      "http://norobots.com/robots.txt",
 						response: &helpers.MockResponse{Status: 404},
-						hidden:   true,
+						robots:   true,
 					},
-					PerLink{
+					LinkSpec{
 						url:      "http://norobots.com/page1.html",
 						response: &helpers.MockResponse{Body: html_body},
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://norobots.com/page2.html",
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://norobots.com/page3.html",
 					},
 				},
@@ -353,8 +331,18 @@ func TestBasicNoRobots(t *testing.T) {
 	// Make sure expected results are there
 	//
 
+	expected := map[string]bool{
+		"http://norobots.com/page1.html": true,
+		"http://norobots.com/page2.html": true,
+		"http://norobots.com/page3.html": true,
+	}
+
 	for _, fr := range results.handlerCalls() {
-		switch fr.URL.String() {
+		link := fr.URL.String()
+		if expected[link] {
+			delete(expected, link)
+		}
+		switch link {
 		case "http://norobots.com/page1.html":
 			contents, _ := ioutil.ReadAll(fr.Response.Body)
 			if string(contents) != html_body {
@@ -368,29 +356,33 @@ func TestBasicNoRobots(t *testing.T) {
 		}
 	}
 
+	for link := range expected {
+		t.Errorf("Expected to find %q in handlerCalls, but didn't", link)
+	}
+
 	results.assertExpectations(t)
 }
 
 func TestBasicRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "robotsdelay1.com",
-				links: []PerLink{
+				links: []LinkSpec{
 
-					PerLink{
+					LinkSpec{
 						url: "http://robotsdelay1.com/robots.txt",
 						response: &helpers.MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 1\n",
 						},
-						hidden: true,
+						robots: true,
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://robotsdelay1.com/page4.html",
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://robotsdelay1.com/page5.html",
 					},
 				},
@@ -406,9 +398,16 @@ func TestBasicRobots(t *testing.T) {
 	//
 	// Make sure expected results are there
 	//
-	count := 0
+	expected := map[string]bool{
+		"http://robotsdelay1.com/page4.html": true,
+		"http://robotsdelay1.com/page5.html": true,
+	}
+
 	for _, fr := range results.handlerCalls() {
-		count++
+		link := fr.URL.String()
+		if expected[link] {
+			delete(expected, link)
+		}
 		switch fr.URL.String() {
 		case "http://robotsdelay1.com/page4.html":
 		case "http://robotsdelay1.com/page5.html":
@@ -416,8 +415,9 @@ func TestBasicRobots(t *testing.T) {
 			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
 		}
 	}
-	if count != 2 {
-		t.Errorf("Got %d handlerCalls, expected 2", count)
+
+	for link := range expected {
+		t.Errorf("Didn't find %q in handlerCalls, but should have", link)
 	}
 
 	results.assertExpectations(t)
@@ -430,31 +430,41 @@ func TestBasicMimeType(t *testing.T) {
 	}()
 	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
+	const html_body_nolinks string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div id="menu">
+</div>
+</html>`
+
 	tests := TestSpec{
 		hasParsedLinks: false,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "accept.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url:      "http://accept.com/robots.txt",
 						response: &helpers.MockResponse{Status: 404},
-						hidden:   true,
+						robots:   true,
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://accept.com/accept_html.html",
 						response: &helpers.MockResponse{
 							ContentType: "text/html; charset=ISO-8859-4",
 							Body:        html_body_nolinks,
 						},
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://accept.com/accept_text.txt",
 						response: &helpers.MockResponse{
 							ContentType: "text/plain",
 						},
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://accept.com/donthandle",
 						response: &helpers.MockResponse{
 							ContentType: "foo/bar",
@@ -525,9 +535,30 @@ func TestBasicLinkTest(t *testing.T) {
 	}()
 	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
+	const html_test_links string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Test links page</title>
+</head>
+
+<div id="menu">
+	<a href="relative-dir/">link</a>
+	<a href="relative-page/page.html">link</a>
+	<a href="/abs-relative-dir/">link</a>
+	<a href="/abs-relative-page/page.html">link</a>
+	<a href="https://other.org/abs-dir/">link</a>
+	<a href="https://other.org/abs-page/page.html">link</a>
+	<a href="javascript:doStuff();">link</a>
+	<a href="ftp:ignoreme.zip;">link</a>
+	<a href="ftP:ignoreme.zip;">link</a>
+	<a href="hTTP:donot/ignore.html">link</a>
+</div>
+</html>`
+
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: singlePerHostArr("http://linktests.com/links/test.html", &helpers.MockResponse{
+		perHost: singleLinkHostSpecArr("http://linktests.com/links/test.html", &helpers.MockResponse{
 			Body: html_test_links,
 		}),
 	}
@@ -535,7 +566,7 @@ func TestBasicLinkTest(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, 3*time.Second, t)
+	results := runFetcher(tests, defaultSleep, t)
 
 	//
 	// Make sure expected results are there
@@ -548,30 +579,32 @@ func TestBasicLinkTest(t *testing.T) {
 		}
 	}
 
+	expected := map[string]bool{
+		"http://linktests.com/links/relative-dir/":           true,
+		"http://linktests.com/links/relative-page/page.html": true,
+		"http://linktests.com/abs-relative-dir/":             true,
+		"http://linktests.com/abs-relative-page/page.html":   true,
+		"https://other.org/abs-dir/":                         true,
+		"https://other.org/abs-page/page.html":               true,
+		"http:donot/ignore.html":                             true,
+	}
+
 	ulst, frlst := results.dsStoreParsedURLCalls()
-	count := 0
 	for i := range ulst {
 		u := ulst[i]
 		fr := frlst[i]
 		if fr.URL.String() != "http://linktests.com/links/test.html" {
 			t.Fatalf("Expected linktest source only")
 		}
-		count++
-		switch u.String() {
-		case "http://linktests.com/links/relative-dir/":
-		case "http://linktests.com/links/relative-page/page.html":
-		case "http://linktests.com/abs-relative-dir/":
-		case "http://linktests.com/abs-relative-page/page.html":
-		case "https://other.org/abs-dir/":
-		case "https://other.org/abs-page/page.html":
-		case "http:donot/ignore.html":
-		default:
+		if expected[u.String()] {
+			delete(expected, u.String())
+		} else {
 			t.Errorf("StoreParsedURL call we didn't expect: %v", u)
 		}
 	}
 
-	if count != 7 {
-		t.Errorf("Got %d results from dsStoreParsedURLCalls, expected 7")
+	for link := range expected {
+		t.Errorf("Expected to find %q in expected map, but didn't", link)
 	}
 
 	results.assertExpectations(t)
@@ -584,9 +617,9 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 
 	tests := TestSpec{
 		hasNoLinks: true,
-		perHost: []PerHost{
-			singlePerHost("http://private.com/page1.html", &helpers.MockResponse{Body: html_test_links}),
-			singlePerHost("http://a1234567890bcde.com/page1.html", &helpers.MockResponse{Status: 404}),
+		perHost: []HostSpec{
+			singleLinkHostSpec("http://private.com/page1.html", nil),
+			singleLinkHostSpec("http://a1234567890bcde.com/page1.html", nil),
 		},
 	}
 
@@ -608,7 +641,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks:    false,
 		suppressTransport: true,
-		perHost:           singlePerHostArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
+		perHost:           singleLinkHostSpecArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -643,7 +676,7 @@ func TestRedirects(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		transport:      &roundTriper,
-		perHost:        singlePerHostArr(link(1), nil),
+		perHost:        singleLinkHostSpecArr(link(1), nil),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -692,7 +725,7 @@ func TestHrefWithSpace(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: singlePerHostArr(testPage, &helpers.MockResponse{
+		perHost: singleLinkHostSpecArr(testPage, &helpers.MockResponse{
 			ContentType: "text/html",
 			Body:        html_with_href_space,
 		}),
@@ -761,14 +794,14 @@ func TestHttpTimeout(t *testing.T) {
 			hasParsedLinks:     true,
 			transport:          transport,
 			suppressMockServer: true,
-			perHost: []PerHost{
-				singlePerHost("http://t1.com/page1.html", nil),
-				singlePerHost("http://t2.com/page1.html", nil),
-				singlePerHost("http://t3.com/page1.html", nil),
+			perHost: []HostSpec{
+				singleLinkHostSpec("http://t1.com/page1.html", nil),
+				singleLinkHostSpec("http://t2.com/page1.html", nil),
+				singleLinkHostSpec("http://t3.com/page1.html", nil),
 			},
 		}
 
-		results := runFetcher(tests, 2*time.Second, t)
+		results := runFetcher(tests, 2000*time.Millisecond, t)
 		closer.Close()
 
 		canceled := map[string]bool{}
@@ -848,24 +881,24 @@ func TestMetaNos(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: false,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "t1.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url: "http://t1.com/nofollow.html",
 						response: &helpers.MockResponse{
 							Body: nofollowHtml,
 						},
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://t1.com/noindex.html",
 						response: &helpers.MockResponse{
 							Body: noindexHtml,
 						},
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://t1.com/both.html",
 						response: &helpers.MockResponse{
 							Body: bothHtml,
@@ -906,22 +939,22 @@ func TestMetaNos(t *testing.T) {
 func TestFetchManagerFastShutdown(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "test.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url: "http://test.com/robots.txt",
 						response: &helpers.MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 1\n", // this is 120 seconds
 						},
-						hidden: true,
+						robots: true,
 					},
-					PerLink{
+					LinkSpec{
 						url:      "http://test.com/page1.html",
 						response: &helpers.MockResponse{Status: 404},
 					},
-					PerLink{
+					LinkSpec{
 						url:      "http://test.com/page2.html",
 						response: &helpers.MockResponse{Status: 404},
 					},
@@ -979,7 +1012,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	// are failing. But the version I have above does work (even though it's wonky)
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost:        singlePerHostArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		perHost:        singleLinkHostSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, 250*time.Millisecond, t)
@@ -1036,7 +1069,7 @@ func TestPathInclusion(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost:        singlePerHostArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		perHost:        singleLinkHostSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1079,24 +1112,24 @@ func TestMaxCrawlDelay(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "a.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url: "http://a.com/robots.txt",
 						response: &helpers.MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
 						},
-						hidden: true,
+						robots: true,
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://a.com/page1.html",
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://a.com/page2.html",
 					},
-					PerLink{
+					LinkSpec{
 						url: "http://a.com/page3.html",
 					},
 				},
@@ -1147,7 +1180,7 @@ func TestFnvFingerprint(t *testing.T) {
 </html>`
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost:        singlePerHostArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
+		perHost:        singleLinkHostSpecArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1185,11 +1218,11 @@ func TestIfModifiedSince(t *testing.T) {
 	lastCrawled := time.Now()
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "a.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url:         "http://a.com/page1.html",
 						response:    &helpers.MockResponse{Status: 304},
 						lastCrawled: lastCrawled,
@@ -1253,40 +1286,40 @@ func TestIfModifiedSince(t *testing.T) {
 func TestNestedRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "a.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url: "http://dom.com/robots.txt",
 						response: &helpers.MockResponse{
 							Body: "User-agent: *\n",
 						},
-						hidden: true,
+						robots: true,
 					},
 
-					PerLink{
+					LinkSpec{
 						url:    "http://ok.dom.com/robots.txt",
-						hidden: true,
+						robots: true,
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://blocked.dom.com/robots.txt",
 						response: &helpers.MockResponse{
 							Body: "User-agent: *\nDisallow: /\n",
 						},
-						hidden: true,
+						robots: true,
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://dom.com/page1.html",
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://ok.dom.com/page1.html",
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://blocked.dom.com/page1.html",
 					},
 				},
@@ -1344,18 +1377,18 @@ func TestMaxContentSize(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		perHost: []PerHost{
-			PerHost{
+		perHost: []HostSpec{
+			HostSpec{
 				domain: "a.com",
-				links: []PerLink{
-					PerLink{
+				links: []LinkSpec{
+					LinkSpec{
 						url: "http://a.com/page1.html",
 						response: &helpers.MockResponse{
 							Body: html,
 						},
 					},
 
-					PerLink{
+					LinkSpec{
 						url: "http://a.com/page2.html",
 						response: &helpers.MockResponse{
 							Body:          "0123456789 ",
