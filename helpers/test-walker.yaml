@@ -3,10 +3,14 @@
 # This one is the defaults for test execution; see walker.yaml in the main
 # package for comments and descriptions
 
-default_crawl_delay: 0
-num_simultaneous_fetchers: 1
-blacklist_private_ips: false
+fetcher:
+    default_crawl_delay: 0
+    num_simultaneous_fetchers: 1
+    blacklist_private_ips: false
 cassandra:
     keyspace: "walker_test"
     replication_factor: 1
     timeout: "10s"
+console:
+   template_directory: ../templates
+   public_folder: ../public

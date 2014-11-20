@@ -14,6 +14,7 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/gorilla/mux"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 )
 
 //
@@ -145,7 +146,7 @@ func Start() {
 		//
 		// Set up data store
 		//
-		ds, err := NewCqlModel()
+		ds, err := cassandra.NewDatastore()
 		if err != nil {
 			panic(fmt.Errorf("Failed to start data source: %v", err))
 		}

@@ -229,12 +229,12 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 }
 
 func TestUrlParsing(t *testing.T) {
-	orig := walker.Config.PurgeSidList
+	orig := walker.Config.Fetcher.PurgeSidList
 	defer func() {
-		walker.Config.PurgeSidList = orig
+		walker.Config.Fetcher.PurgeSidList = orig
 		walker.PostConfigHooks()
 	}()
-	walker.Config.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
 	walker.PostConfigHooks()
 
 	tests := []struct {
@@ -286,8 +286,6 @@ func TestUrlParsing(t *testing.T) {
 	}
 }
 func TestBasicNoRobots(t *testing.T) {
-	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
-
 	tests := TestSpec{
 		hasParsedLinks: true,
 		perHost: []PerHost{
@@ -394,11 +392,11 @@ func TestBasicRobots(t *testing.T) {
 }
 
 func TestBasicMimeType(t *testing.T) {
-	orig := walker.Config.AcceptFormats
+	orig := walker.Config.Fetcher.AcceptFormats
 	defer func() {
-		walker.Config.AcceptFormats = orig
+		walker.Config.Fetcher.AcceptFormats = orig
 	}()
-	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
 	tests := TestSpec{
 		hasParsedLinks: false,
@@ -489,7 +487,11 @@ func TestBasicMimeType(t *testing.T) {
 }
 
 func TestBasicLinkTest(t *testing.T) {
-	walker.Config.AcceptFormats = []string{"text/html", "text/plain"}
+	orig := walker.Config.Fetcher.AcceptFormats
+	defer func() {
+		walker.Config.Fetcher.AcceptFormats = orig
+	}()
+	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
 	tests := TestSpec{
 		hasParsedLinks: true,
@@ -554,10 +556,10 @@ func TestBasicLinkTest(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = true
+func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
+	orig := walker.Config.Fetcher.BlacklistPrivateIPs
+	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
+	walker.Config.Fetcher.BlacklistPrivateIPs = true
 
 	tests := TestSpec{
 		hasNoLinks: true,
@@ -573,6 +575,10 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 					},
 				},
 			},
+
+			PerHost{
+				domain: "a1234567890bcde.com",
+			},
 		},
 	}
 
@@ -586,34 +592,34 @@ func TestFetcherBlacklistsPrivateIPs(t *testing.T) {
 	results.datastore.AssertNotCalled(t, "LinksForHost", "private.com")
 }
 
-func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = true
+// func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
+// 	orig := walker.Config.BlacklistPrivateIPs
+// 	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
+// 	walker.Config.BlacklistPrivateIPs = true
 
-	tests := TestSpec{
-		hasNoLinks: true,
-		perHost: []PerHost{
-			PerHost{
-				domain: "a1234567890bcde.com",
-				links: []PerLink{
-					PerLink{
-						url:      "http://a1234567890bcde.com/",
-						response: &helpers.MockResponse{Status: 404},
-					},
-				},
-			},
-		},
-	}
+// 	tests := TestSpec{
+// 		hasNoLinks: true,
+// 		perHost: []PerHost{
+// 			PerHost{
+// 				domain: "a1234567890bcde.com",
+// 				links: []PerLink{
+// 					PerLink{
+// 						url:      "http://a1234567890bcde.com/",
+// 						response: &helpers.MockResponse{Status: 404},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
 
-	results := runFetcher(tests, defaultSleep, t)
-	results.assertExpectations(t)
-}
+// 	results := runFetcher(tests, defaultSleep, t)
+// 	results.assertExpectations(t)
+// }
 
 func TestFetcherCreatesTransport(t *testing.T) {
-	orig := walker.Config.BlacklistPrivateIPs
-	defer func() { walker.Config.BlacklistPrivateIPs = orig }()
-	walker.Config.BlacklistPrivateIPs = false
+	orig := walker.Config.Fetcher.BlacklistPrivateIPs
+	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
+	walker.Config.Fetcher.BlacklistPrivateIPs = false
 
 	tests := TestSpec{
 		hasParsedLinks:    false,
@@ -780,11 +786,11 @@ func TestHrefWithSpace(t *testing.T) {
 }
 
 func TestHttpTimeout(t *testing.T) {
-	origTimeout := walker.Config.HttpTimeout
+	origTimeout := walker.Config.Fetcher.HttpTimeout
 	defer func() {
-		walker.Config.HttpTimeout = origTimeout
+		walker.Config.Fetcher.HttpTimeout = origTimeout
 	}()
-	walker.Config.HttpTimeout = "200ms"
+	walker.Config.Fetcher.HttpTimeout = "200ms"
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
@@ -857,14 +863,14 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
-	origHonorNoindex := walker.Config.HonorMetaNoindex
-	origHonorNofollow := walker.Config.HonorMetaNofollow
+	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.HonorMetaNoindex = origHonorNoindex
-		walker.Config.HonorMetaNofollow = origHonorNofollow
+		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.HonorMetaNoindex = true
-	walker.Config.HonorMetaNofollow = true
+	walker.Config.Fetcher.HonorMetaNoindex = true
+	walker.Config.Fetcher.HonorMetaNofollow = true
 
 	const nofollowHtml string = `<!DOCTYPE html>
 <html>
@@ -1012,14 +1018,14 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 }
 
 func TestObjectEmbedIframeTags(t *testing.T) {
-	origHonorNoindex := walker.Config.HonorMetaNoindex
-	origHonorNofollow := walker.Config.HonorMetaNofollow
+	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.HonorMetaNoindex = origHonorNoindex
-		walker.Config.HonorMetaNofollow = origHonorNofollow
+		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.HonorMetaNoindex = true
-	walker.Config.HonorMetaNofollow = true
+	walker.Config.Fetcher.HonorMetaNoindex = true
+	walker.Config.Fetcher.HonorMetaNofollow = true
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -1078,14 +1084,14 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 }
 
 func TestPathInclusion(t *testing.T) {
-	origHonorNoindex := walker.Config.ExcludeLinkPatterns
-	origHonorNofollow := walker.Config.IncludeLinkPatterns
+	origHonorNoindex := walker.Config.Fetcher.ExcludeLinkPatterns
+	origHonorNofollow := walker.Config.Fetcher.IncludeLinkPatterns
 	defer func() {
-		walker.Config.ExcludeLinkPatterns = origHonorNoindex
-		walker.Config.IncludeLinkPatterns = origHonorNofollow
+		walker.Config.Fetcher.ExcludeLinkPatterns = origHonorNoindex
+		walker.Config.Fetcher.IncludeLinkPatterns = origHonorNofollow
 	}()
-	walker.Config.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
-	walker.Config.IncludeLinkPatterns = []string{`\.keep$`}
+	walker.Config.Fetcher.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
+	walker.Config.Fetcher.IncludeLinkPatterns = []string{`\.keep$`}
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -1175,14 +1181,14 @@ func TestMaxCrawlDelay(t *testing.T) {
 	// the host, and set a small MaxCrawlDelay in config. Then only allow the
 	// fetcher to run long enough to get all the links IF the fetcher is honoring
 	// the MaxCrawlDelay
-	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
-	origMaxCrawlDelay := walker.Config.MaxCrawlDelay
+	origDefaultCrawlDelay := walker.Config.Fetcher.DefaultCrawlDelay
+	origMaxCrawlDelay := walker.Config.Fetcher.MaxCrawlDelay
 	defer func() {
-		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
-		walker.Config.MaxCrawlDelay = origMaxCrawlDelay
+		walker.Config.Fetcher.DefaultCrawlDelay = origDefaultCrawlDelay
+		walker.Config.Fetcher.MaxCrawlDelay = origMaxCrawlDelay
 	}()
-	walker.Config.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
-	walker.Config.DefaultCrawlDelay = "0s"
+	walker.Config.Fetcher.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
+	walker.Config.Fetcher.DefaultCrawlDelay = "0s"
 
 	ds := &helpers.MockDatastore{}
 	ds.On("ClaimNewHost").Return("a.com").Once()
@@ -1509,11 +1515,11 @@ func TestNestedRobots(t *testing.T) {
 }
 
 func TestMaxContentSize(t *testing.T) {
-	orig := walker.Config.MaxHTTPContentSizeBytes
+	orig := walker.Config.Fetcher.MaxHTTPContentSizeBytes
 	defer func() {
-		walker.Config.MaxHTTPContentSizeBytes = orig
+		walker.Config.Fetcher.MaxHTTPContentSizeBytes = orig
 	}()
-	walker.Config.MaxHTTPContentSizeBytes = 10
+	walker.Config.Fetcher.MaxHTTPContentSizeBytes = 10
 
 	html := `<!DOCTYPE html>
 <html>

@@ -189,10 +189,10 @@ func TestNewDomainAdditions(t *testing.T) {
 	db := GetTestDB()
 	ds := getDS(t)
 
-	origAddNewDomains := walker.Config.AddNewDomains
-	defer func() { walker.Config.AddNewDomains = origAddNewDomains }()
+	origAddNewDomains := walker.Config.Cassandra.AddNewDomains
+	defer func() { walker.Config.Cassandra.AddNewDomains = origAddNewDomains }()
 
-	walker.Config.AddNewDomains = false
+	walker.Config.Cassandra.AddNewDomains = false
 	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
 
 	var count int
@@ -206,7 +206,7 @@ func TestNewDomainAdditions(t *testing.T) {
 		t.Errorf("Expected parsed link not to be inserted for test.com, found %v", count)
 	}
 
-	walker.Config.AddNewDomains = true
+	walker.Config.Cassandra.AddNewDomains = true
 	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
 
 	err := db.Query(`SELECT COUNT(*) FROM domain_info
