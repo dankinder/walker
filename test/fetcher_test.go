@@ -1251,57 +1251,55 @@ func TestIfModifiedSince(t *testing.T) {
 }
 
 func TestNestedRobots(t *testing.T) {
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("dom.com").Once()
-	ds.On("LinksForHost", "dom.com").Return([]*walker.URL{
-		helpers.Parse("http://dom.com/page1.html"),
-		helpers.Parse("http://ok.dom.com/page1.html"),
-		helpers.Parse("http://blocked.dom.com/page1.html"),
-	})
-	ds.On("UnclaimHost", "dom.com").Return()
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "a.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://dom.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\n",
+						},
+						hidden: true,
+					},
 
-	ds.On("ClaimNewHost").Return("")
+					PerLink{
+						url:    "http://ok.dom.com/robots.txt",
+						hidden: true,
+					},
 
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
+					PerLink{
+						url: "http://blocked.dom.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nDisallow: /\n",
+						},
+						hidden: true,
+					},
 
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
+					PerLink{
+						url: "http://dom.com/page1.html",
+					},
 
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+					PerLink{
+						url: "http://ok.dom.com/page1.html",
+					},
+
+					PerLink{
+						url: "http://blocked.dom.com/page1.html",
+					},
+				},
+			},
+		},
 	}
 
-	rs.SetResponse("http://dom.com/robots.txt", &helpers.MockResponse{
-		Body: "User-agent: *\n",
-	})
-	rs.SetResponse("http://ok.dom.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://blocked.dom.com/robots.txt", &helpers.MockResponse{
-		Body: "User-agent: *\nDisallow: /\n",
-	})
-
-	rs.SetResponse("http://dom.com/page1.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://ok.dom.com/page1.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://blocked.dom.com/page1.html", &helpers.MockResponse{Status: 404})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
-
-	go manager.Start()
-	time.Sleep(time.Second * 1)
-	manager.Stop()
-	rs.Stop()
+	results := runFetcher(tests, defaultSleep, t)
 
 	//
 	// Now check that the correct requests where made
 	//
-	tests := []struct {
+	testRes := []struct {
 		link    string
 		fetched bool
 	}{
@@ -1316,8 +1314,8 @@ func TestNestedRobots(t *testing.T) {
 		{"http://blocked.dom.com/page1.html", false},
 	}
 
-	for _, tst := range tests {
-		req := rs.Requested("GET", tst.link)
+	for _, tst := range testRes {
+		req := results.server.Requested("GET", tst.link)
 		if tst.fetched && !req {
 			t.Errorf("Expected to have requested link %q, but didn't", tst.link)
 		} else if !tst.fetched && req {
@@ -1344,77 +1342,56 @@ func TestMaxContentSize(t *testing.T) {
 </div>
 </html>`
 
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("a.com").Once()
-	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
-		helpers.Parse("http://a.com/page1.html"),
-		helpers.Parse("http://a.com/page2.html"),
-	})
-	ds.On("UnclaimHost", "a.com").Return()
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "a.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://a.com/page1.html",
+						response: &helpers.MockResponse{
+							Body: html,
+						},
+					},
 
-	// This last call will make ClaimNewHost return "" on each subsequent call,
-	// which will put the fetcher to sleep.
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
+					PerLink{
+						url: "http://a.com/page2.html",
+						response: &helpers.MockResponse{
+							Body:          "0123456789 ",
+							ContentType:   "text/html",
+							ContentLength: 11,
+						},
+					},
+				},
+			},
+		},
 	}
 
-	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{
-		Body: html,
-	})
-	rs.SetResponse("http://a.com/page2.html", &helpers.MockResponse{
-		Body:          "0123456789 ",
-		ContentType:   "text/html",
-		ContentLength: 11,
-	})
+	results := runFetcher(tests, defaultSleep, t)
 
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
-	}
-
-	go manager.Start()
-	time.Sleep(time.Second * 1)
-	manager.Stop()
-	rs.Stop()
-
-	if len(h.Calls) != 0 {
+	hcalls := results.handlerCalls()
+	if len(hcalls) != 0 {
 		links := ""
-		for _, call := range h.Calls {
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
+		for _, fr := range hcalls {
 			links += "\t"
 			links += fr.URL.String()
 			links += "\n"
 		}
-		t.Fatalf("Expected handler to be called 0 times, instead it was called %d times for links\n%s\n", len(h.Calls), links)
+		t.Fatalf("Expected handler to be called 0 times, instead it was called %d times for links\n%s\n", len(hcalls), links)
 	}
 
 	page1Ok := false
 	page2Ok := false
-	for _, call := range ds.Calls {
-		if call.Method == "StoreURLFetchResults" {
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			link := fr.URL.String()
-			switch link {
-			case "http://a.com/page1.html":
-				page1Ok = true
-			case "http://a.com/page2.html":
-				page2Ok = true
-			default:
-				t.Errorf("Unexpected stored url %q", link)
-			}
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		link := fr.URL.String()
+		switch link {
+		case "http://a.com/page1.html":
+			page1Ok = true
+		case "http://a.com/page2.html":
+			page2Ok = true
+		default:
+			t.Errorf("Unexpected stored url %q", link)
 		}
 	}
 	if !page1Ok {
