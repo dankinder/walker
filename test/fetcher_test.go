@@ -68,9 +68,10 @@ func init() {
 }
 
 type PerLink struct {
-	url      string
-	response *helpers.MockResponse
-	hidden   bool
+	url         string
+	lastCrawled time.Time
+	response    *helpers.MockResponse
+	hidden      bool
 }
 
 type PerHost struct {
@@ -197,8 +198,14 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		var urls []*walker.URL
 		for _, link := range host.links {
 			if !link.hidden {
-				urls = append(urls, helpers.Parse(link.url))
+				u := helpers.Parse(link.url)
+				zero := time.Time{}
+				if link.lastCrawled != zero {
+					u.LastCrawled = link.lastCrawled
+				}
+				urls = append(urls, u)
 			}
+
 			if link.response != nil && !test.suppressMockServer {
 				rs.SetResponse(link.url, link.response)
 			}
@@ -1138,45 +1145,12 @@ func TestFnvFingerprint(t *testing.T) {
 	Roses are red, violets are blue, golang is the bomb, aint it so true!
 </div>
 </html>`
-
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("a.com").Once()
-	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
-		helpers.Parse("http://a.com/page1.html"),
-	})
-	ds.On("UnclaimHost", "a.com").Return()
-
-	// This last call will make ClaimNewHost return "" on each subsequent call,
-	// which will put the fetcher to sleep.
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{
-		Body: html,
-	})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost:        singlePerHostArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
 	}
 
-	go manager.Start()
-	time.Sleep(time.Second * 1)
-	manager.Stop()
-	rs.Stop()
+	results := runFetcher(tests, defaultSleep, t)
 
 	fnv := fnv.New64()
 	fnv.Write([]byte(html))
@@ -1186,22 +1160,19 @@ func TestFnvFingerprint(t *testing.T) {
 		"/page1.html": fp,
 	}
 
-	for _, call := range ds.Calls {
-		if call.Method == "StoreURLFetchResults" {
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			path := fr.URL.RequestURI()
-			expFp, expFpOk := expectedFps[path]
-			if !expFpOk {
-				t.Errorf("Path mistmatch, didn't find path %q in expectedFps", path)
-				continue
-			}
-
-			if expFp != fr.FnvFingerprint {
-				t.Errorf("Fingerprint mistmatch, got %x, expected %x", fr.FnvFingerprint, expFp)
-			}
-
-			delete(expectedFps, path)
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		path := fr.URL.RequestURI()
+		expFp, expFpOk := expectedFps[path]
+		if !expFpOk {
+			t.Errorf("Path mistmatch, didn't find path %q in expectedFps", path)
+			continue
 		}
+
+		if expFp != fr.FnvFingerprint {
+			t.Errorf("Fingerprint mistmatch, got %x, expected %x", fr.FnvFingerprint, expFp)
+		}
+
+		delete(expectedFps, path)
 	}
 
 	for path := range expectedFps {
@@ -1210,55 +1181,37 @@ func TestFnvFingerprint(t *testing.T) {
 }
 
 func TestIfModifiedSince(t *testing.T) {
-	url := helpers.Parse("http://a.com/page1.html")
-	url.LastCrawled = time.Now()
-
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("a.com").Once()
-	ds.On("LinksForHost", "a.com").Return([]*walker.URL{
-		url,
-	})
-	ds.On("UnclaimHost", "a.com").Return()
-
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse("http://a.com/robots.txt", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://a.com/page1.html", &helpers.MockResponse{Status: 304})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	link := "http://a.com/page1.html"
+	lastCrawled := time.Now()
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "a.com",
+				links: []PerLink{
+					PerLink{
+						url:         "http://a.com/page1.html",
+						response:    &helpers.MockResponse{Status: 304},
+						lastCrawled: lastCrawled,
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(time.Second * 1)
-	manager.Stop()
-	rs.Stop()
+	results := runFetcher(tests, defaultSleep, t)
 
 	//
 	// Did the server see the header
 	//
-	headers, err := rs.Headers("GET", url.String(), -1)
+	headers, err := results.server.Headers("GET", link, -1)
 	if err != nil {
-		t.Fatalf("rs.Headers failed %v", err)
+		t.Fatalf("results.server.rs.Headers failed %v", err)
 	}
 	mod, modOk := headers["If-Modified-Since"]
 	if !modOk {
-		t.Fatalf("Failed to find If-Modified-Since in request header for link %q", url.String())
-	} else if lm := url.LastCrawled.Format(time.RFC1123); lm != mod[0] {
+		t.Fatalf("Failed to find If-Modified-Since in request header for link %q", link)
+	} else if lm := lastCrawled.Format(time.RFC1123); lm != mod[0] {
 		t.Errorf("If-Modified-Since has bad format, got %q, expected %q", mod[0], lm)
 	}
 
@@ -1266,16 +1219,13 @@ func TestIfModifiedSince(t *testing.T) {
 	// Did the data store get called correctly
 	//
 	count := 0
-	for _, call := range ds.Calls {
-		if call.Method == "StoreURLFetchResults" {
-			count++
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			if fr.URL.String() != url.String() {
-				t.Errorf("DS URL link mismatch: got %q, expected %q", fr.URL.String(), url.String())
-			}
-			if fr.Response.StatusCode != 304 {
-				t.Errorf("DS StatusCode mismatch: got %d, expected %d", fr.Response.StatusCode, 304)
-			}
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		count++
+		if fr.URL.String() != link {
+			t.Errorf("DS URL link mismatch: got %q, expected %q", fr.URL.String(), link)
+		}
+		if fr.Response.StatusCode != 304 {
+			t.Errorf("DS StatusCode mismatch: got %d, expected %d", fr.Response.StatusCode, 304)
 		}
 	}
 	if count < 1 {
@@ -1286,11 +1236,10 @@ func TestIfModifiedSince(t *testing.T) {
 	// Did the handler get called
 	//
 	count = 0
-	for _, call := range h.Calls {
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
 		count++
-		fr := call.Arguments.Get(0).(*walker.FetchResults)
-		if fr.URL.String() != url.String() {
-			t.Errorf("Handler URL link mismatch: got %q, expected %q", fr.URL.String(), url.String())
+		if fr.URL.String() != link {
+			t.Errorf("Handler URL link mismatch: got %q, expected %q", fr.URL.String(), link)
 		}
 		if fr.Response.StatusCode != 304 {
 			t.Errorf("Handler StatusCode mismatch: got %d, expected %d", fr.Response.StatusCode, 304)
