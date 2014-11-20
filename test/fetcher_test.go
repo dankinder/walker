@@ -963,7 +963,7 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, 250*time.Millisecond, t)
+	results := runFetcher(tests, 250*time.Millisecond, t) //compare duration here with Crawl-delay
 
 	expectedCall := false
 	for _, fr := range results.dsStoreURLFetchResultsCalls() {
