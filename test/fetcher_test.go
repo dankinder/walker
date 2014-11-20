@@ -908,49 +908,6 @@ func TestMetaNos(t *testing.T) {
 </div>
 </html>`
 
-	// ds := &helpers.MockDatastore{}
-	// ds.On("ClaimNewHost").Return("t1.com").Once()
-	// ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-	// 	helpers.Parse("http://t1.com/nofollow.html"),
-	// 	helpers.Parse("http://t1.com/noindex.html"),
-	// 	helpers.Parse("http://t1.com/both.html"),
-	// })
-	// ds.On("UnclaimHost", "t1.com").Return()
-	// ds.On("ClaimNewHost").Return("")
-
-	// ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	// ds.On("StoreParsedURL",
-	// 	mock.AnythingOfType("*walker.URL"),
-	// 	mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	// h := &helpers.MockHandler{}
-	// h.On("HandleResponse", mock.Anything).Return()
-
-	// rs, err := helpers.NewMockRemoteServer()
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
-	// rs.SetResponse("http://t1.com/nofollow.html", &helpers.MockResponse{
-	// 	Body: nofollowHtml,
-	// })
-	// rs.SetResponse("http://t1.com/noindex.html", &helpers.MockResponse{
-	// 	Body: noindexHtml,
-	// })
-	// rs.SetResponse("http://t1.com/both.html", &helpers.MockResponse{
-	// 	Body: bothHtml,
-	// })
-
-	// manager := &walker.FetchManager{
-	// 	Datastore: ds,
-	// 	Handler:   h,
-	// 	Transport: helpers.GetFakeTransport(),
-	// }
-
-	// go manager.Start()
-	// time.Sleep(defaultSleep)
-	// manager.Stop()
-	// rs.Stop()
-
 	tests := TestSpec{
 		hasParsedLinks: false,
 		perHost: []PerHost{
@@ -1009,52 +966,49 @@ func TestMetaNos(t *testing.T) {
 }
 
 func TestFetchManagerFastShutdown(t *testing.T) {
-	origDefaultCrawlDelay := walker.Config.DefaultCrawlDelay
-	defer func() {
-		walker.Config.DefaultCrawlDelay = origDefaultCrawlDelay
-	}()
-	walker.Config.DefaultCrawlDelay = "1s"
-
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("test.com").Once()
-	ds.On("LinksForHost", "test.com").Return([]*walker.URL{
-		helpers.Parse("http://test.com/page1.html"),
-		helpers.Parse("http://test.com/page2.html"),
-	})
-	ds.On("UnclaimHost", "test.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   &helpers.MockHandler{},
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasParsedLinks: false,
+		perHost: []PerHost{
+			PerHost{
+				domain: "test.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://test.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 1\n", // this is 120 seconds
+						},
+						hidden: true,
+					},
+					PerLink{
+						url:      "http://test.com/page1.html",
+						response: &helpers.MockResponse{Status: 404},
+					},
+					PerLink{
+						url:      "http://test.com/page2.html",
+						response: &helpers.MockResponse{Status: 404},
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
+	results := runFetcher(tests, 250*time.Millisecond, t)
 
 	expectedCall := false
-	for _, call := range ds.Calls {
-		switch call.Method {
-		case "StoreURLFetchResults":
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
-			link := fr.URL.String()
-			switch link {
-			case "http://test.com/page1.html":
-				expectedCall = true
-			default:
-				t.Errorf("Got unexpected StoreURLFetchResults call for %v", link)
-			}
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		link := fr.URL.String()
+		switch link {
+		case "http://test.com/page1.html":
+			expectedCall = true
+		default:
+			t.Errorf("Got unexpected StoreURLFetchResults call for %v", link)
 		}
 	}
 	if !expectedCall {
 		t.Errorf("Did not get expected StoreURLFetchResults call for http://test.com/page1.html")
 	}
 
-	ds.AssertExpectations(t)
+	results.assertExpectations(t)
 }
 
 func TestObjectEmbedIframeTags(t *testing.T) {
@@ -1085,46 +1039,24 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	//    <iframe srcdoc="<a href = \"/iframe_srcdoc/page.html\" > Link </a>" />
 	// does not appear to be handled correctly by golang-html. The embedded quotes
 	// are failing. But the version I have above does work (even though it's wonky)
-
-	ds := &helpers.MockDatastore{}
-	ds.On("ClaimNewHost").Return("t1.com").Once()
-	ds.On("LinksForHost", "t1.com").Return([]*walker.URL{
-		helpers.Parse("http://t1.com/target.html"),
-	})
-	ds.On("UnclaimHost", "t1.com").Return()
-	ds.On("ClaimNewHost").Return("")
-
-	ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
-	ds.On("StoreParsedURL",
-		mock.AnythingOfType("*walker.URL"),
-		mock.AnythingOfType("*walker.FetchResults")).Return()
-
-	h := &helpers.MockHandler{}
-	h.On("HandleResponse", mock.Anything).Return()
-
-	rs, err := helpers.NewMockRemoteServer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs.SetResponse("http://t1.com/target.html", &helpers.MockResponse{
-		Body: html,
-	})
-	rs.SetResponse("http://t1.com/object_data/page.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://t1.com/iframe_srcdoc/page.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://t1.com/iframe_src/page.html", &helpers.MockResponse{Status: 404})
-	rs.SetResponse("http://t1.com/embed_src/page.html", &helpers.MockResponse{Status: 404})
-
-	manager := &walker.FetchManager{
-		Datastore: ds,
-		Handler:   h,
-		Transport: helpers.GetFakeTransport(),
+	tests := TestSpec{
+		hasParsedLinks: true,
+		perHost: []PerHost{
+			PerHost{
+				domain: "t1.com",
+				links: []PerLink{
+					PerLink{
+						url: "http://t1.com/target.html",
+						response: &helpers.MockResponse{
+							Body: html,
+						},
+					},
+				},
+			},
+		},
 	}
 
-	go manager.Start()
-	time.Sleep(defaultSleep)
-	manager.Stop()
-
-	rs.Stop()
+	results := runFetcher(tests, 250*time.Millisecond, t)
 
 	expectedStores := map[string]bool{
 		"http://t1.com/object_data/page.html":   true,
@@ -1133,12 +1065,10 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 		"http://t1.com/embed_src/page.html":     true,
 	}
 
-	for _, call := range ds.Calls {
-		if call.Method == "StoreParsedURL" {
-			u := call.Arguments.Get(0).(*walker.URL)
-			if expectedStores[u.String()] {
-				delete(expectedStores, u.String())
-			}
+	ulst, _ := results.dsStoreParsedURLCalls()
+	for _, u := range ulst {
+		if expectedStores[u.String()] {
+			delete(expectedStores, u.String())
 		}
 	}
 
@@ -1240,7 +1170,7 @@ func TestPathInclusion(t *testing.T) {
 
 }
 
-func TestMaxCrawlDealy(t *testing.T) {
+func TestMaxCrawlDelay(t *testing.T) {
 	// The approach to this test is simple. Set a very high Crawl-delay from
 	// the host, and set a small MaxCrawlDelay in config. Then only allow the
 	// fetcher to run long enough to get all the links IF the fetcher is honoring
