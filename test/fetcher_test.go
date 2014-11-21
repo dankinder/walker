@@ -25,38 +25,76 @@ func init() {
 //
 // Test table structs
 //
+
+// LinkSpec describes a mocked link
 type LinkSpec struct {
-	url         string
+	// The url of the link
+	url string
+
+	// The time last crawled for this link
 	lastCrawled time.Time
-	response    *helpers.MockResponse
-	robots      bool
+
+	// The response the mock server should deliver for this url
+	response *helpers.MockResponse
+
+	// This should be true if this link is a robots.txt path
+	robots bool
 }
 
+// HostSpec describes a mocked domain
 type HostSpec struct {
+	// Name of the domain
 	domain string
-	links  []LinkSpec
+
+	// Links mocked for this host
+	links []LinkSpec
 }
+
+// TestSpec describes an entire mocked fetcher urn
 type TestSpec struct {
+	// List of mocked domains to include in test
 	hosts []HostSpec
 
-	// Flags that control how runFetcher does it's job
-	hasParsedLinks     bool
-	hasNoLinks         bool
-	suppressTransport  bool
-	transport          http.RoundTripper
+	// This should be set true if any of the links stored in hosts
+	// has links embedded in html
+	hasParsedLinks bool
+
+	// This should be true if the mocked data store does/should not
+	// return ANY links
+	hasNoLinks bool
+
+	// This should be true, if an explicit transport should NOT be
+	// provided to the FetchManager during initialization
+	suppressTransport bool
+
+	// An alternate transport to provide to FetchManager. If suppressTransport
+	// is false, and transport is nil, the FetchManger uses helpers.GetFakeTransport()
+	transport http.RoundTripper
+
+	// true means do not mock a remote server during this particular test
 	suppressMockServer bool
 }
 
 //
 // Test result class
 //
+// TestResults represents the results of a runFetcher invocation
 type TestResults struct {
-	server    *helpers.MockRemoteServer
+	// mock server used for test
+	server *helpers.MockRemoteServer
+
+	// mock datastore used for test
 	datastore *helpers.MockDatastore
-	handler   *helpers.MockHandler
-	manager   *walker.FetchManager
+
+	// mock handler used for test
+	handler *helpers.MockHandler
+
+	// FetchManager used for test
+	manager *walker.FetchManager
 }
 
+// handlerCalls will return a list of all FetchResults passed to
+// TestResults.handler during the test.
 func (self *TestResults) handlerCalls() []*walker.FetchResults {
 	var ret []*walker.FetchResults
 	for _, call := range self.handler.Calls {
@@ -66,6 +104,9 @@ func (self *TestResults) handlerCalls() []*walker.FetchResults {
 	return ret
 }
 
+// dsStoreParsedURLCalls will return a list of URLs and their associated
+// FetchResults that are passed to TestResults.datastore.StoreParsedUrl
+// during the test.
 func (self *TestResults) dsStoreParsedURLCalls() ([]*walker.URL, []*walker.FetchResults) {
 	var r1 []*walker.URL
 	var r2 []*walker.FetchResults
@@ -80,6 +121,8 @@ func (self *TestResults) dsStoreParsedURLCalls() ([]*walker.URL, []*walker.Fetch
 	return r1, r2
 }
 
+// dsStoreURLFetchResultsCalls will return a list of FetchResults passed to
+// TestResults.datastore.StoreUrlFetchResults during test.
 func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
 	var r1 []*walker.FetchResults
 	for _, call := range self.datastore.Calls {
@@ -91,6 +134,8 @@ func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
 	return r1
 }
 
+// assertExpectations verifies the expectations set up for the mocked
+// datastore and handler.
 func (self *TestResults) assertExpectations(t *testing.T) {
 	self.datastore.AssertExpectations(t)
 	self.handler.AssertExpectations(t)
@@ -99,6 +144,9 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 //
 // Couple convenience functions to generate HostSpecs in one line.
 //
+
+// singleLinkHostSpec can be used to provide a HostSpec for a single link.
+// This is just a convenience function.
 func singleLinkHostSpec(link string, response *helpers.MockResponse) HostSpec {
 	u := helpers.Parse(link)
 	domain, err := u.ToplevelDomainPlusOne()
@@ -118,6 +166,7 @@ func singleLinkHostSpec(link string, response *helpers.MockResponse) HostSpec {
 
 }
 
+// singleLinkHostSpecArr is a convenience function that returns []HostSpec{singlLinkHostSpec(link, response)}
 func singleLinkHostSpecArr(link string, response *helpers.MockResponse) []HostSpec {
 	return []HostSpec{
 		singleLinkHostSpec(link, response),
