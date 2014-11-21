@@ -37,6 +37,17 @@ type Dispatcher struct {
 	generatingWG sync.WaitGroup
 
 	minRecrawlDelta time.Duration
+
+	// a channel to route claimed UUIDs too, possibly unclaiming them
+	checkUUID chan checkUUIDStruct
+
+	// How long to wait until an active_fetcher cache entry is considered stale
+	activeFetcherCachetime time.Duration
+}
+
+type checkUUIDStruct struct {
+	domain string
+	token  gocql.UUID
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -50,12 +61,19 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
+	d.checkUUID = make(chan checkUUIDStruct)
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
-		// This shouldn't happen since MinLinkRefreshTime is parsed during config
-		// load.
-		panic(err)
+		panic(err) //Not going to happen, parsed in config
+	}
+	d.activeFetcherTtl, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetcherTtl)
+	if err != nil {
+		panic(err) //Not going to happen, parsed in config
+	}
+	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetcherCachetime)
+	if err != nil {
+		panic(err) //Not going to happen, parsed in config
 	}
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
@@ -78,27 +96,95 @@ func (d *Dispatcher) StopDispatcher() error {
 	return nil
 }
 
+func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
+	tag := "cleanStrandedClaims"
+	var err error
+	db := d.db
+	iter := db.Query(`SELECT domain FROM domain_info WHERE claim_tok = ?`, tok).Iter()
+	var domain string
+	ecount := 0
+	for iter.Scan(&domain) && ecount < 5 {
+		err = db.Query(`UPDATE domain_info
+						SET claim_tok = 00000000-0000-0000-0000-000000000000 
+						WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			log4go.Error("%s failed to UPDATE domain_info: %v", tag, err)
+			ecount++
+		}
+		err = db.Query(`DELETE FROM segments WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			log4go.Error("%s failed to DELETE from segments: %v", tag, err)
+			ecount++
+		}
+	}
+	err = iter.Close()
+	if err != nil {
+		log4go.Error("%s failed to find domain: %v", tag, err)
+	}
+}
+
+func (d *Dispatcher) buildActiveFetchersCache() map[gocql.UUID]time.Time {
+	mp := map[gocql.UUID]time.Time{}
+	iter := d.db.Query(`SELECT tok FROM active_fetchers`, qtok).Iter()
+	var uuid gocql.UUID
+	now := time.Now()
+	for iter.Scan(&uuid) {
+		mp[uuid] = now
+	}
+	return mp
+}
+
+func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUID]time.Time) {
+	// We have to loop until we get a good read of active_fetchers. If we didn't
+	// we might miss new dispatcher that comes online.
+	for {
+		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
+		var tok gocql.UUID
+
+		delete(mp, qtok)
+		for domainiter.Scan(&tok) {
+			mp[tok] = time.Now()
+		}
+		err := iter.Close()
+		if err == nil {
+			return
+		}
+		log4go.Error("Failed to read active_fetchers: pausing ....")
+		time.Sleep(time.Second)
+	}
+}
+
 func (d *Dispatcher) domainIterator() {
+	goodToks := d.buildActiveFetchersCache()
+
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, excluded FROM domain_info
-									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
-									AND dispatched = false ALLOW FILTERING`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok FROM domain_info WHERE excluded == false ALLOW FILTERING`).Iter()
 
 		var domain string
 		var dispatched bool
-		var excluded bool
-		for domainiter.Scan(&domain, &dispatched, &excluded) {
-			select {
-			case <-d.quit:
+		var claimTok gocql.UUID
+		zeroTok := gocql.UUID{}
+		for domainiter.Scan(&domain, &dispatched, &claimTok) {
+			if _, q := <-d.quit; q {
 				log4go.Debug("Domain iterator signaled to stop")
 				close(d.domains)
 				return
-			default:
 			}
 
-			if !dispatched && !excluded {
-				d.domains <- domain
+			if dispatched {
+				if claimTok == zeroTok {
+					d.domains <- domain
+				} else {
+					readTime, present := goodToks[claimTok]
+					if !present || readTime.Before(time.Now().Sub(d.activeFetcherCachetime)) {
+						d.updateActiveFetchersCache(claimTok, goodToks)
+						_, present := goodToks[claimTok]
+						if !present {
+							go d.cleanStrandedClaims(claimTok)
+						}
+					}
+				}
 			}
 		}
 
