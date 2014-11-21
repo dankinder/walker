@@ -169,7 +169,7 @@ CREATE TABLE {{.Keyspace}}.segments (
 	time timestamp,
 
 	PRIMARY KEY (dom, subdom, path, proto)
-) WITH compaction = { 'class' : 'LeveledCompactionStrategy' };
+) WITH compaction = { 'class' : 'LeveledCompactionStrategy' }
 	AND caching = { 'keys' : 'NONE', 'rows_per_partition' : 'NONE' }
 	-- Since we delete segments frequently, gc_grace_seconds = 0 indicates that
 	-- we should immediately delete the records. In certain failure scenarios
