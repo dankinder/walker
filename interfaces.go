@@ -47,6 +47,11 @@ type Datastore interface {
 	// This layer should handle efficiently deduplicating
 	// links (i.e. a fetcher should be safe feeding the same URL many times.
 	StoreParsedURL(u *URL, fr *FetchResults)
+
+	// This method will be called once in fetcher, in it's own go routine. It
+	// should be used to notify that underlying data source that this fetcher
+	// is still alive.
+	KeepAlive()
 }
 
 // Dispatcher defines the calls a dispatcher should respond to. A dispatcher

@@ -55,6 +55,7 @@ type WalkerConfig struct {
 		DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
 		MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
 		PurgeSidList            []string `yaml:"purge_sid_list"`
+		ActiveFetchersTtl       string   `yaml:"active_fetchers_ttl"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
@@ -62,7 +63,6 @@ type WalkerConfig struct {
 		RefreshPercentage       float64 `yaml:"refresh_percentage"`
 		NumConcurrentDomains    int     `yaml:"num_concurrent_domains"`
 		MinLinkRefreshTime      string  `yaml:"min_link_refresh_time"`
-		ActiveFetchersTtl       string  `yaml:"active_fetchers_ttl"`
 		ActiveFetchersCachetime string  `yaml:"active_fetchers_cachetime"`
 	} `yaml:"dispatcher"`
 
@@ -124,12 +124,12 @@ func SetDefaultConfig() {
 	Config.Fetcher.DefaultCrawlDelay = "1s"
 	Config.Fetcher.MaxCrawlDelay = "5m"
 	Config.Fetcher.PurgeSidList = nil
+	Config.Fetcher.ActiveFetchersTtl = "15m"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
 	Config.Dispatcher.NumConcurrentDomains = 1
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
-	Config.Dispatcher.ActiveFetchersTtl = "15m"
 	Config.Dispatcher.ActiveFetchersCachetime = "10m"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
@@ -184,10 +184,7 @@ func assertConfigInvariants() error {
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
 	}
-	_, err = time.ParseDuration(dis.ActiveFetchersTtl)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("Dispatcher.ActiveFetchersTtl failed to parse: %v", err))
-	}
+
 	_, err = time.ParseDuration(dis.ActiveFetchersCachetime)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.ActiveFetchersCachetime failed to parse: %v", err))
@@ -205,6 +202,10 @@ func assertConfigInvariants() error {
 	_, err = aggregateRegex(fet.IncludeLinkPatterns, "include_link_patterns")
 	if err != nil {
 		errs = append(errs, err.Error())
+	}
+	_, err = time.ParseDuration(fet.ActiveFetchersTtl)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl failed to parse: %v", err))
 	}
 	def, err := time.ParseDuration(fet.DefaultCrawlDelay)
 	if err != nil {

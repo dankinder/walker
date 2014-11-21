@@ -99,6 +99,10 @@ type FetchManager struct {
 
 	defCrawlDelay time.Duration
 	maxCrawlDelay time.Duration
+
+	// how long the fetcher waits before it updates it's
+	// active_fetchers.
+	activeFetcherHeartbeat time.Duration
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -129,6 +133,11 @@ func (fm *FetchManager) Start() {
 	if err != nil {
 		// This won't happen b/c this duration is checked in Config
 		panic(err)
+	}
+
+	fm.activeFetcherHeartbeat, err = time.ParseDuration(Config.Dispatcher.ActiveFetchersTtl)
+	if err != nil {
+		panic(err) // This won't happen b/c this duration is checked in Config
 	}
 
 	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
