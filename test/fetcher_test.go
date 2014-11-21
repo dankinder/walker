@@ -41,8 +41,8 @@ type LinkSpec struct {
 	robots bool
 }
 
-// HostSpec describes a mocked domain
-type HostSpec struct {
+// DomainSpec describes a mocked domain
+type DomainSpec struct {
 	// Name of the domain
 	domain string
 
@@ -53,7 +53,7 @@ type HostSpec struct {
 // TestSpec describes an entire mocked fetcher urn
 type TestSpec struct {
 	// List of mocked domains to include in test
-	hosts []HostSpec
+	hosts []DomainSpec
 
 	// This should be set true if any of the links stored in hosts
 	// has links embedded in html
@@ -142,19 +142,19 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 }
 
 //
-// Couple convenience functions to generate HostSpecs in one line.
+// Couple convenience functions to generate DomainSpecs in one line.
 //
 
-// singleLinkHostSpec can be used to provide a HostSpec for a single link.
+// singleLinkDomainSpec can be used to provide a DomainSpec for a single link.
 // This is just a convenience function.
-func singleLinkHostSpec(link string, response *helpers.MockResponse) HostSpec {
+func singleLinkDomainSpec(link string, response *helpers.MockResponse) DomainSpec {
 	u := helpers.Parse(link)
 	domain, err := u.ToplevelDomainPlusOne()
 	if err != nil {
 		panic(err)
 	}
 
-	return HostSpec{
+	return DomainSpec{
 		domain: domain,
 		links: []LinkSpec{
 			LinkSpec{
@@ -166,10 +166,10 @@ func singleLinkHostSpec(link string, response *helpers.MockResponse) HostSpec {
 
 }
 
-// singleLinkHostSpecArr is a convenience function that returns []HostSpec{singlLinkHostSpec(link, response)}
-func singleLinkHostSpecArr(link string, response *helpers.MockResponse) []HostSpec {
-	return []HostSpec{
-		singleLinkHostSpec(link, response),
+// singleLinkDomainSpecArr is a convenience function that returns []DomainSpec{singlLinkDomainSpec(link, response)}
+func singleLinkDomainSpecArr(link string, response *helpers.MockResponse) []DomainSpec {
+	return []DomainSpec{
+		singleLinkDomainSpec(link, response),
 	}
 }
 
@@ -347,8 +347,8 @@ func TestBasicNoRobots(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "norobots.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -415,8 +415,8 @@ func TestBasicNoRobots(t *testing.T) {
 func TestBasicRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "robotsdelay1.com",
 				links: []LinkSpec{
 
@@ -491,8 +491,8 @@ func TestBasicMimeType(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: false,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "accept.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -607,7 +607,7 @@ func TestBasicLinkTest(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: singleLinkHostSpecArr("http://linktests.com/links/test.html", &helpers.MockResponse{
+		hosts: singleLinkDomainSpecArr("http://linktests.com/links/test.html", &helpers.MockResponse{
 			Body: html_test_links,
 		}),
 	}
@@ -666,9 +666,9 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 
 	tests := TestSpec{
 		hasNoLinks: true,
-		hosts: []HostSpec{
-			singleLinkHostSpec("http://private.com/page1.html", nil),
-			singleLinkHostSpec("http://a1234567890bcde.com/page1.html", nil),
+		hosts: []DomainSpec{
+			singleLinkDomainSpec("http://private.com/page1.html", nil),
+			singleLinkDomainSpec("http://a1234567890bcde.com/page1.html", nil),
 		},
 	}
 
@@ -690,7 +690,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks:    false,
 		suppressTransport: true,
-		hosts:             singleLinkHostSpecArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
+		hosts:             singleLinkDomainSpecArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -725,7 +725,7 @@ func TestRedirects(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		transport:      &roundTriper,
-		hosts:          singleLinkHostSpecArr(link(1), nil),
+		hosts:          singleLinkDomainSpecArr(link(1), nil),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -774,7 +774,7 @@ func TestHrefWithSpace(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: singleLinkHostSpecArr(testPage, &helpers.MockResponse{
+		hosts: singleLinkDomainSpecArr(testPage, &helpers.MockResponse{
 			ContentType: "text/html",
 			Body:        html_with_href_space,
 		}),
@@ -843,10 +843,10 @@ func TestHttpTimeout(t *testing.T) {
 			hasParsedLinks:     true,
 			transport:          transport,
 			suppressMockServer: true,
-			hosts: []HostSpec{
-				singleLinkHostSpec("http://t1.com/page1.html", nil),
-				singleLinkHostSpec("http://t2.com/page1.html", nil),
-				singleLinkHostSpec("http://t3.com/page1.html", nil),
+			hosts: []DomainSpec{
+				singleLinkDomainSpec("http://t1.com/page1.html", nil),
+				singleLinkDomainSpec("http://t2.com/page1.html", nil),
+				singleLinkDomainSpec("http://t3.com/page1.html", nil),
 			},
 		}
 
@@ -930,8 +930,8 @@ func TestMetaNos(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: false,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "t1.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -988,8 +988,8 @@ func TestMetaNos(t *testing.T) {
 func TestFetchManagerFastShutdown(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "test.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -1061,7 +1061,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	// are failing. But the version I have above does work (even though it's wonky)
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkHostSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, 250*time.Millisecond, t)
@@ -1118,7 +1118,7 @@ func TestPathInclusion(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkHostSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1161,8 +1161,8 @@ func TestMaxCrawlDelay(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "a.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -1229,7 +1229,7 @@ func TestFnvFingerprint(t *testing.T) {
 </html>`
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkHostSpecArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1267,8 +1267,8 @@ func TestIfModifiedSince(t *testing.T) {
 	lastCrawled := time.Now()
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "a.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -1335,8 +1335,8 @@ func TestIfModifiedSince(t *testing.T) {
 func TestNestedRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "a.com",
 				links: []LinkSpec{
 					LinkSpec{
@@ -1426,8 +1426,8 @@ func TestMaxContentSize(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: []HostSpec{
-			HostSpec{
+		hosts: []DomainSpec{
+			DomainSpec{
 				domain: "a.com",
 				links: []LinkSpec{
 					LinkSpec{
