@@ -48,9 +48,10 @@ type Datastore interface {
 	// links (i.e. a fetcher should be safe feeding the same URL many times.
 	StoreParsedURL(u *URL, fr *FetchResults)
 
-	// This method will be called periodically in fetcher (see XXX). This
-	// method should notify the datastore that this fetcher is still alive.
-	KeepAlive() error
+	// This method will be called periodically in fetcher. This method should
+	// notify the datastore that this fetcher is still alive. start is true if
+	// this is the first KeepAlive call for this program.
+	KeepAlive(start bool) error
 }
 
 // Dispatcher defines the calls a dispatcher should respond to. A dispatcher

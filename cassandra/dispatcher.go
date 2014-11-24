@@ -38,16 +38,8 @@ type Dispatcher struct {
 
 	minRecrawlDelta time.Duration
 
-	// a channel to route claimed UUIDs too, possibly unclaiming them
-	checkUUID chan checkUUIDStruct
-
-	// How long to wait until an active_fetcher cache entry is considered stale
+	// Age an at which an active_fetcher cache entry is considered stale
 	activeFetcherCachetime time.Duration
-}
-
-type checkUUIDStruct struct {
-	domain string
-	token  gocql.UUID
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -61,7 +53,6 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
-	d.checkUUID = make(chan checkUUIDStruct)
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {

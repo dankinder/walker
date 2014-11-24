@@ -140,10 +140,23 @@ func (fm *FetchManager) Start() {
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
+	// We use 1/3 the ActiveFetchersTtl for the actual heartbeat. This number
+	// is chosen to be short enough (relative to ActiveFetchersTtl) so that
+	// the probability that Cassandra expires the active_fetchers entry is
+	// very small.
+	fm.activeFetcherHeartbeat = fm.activeFetcherHeartbeat / 3
 
 	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
+	}
+
+	// Make sure that the initial KeepAlive work is done
+	err = fm.Datastore.KeepAlive(true)
+	if err != nil {
+		err = fmt.Errorf("Initial KeepAlive call fatally failed: %v", err)
+		log4go.Error(err.Error())
+		panic(err)
 	}
 
 	// Create keep-alive thread
@@ -156,7 +169,7 @@ func (fm *FetchManager) Start() {
 				fm.fetchWait.Done()
 				return
 			}
-			err := fm.Datastore.KeepAlive()
+			err := fm.Datastore.KeepAlive(false)
 			if err != nil {
 				log4go.Error("KeepAlive Failed: %v", err)
 			}
