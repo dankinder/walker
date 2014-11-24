@@ -50,7 +50,7 @@ type Datastore interface {
 
 	// This method will be called periodically in fetcher (see XXX). This
 	// method should notify the datastore that this fetcher is still alive.
-	KeepAlive()
+	KeepAlive() error
 }
 
 // Dispatcher defines the calls a dispatcher should respond to. A dispatcher

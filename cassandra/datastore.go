@@ -34,6 +34,10 @@ type Datastore struct {
 
 	// This is a unique UUID for the entire crawler.
 	crawlerUUID gocql.UUID
+
+	// This value is false if the DS should call INSERT when KeepAlive is called.
+	// True means use UPDATE. THis value is set ONLY by KeepAlive()
+	updateAsKeepAlive bool
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -343,9 +347,17 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	}
 }
 
-func (ds *Datastore) KeepAlive() {
-
-	ds.crawlerUUID
+func (ds *Datastore) KeepAlive() error {
+	var err error
+	if ds.updateAsKeepAlive {
+		err = ds.db.Query(`UPDATE active_fetchers SET tok = ? WHERE tok = ?`,
+			ds.crawlerUUID, ds.crawlerUUID).Exec()
+	} else {
+		err = ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?)`,
+			ds.crawlerUUID).Exec()
+		ds.updateAsKeepAlive = true
+	}
+	return err
 }
 
 // hasDomain expects a TopLevelDomain+1 (no subdomain) and returns true if the

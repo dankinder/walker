@@ -67,11 +67,7 @@ func (d *Dispatcher) StartDispatcher() error {
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
-	d.activeFetcherTtl, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetcherTtl)
-	if err != nil {
-		panic(err) //Not going to happen, parsed in config
-	}
-	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetcherCachetime)
+	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetchersCachetime)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
@@ -125,7 +121,7 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 
 func (d *Dispatcher) buildActiveFetchersCache() map[gocql.UUID]time.Time {
 	mp := map[gocql.UUID]time.Time{}
-	iter := d.db.Query(`SELECT tok FROM active_fetchers`, qtok).Iter()
+	iter := d.db.Query(`SELECT tok FROM active_fetchers`).Iter()
 	var uuid gocql.UUID
 	now := time.Now()
 	for iter.Scan(&uuid) {
@@ -142,7 +138,7 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 		var tok gocql.UUID
 
 		delete(mp, qtok)
-		for domainiter.Scan(&tok) {
+		for iter.Scan(&tok) {
 			mp[tok] = time.Now()
 		}
 		err := iter.Close()
@@ -177,7 +173,7 @@ func (d *Dispatcher) domainIterator() {
 					d.domains <- domain
 				} else {
 					readTime, present := goodToks[claimTok]
-					if !present || readTime.Before(time.Now().Sub(d.activeFetcherCachetime)) {
+					if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
 						d.updateActiveFetchersCache(claimTok, goodToks)
 						_, present := goodToks[claimTok]
 						if !present {

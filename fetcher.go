@@ -102,6 +102,7 @@ type FetchManager struct {
 
 	// how long the fetcher waits before it updates it's
 	// active_fetchers.
+	keepAliveQuit          chan struct{}
 	activeFetcherHeartbeat time.Duration
 }
 
@@ -135,7 +136,7 @@ func (fm *FetchManager) Start() {
 		panic(err)
 	}
 
-	fm.activeFetcherHeartbeat, err = time.ParseDuration(Config.Dispatcher.ActiveFetchersTtl)
+	fm.activeFetcherHeartbeat, err = time.ParseDuration(Config.Fetcher.ActiveFetchersTtl)
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
@@ -144,6 +145,24 @@ func (fm *FetchManager) Start() {
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
+
+	// Create keep-alive thread
+	fm.keepAliveQuit = make(chan struct{})
+	fm.fetchWait.Add(1)
+	go func() {
+		for {
+			_, quit := <-fm.keepAliveQuit
+			if quit {
+				fm.fetchWait.Done()
+				return
+			}
+			err := fm.Datastore.KeepAlive()
+			if err != nil {
+				log4go.Error("KeepAlive Failed: %v", err)
+			}
+			time.Sleep(fm.activeFetcherHeartbeat)
+		}
+	}()
 
 	fm.started = true
 
@@ -197,6 +216,7 @@ func (fm *FetchManager) Stop() {
 	for _, f := range fm.fetchers {
 		go f.stop()
 	}
+	close(fm.keepAliveQuit)
 	fm.fetchWait.Wait()
 }
 
