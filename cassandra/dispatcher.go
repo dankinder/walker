@@ -148,7 +148,7 @@ func (d *Dispatcher) domainIterator() {
 
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok FROM domain_info WHERE excluded == false ALLOW FILTERING`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok FROM domain_info WHERE excluded = false ALLOW FILTERING`).Iter()
 
 		var domain string
 		var dispatched bool

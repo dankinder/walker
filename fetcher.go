@@ -165,16 +165,17 @@ func (fm *FetchManager) Start() {
 	fm.fetchWait.Add(1)
 	go func() {
 		for {
-			_, quit := <-fm.keepAliveQuit
-			if quit {
+			select {
+			case <-fm.keepAliveQuit:
 				fm.fetchWait.Done()
 				return
+			case <-time.After(fm.activeFetcherHeartbeat):
 			}
+
 			err := fm.Datastore.KeepAlive(false)
 			if err != nil {
 				log4go.Error("KeepAlive Failed: %v", err)
 			}
-			time.Sleep(fm.activeFetcherHeartbeat)
 		}
 	}()
 

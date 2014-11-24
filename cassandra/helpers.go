@@ -219,12 +219,14 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 CREATE INDEX ON {{.Keyspace}}.domain_info (claim_tok);
 CREATE INDEX ON {{.Keyspace}}.domain_info (priority);
 CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);
+CREATE INDEX ON {{.Keyspace}}.domain_info (excluded);
+
 
 -- active_fetchers lists the uuids of running fetchers
-CREATE TABLE {{.Keyspace}}.active_fetchers {
+CREATE TABLE {{.Keyspace}}.active_fetchers (
 	tok uuid,
 	PRIMARY KEY (tok)
-}
+)
 `
 
 // initdb ensures we only try to create the cassandra schema once in testing
