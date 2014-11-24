@@ -343,20 +343,26 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	}
 }
 
-func (ds *Datastore) KeepAlive(start bool) error {
+func (ds *Datastore) KeepAlive() error {
 	var err error
-	if !start {
-		err = ds.db.Query(`UPDATE active_fetchers SET tok = ? WHERE tok = ?`,
-			ds.crawlerUUID, ds.crawlerUUID).Exec()
-	} else {
-		durr, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
-		if err != nil {
-			panic(err) // This won't happen b/c this duration is checked in Config
-		}
-		seconds := int(durr / time.Second)
-		err = ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) TTL ?`,
-			ds.crawlerUUID, seconds).Exec()
+	var durr time.Duration
+	durr, err = time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
+	if err != nil {
+		panic(err) // This won't happen b/c this duration is checked in Config
 	}
+	seconds := int(durr / time.Second)
+
+	// if !start {
+	// 	// err = ds.db.Query(`UPDATE active_fetchers USING TTL ? SET tok = ? WHERE tok = ?`,
+	// 	// 	seconds, ds.crawlerUUID, ds.crawlerUUID).Exec()
+
+	// } else {
+	// 	err = ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
+	// 		ds.crawlerUUID, seconds).Exec()
+
+	// }
+	err = ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
+		ds.crawlerUUID, seconds).Exec()
 	return err
 }
 

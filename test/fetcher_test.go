@@ -134,12 +134,11 @@ func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
 	return r1
 }
 
-func (self *TestResults) dsKeepAliveCalls() []bool {
-	var r1 []bool
+func (self *TestResults) dsCountKeepAliveCalls() int {
+	r1 := 0
 	for _, call := range self.datastore.Calls {
 		if call.Method == "KeepAlive" {
-			b := call.Arguments.Get(0).(bool)
-			r1 = append(r1, b)
+			r1++
 		}
 	}
 	return r1
@@ -208,7 +207,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Configure mocks
 	//
-	ds.On("KeepAlive", mock.Anything).Return(nil)
+	ds.On("KeepAlive").Return(nil)
 	if !test.hasNoLinks {
 		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	}
@@ -391,11 +390,9 @@ func TestBasicNoRobots(t *testing.T) {
 	//
 	// Make sure KeepAlive was called
 	//
-	ka := results.dsKeepAliveCalls()
-	if len(ka) < 1 {
+	kacount := results.dsCountKeepAliveCalls()
+	if kacount < 1 {
 		t.Errorf("Expected KeepAlive to be called, but it wasn't")
-	} else if !ka[0] {
-		t.Errorf("Expected the first argument to KeepAlive to be true")
 	}
 
 	//
@@ -1518,13 +1515,8 @@ func TestKeepAlive(t *testing.T) {
 
 	results := runFetcher(tests, 7*time.Second, t)
 
-	ka := results.dsKeepAliveCalls()
-	if len(ka) < 2 {
-		t.Errorf("Expected two calls to keep alive, found only %d calls", len(ka))
-	} else if !ka[0] {
-		t.Errorf("Expected first KeepAlive call to receive true as argument, but it didn't")
-	} else if ka[1] {
-		t.Errorf("Expected second KeepAlive call to receive false as argument, but it didn't")
+	kacount := results.dsCountKeepAliveCalls()
+	if kacount < 2 {
+		t.Errorf("Expected two calls to keep alive, found only %d calls", kacount)
 	}
-
 }

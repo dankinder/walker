@@ -255,7 +255,7 @@ func GetTestDB() *gocql.Session {
 		panic(fmt.Sprintf("Could not connect to local cassandra db: %v", err))
 	}
 
-	tables := []string{"links", "segments", "domain_info"}
+	tables := []string{"links", "segments", "domain_info", "active_fetchers"}
 	for _, table := range tables {
 		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
 		if err != nil {

@@ -153,7 +153,7 @@ func (fm *FetchManager) Start() {
 	}
 
 	// Make sure that the initial KeepAlive work is done
-	err = fm.Datastore.KeepAlive(true)
+	err = fm.Datastore.KeepAlive()
 	if err != nil {
 		err = fmt.Errorf("Initial KeepAlive call fatally failed: %v", err)
 		log4go.Error(err.Error())
@@ -172,7 +172,7 @@ func (fm *FetchManager) Start() {
 			case <-time.After(fm.activeFetcherHeartbeat):
 			}
 
-			err := fm.Datastore.KeepAlive(false)
+			err := fm.Datastore.KeepAlive()
 			if err != nil {
 				log4go.Error("KeepAlive Failed: %v", err)
 			}

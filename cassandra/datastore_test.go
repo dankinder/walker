@@ -688,3 +688,47 @@ func TestDomainPriority(t *testing.T) {
 		highestPriority = prio
 	}
 }
+
+func TestKeepAlive(t *testing.T) {
+	db := GetTestDB()
+	ds := getDS(t)
+	read := func() (int, gocql.UUID) {
+		itr := db.Query(`SELECT * FROM active_fetchers`).Iter()
+		var tok gocql.UUID
+		count := 0
+		for itr.Scan(&tok) {
+			count++
+		}
+		err := itr.Close()
+		if err != nil {
+			panic(err)
+		}
+		return count, tok
+	}
+
+	keepAlive := func(start bool) {
+		err := ds.KeepAlive(start)
+		if err != nil {
+			t.Fatalf("Failed KeepAlive: %v", err)
+		}
+	}
+
+	count, tok := read()
+	if count != 0 {
+		t.Fatalf("Expected active_fetchers to be empty, but it wasn't")
+	}
+	keepAlive(true)
+	count, tok = read()
+	if count != 1 {
+		t.Fatalf("Failed to add tok to active_fetchers correctly, count was %d", count)
+	}
+
+	keepAlive(false)
+	count, tok2 := read()
+	if count != 1 {
+		t.Fatalf("Failed to reread count")
+	}
+	if tok != tok2 {
+		t.Fatalf("Failed to reread token")
+	}
+}
