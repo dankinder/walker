@@ -343,6 +343,11 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	}
 }
 
+func (ds *Datastore) KeepAlive() {
+
+	ds.crawlerUUID
+}
+
 // hasDomain expects a TopLevelDomain+1 (no subdomain) and returns true if the
 // domain exists in the domain_info table
 func (ds *Datastore) hasDomain(dom string) bool {
