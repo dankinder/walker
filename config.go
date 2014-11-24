@@ -207,8 +207,8 @@ func assertConfigInvariants() error {
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl failed to parse: %v", err))
 	}
-	if afTtl/time.Second < 60 {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl must be larger than 60s", err))
+	if afTtl/time.Second < 15 {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl must be larger than 15s", err))
 	}
 
 	def, err := time.ParseDuration(fet.DefaultCrawlDelay)

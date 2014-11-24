@@ -49,7 +49,7 @@ func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
 }
 
 func (ds *MockDatastore) KeepAlive(start bool) error {
-	// ds.Mock.Called(start)
+	ds.Mock.Called(start)
 	return nil
 }
 
