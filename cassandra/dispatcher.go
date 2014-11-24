@@ -38,7 +38,7 @@ type Dispatcher struct {
 
 	minRecrawlDelta time.Duration
 
-	// Age an at which an active_fetcher cache entry is considered stale
+	// Age at at which an active_fetcher cache entry is considered stale
 	activeFetcherCachetime time.Duration
 }
 
@@ -122,8 +122,8 @@ func (d *Dispatcher) buildActiveFetchersCache() map[gocql.UUID]time.Time {
 }
 
 func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUID]time.Time) {
-	// We have to loop until we get a good read of active_fetchers. If we didn't
-	// we might miss new dispatcher that comes online.
+	// We have to loop until we get a good read of active_fetchers. We can't
+	// risk accidentally identifying a running fetcher as dead.
 	for {
 		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
 		var tok gocql.UUID
@@ -136,7 +136,8 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 		if err == nil {
 			return
 		}
-		log4go.Error("Failed to read active_fetchers: pausing ....")
+
+		log4go.Error("Failed to read active_fetchers; pausing ...: %v", err)
 		time.Sleep(time.Second)
 	}
 }
@@ -151,6 +152,7 @@ func (d *Dispatcher) domainIterator() {
 		var domain string
 		var dispatched bool
 		var claimTok gocql.UUID
+		removeToks := map[gocql.UUID]bool{}
 		zeroTok := gocql.UUID{}
 		for domainiter.Scan(&domain, &dispatched, &claimTok) {
 			if _, q := <-d.quit; q {
@@ -159,20 +161,23 @@ func (d *Dispatcher) domainIterator() {
 				return
 			}
 
-			if dispatched {
-				if claimTok == zeroTok {
-					d.domains <- domain
-				} else {
-					readTime, present := goodToks[claimTok]
-					if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
-						d.updateActiveFetchersCache(claimTok, goodToks)
-						_, present := goodToks[claimTok]
-						if !present {
-							go d.cleanStrandedClaims(claimTok)
-						}
+			if claimTok == zeroTok && !dispatched {
+				d.domains <- domain
+			} else if claimTok != zeroTok && !removeToks[claimTok] {
+				// remove dead fetchers
+				readTime, present := goodToks[claimTok]
+				if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
+					d.updateActiveFetchersCache(claimTok, goodToks)
+					_, present := goodToks[claimTok]
+					if !present {
+						removeToks[claimTok] = true
 					}
 				}
 			}
+		}
+
+		for tok := range removeToks {
+			go d.cleanStrandedClaims(tok)
 		}
 
 		// Check for exit here as well in case domain_info is empty
