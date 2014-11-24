@@ -125,10 +125,10 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 	// We have to loop until we get a good read of active_fetchers. We can't
 	// risk accidentally identifying a running fetcher as dead.
 	for {
-		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
-		var tok gocql.UUID
-
 		delete(mp, qtok)
+
+		var tok gocql.UUID
+		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
 		for iter.Scan(&tok) {
 			mp[tok] = time.Now()
 		}
@@ -144,6 +144,7 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 
 func (d *Dispatcher) domainIterator() {
 	goodToks := d.buildActiveFetchersCache()
+	zeroTok := gocql.UUID{}
 
 	for {
 		log4go.Debug("Starting new domain iteration")
@@ -153,7 +154,6 @@ func (d *Dispatcher) domainIterator() {
 		var dispatched bool
 		var claimTok gocql.UUID
 		removeToks := map[gocql.UUID]bool{}
-		zeroTok := gocql.UUID{}
 		for domainiter.Scan(&domain, &dispatched, &claimTok) {
 			if _, q := <-d.quit; q {
 				log4go.Debug("Domain iterator signaled to stop")

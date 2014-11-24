@@ -100,10 +100,11 @@ type FetchManager struct {
 	defCrawlDelay time.Duration
 	maxCrawlDelay time.Duration
 
-	// how long the fetcher waits before it updates it's
-	// active_fetchers.
-	keepAliveQuit          chan struct{}
+	// how long to wait between Datastore.KeepAlive() calls.
 	activeFetcherHeartbeat time.Duration
+
+	// close this channel with the keep-alive thread should die
+	keepAliveQuit chan struct{}
 }
 
 // Start begins processing assuming that the datastore and any handlers have
