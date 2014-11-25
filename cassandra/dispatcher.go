@@ -58,11 +58,11 @@ func (d *Dispatcher) StartDispatcher() error {
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
-	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
+	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
-	d.activeFetcherCachetime = d.activeFetcherCachetime / 3
+	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)

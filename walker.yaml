@@ -75,6 +75,17 @@ fetcher:
     # How long until Cassandra will expire a token on the active_fetchers table
     active_fetcher_ttl: 15m
 
+    # Expert option: Controls the length of time an in-memory cache of
+    # actice_fetchers stays valid. This number should be greater than zero, and
+    # less than or equal to 1. The cache time is active_fetchers_ttl *
+    # active_fetchers_cacheratio. 
+    active_fetcher_cacheratio: 0.75
+
+    # Expert option: Controls the length of time between active_fetcher Keep-
+    # alive updates. This number should be greater than zero, and less than 1.
+    # The keep-alive period is active_fetcher_ttl * active_fetchers_keepratio.
+    active_fetcher_keepratio: 0.75
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)

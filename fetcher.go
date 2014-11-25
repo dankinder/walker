@@ -137,15 +137,11 @@ func (fm *FetchManager) Start() {
 		panic(err)
 	}
 
-	fm.activeFetcherHeartbeat, err = time.ParseDuration(Config.Fetcher.ActiveFetchersTtl)
+	ttl, err := time.ParseDuration(Config.Fetcher.ActiveFetchersTtl)
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
-	// We use 1/3 the ActiveFetchersTtl for the actual heartbeat. This number
-	// is chosen to be short enough (relative to ActiveFetchersTtl) so that
-	// the probability that Cassandra expires the active_fetchers entry is
-	// very small.
-	fm.activeFetcherHeartbeat = fm.activeFetcherHeartbeat / 3
+	fm.activeFetcherHeartbeat = time.Duration(float32(ttl) * Config.Fetcher.ActiveFetchersKeepratio)
 
 	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
