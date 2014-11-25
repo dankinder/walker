@@ -208,6 +208,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	// Configure mocks
 	//
 	ds.On("KeepAlive").Return(nil)
+
 	if !test.hasNoLinks {
 		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	}

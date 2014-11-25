@@ -625,9 +625,7 @@ func TestAutoUnclaim(t *testing.T) {
 	}
 	okUuid := makeUuid()
 	deadUuid := makeUuid()
-
 	flagTime := time.Now()
-
 	var tests = []DispatcherTest{
 		DispatcherTest{
 			Tag: "UnclaimTest",
@@ -642,7 +640,9 @@ func TestAutoUnclaim(t *testing.T) {
 
 				// Since dead.com isn't on active_fetchers, then all the dead.com links
 				// should be removed from segments, and the claim_tok of dead.com in
-				// domain_info should be zeroed.
+				// domain_info should be zeroed. The dispatcher will pick the dead.com
+				// links up again, so we have to use flagTime to verify the condition on
+				// segments (see below).
 				{
 					Dom:        "dead.com",
 					ClaimTok:   deadUuid,

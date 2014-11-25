@@ -33,6 +33,7 @@ func TestCommandsReadConfig(t *testing.T) {
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("StoreParsedURL", mock.Anything, mock.Anything).Return()
+	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
 
 	dispatcher := &helpers.MockDispatcher{}
@@ -86,6 +87,7 @@ func TestCrawlCommand(t *testing.T) {
 
 		datastore := &helpers.MockDatastore{}
 		datastore.On("ClaimNewHost").Return("")
+		datastore.On("KeepAlive").Return(nil)
 		Datastore(datastore)
 
 		dispatcher := &helpers.MockDispatcher{}
@@ -113,6 +115,7 @@ func TestFetchCommand(t *testing.T) {
 
 	datastore := &helpers.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
+	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
 
 	// Set the dispatcher to ensure it doesn't receive any calls
