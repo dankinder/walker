@@ -16,6 +16,7 @@
 #
 # Note that hour, 'h', is the largest time unit supported.
 
+# Fetcher configuration
 fetcher:
     # Maximum number of entries to hold when we cache domain name resolutions
     max_dns_cache_entries: 20000
@@ -84,7 +85,7 @@ fetcher:
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)
     num_links_per_segment: 500
-   
+
     # refresh_percentage is the percentage of links added per dispatch that have already been crawled.
     # So refresh_percentage = 25 means that 25% of the links added to segments on the next dispatch
     # will be refreshed (i.e. already crawled) links. This value must be >= 0 and <= 100.
@@ -121,7 +122,8 @@ cassandra:
     keyspace: "walker"
 
     # replication_factor is used when defining the initial keyspace.
-    replication_factor: 3
+    # For production clusters we recommend 3 replicas.
+    replication_factor: 1
 
     # Whether to dynamically add new-found domains (or their links) to the crawl (a
     # broad crawl) or discard them, assuming desired domains are manually seeded.
