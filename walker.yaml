@@ -5,8 +5,16 @@
 # Walker was made to run with sensible defaults. The values set here are the
 # defaults. If no walker.yaml file is provided, or if keys are left out, then
 # these values will be used.
-
-
+#
+# NOTE: Units of time (ex. http_timeout) are those understood by Go's
+# time.ParseDuration call. To quote their documentation:
+#
+#   A duration string is a possibly signed sequence of decimal numbers,
+#   each with optional fraction and a unit suffix, such as "300ms", "-1.5h"
+#   or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms", "s", "m",
+#   "h".
+#
+# Note that hour, 'h', is the largest time unit supported.
 
 fetcher:
     # Maximum number of entries to hold when we cache domain name resolutions
@@ -40,7 +48,7 @@ fetcher:
     blacklist_private_ips: true
 
     # The duration the the complete http-Get is allowed to run before being
-    # canceled. Zero indicates no timeout. Examples: 100ms, 4us, 0s, 7h.
+    # canceled. Zero indicates no timeout.
     http_timeout: 30s
 
     # If true, walker will honor the website authors 
@@ -86,9 +94,12 @@ dispatcher:
     num_concurrent_domains: 1
 
     # A duration specifying the minimum amount of time that must pass between re-crawling 
-    # a specific link. Examples: 100ms, 4us, 0s, 7h. [NOTE: hour, 'h', is the largest time 
-    # unit supported]
+    # a specific link.
     min_link_refresh_time: 0s
+
+    # Once the dispatcher has iterated all domains and dispatched them, it will
+    # wait this long before iterating again.
+    dispatch_interval: 10s
 
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object
@@ -96,7 +107,7 @@ dispatcher:
 #
 cassandra:
     hosts: ["localhost"]
-    timeout: "2s"
+    timeout: 2s
     cql_version: "3.0.0"
     proto_version: 2
     port: 9042

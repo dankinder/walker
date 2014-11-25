@@ -7,6 +7,8 @@ fetcher:
     default_crawl_delay: 0
     num_simultaneous_fetchers: 1
     blacklist_private_ips: false
+dispatcher:
+    dispatch_interval: 100ms
 cassandra:
     keyspace: "walker_test"
     replication_factor: 1
