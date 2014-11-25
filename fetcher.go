@@ -103,7 +103,7 @@ type FetchManager struct {
 	// how long to wait between Datastore.KeepAlive() calls.
 	activeFetcherHeartbeat time.Duration
 
-	// close this channel with the keep-alive thread should die
+	// close this channel to kill the keep-alive thread
 	keepAliveQuit chan struct{}
 }
 

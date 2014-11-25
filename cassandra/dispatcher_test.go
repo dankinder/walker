@@ -608,12 +608,6 @@ func TestMinLinkRefreshTime(t *testing.T) {
 }
 
 func TestAutoUnclaim(t *testing.T) {
-	orig := walker.Config.Dispatcher.ActiveFetchersCachetime
-	defer func() {
-		walker.Config.Dispatcher.ActiveFetchersCachetime = orig
-	}()
-	walker.Config.Dispatcher.ActiveFetchersCachetime = "1s"
-
 	// This test shows that the dispatcher will reclaim the dead.com links,
 	// but leave the ok.com links alone.
 	makeUuid := func() gocql.UUID {
@@ -753,10 +747,11 @@ func TestAutoUnclaim(t *testing.T) {
 			"ok.com":   flagTime,
 			"dead.com": walker.NotYetCrawled,
 		}
-
+		seen := map[string]bool{}
 		iter = db.Query(`SELECT dom, time FROM segments`).Iter()
 		var got time.Time
 		for iter.Scan(&dom, &got) {
+			seen[dom] = true
 			exp, expOk := expectedTimes[dom]
 			if !expOk {
 				t.Errorf("Failed to find domain %v in expectedTimes", dom)
@@ -774,6 +769,12 @@ func TestAutoUnclaim(t *testing.T) {
 		err = iter.Close()
 		if err != nil {
 			t.Fatalf("Failed select from segments: %v", err)
+		}
+
+		for dom := range expectedTimes {
+			if !seen[dom] {
+				t.Errorf("Expected to find domain %v, but didn't", dom)
+			}
 		}
 	}
 

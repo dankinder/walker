@@ -72,6 +72,9 @@ fetcher:
     # http://a.com/path
     purge_sid_list: ["jsessionid", "phpsessid", "aspsessionid"]
 
+    # How long until Cassandra will expire a token on the active_fetchers table
+    active_fetcher_ttl: 15m
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)
@@ -89,12 +92,6 @@ dispatcher:
     # a specific link. Examples: 100ms, 4us, 0s, 7h. [NOTE: hour, 'h', is the largest time 
     # unit supported]
     min_link_refresh_time: 0s
-
-    # How long cassandra will allow this fetchers tok to live on the active_fetcher table
-    active_fetcher_ttl: 15m
-
-    # How long does the dispatcher consider cached active_fetcher tok's valid
-    active_fetcher_cachetime: 5m
 
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object

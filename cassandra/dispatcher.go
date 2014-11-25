@@ -58,10 +58,11 @@ func (d *Dispatcher) StartDispatcher() error {
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
-	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Dispatcher.ActiveFetchersCachetime)
+	d.activeFetcherCachetime, err = time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
+	d.activeFetcherCachetime = d.activeFetcherCachetime / 3
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
@@ -91,6 +92,12 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 	var domain string
 	ecount := 0
 	for iter.Scan(&domain) && ecount < 5 {
+		err = db.Query(`DELETE FROM segments WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			log4go.Error("%s failed to DELETE from segments: %v", tag, err)
+			ecount++
+		}
+
 		err = db.Query(`UPDATE domain_info
 						SET 
 							claim_tok = 00000000-0000-0000-0000-000000000000,
@@ -98,11 +105,6 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 						WHERE dom = ?`, domain).Exec()
 		if err != nil {
 			log4go.Error("%s failed to UPDATE domain_info: %v", tag, err)
-			ecount++
-		}
-		err = db.Query(`DELETE FROM segments WHERE dom = ?`, domain).Exec()
-		if err != nil {
-			log4go.Error("%s failed to DELETE from segments: %v", tag, err)
 			ecount++
 		}
 	}
@@ -157,13 +159,14 @@ func (d *Dispatcher) domainIterator() {
 
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok FROM domain_info WHERE excluded = false ALLOW FILTERING`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
 
 		var domain string
 		var dispatched bool
 		var claimTok gocql.UUID
+		var excluded bool
 		removeToks := map[gocql.UUID]bool{}
-		for domainiter.Scan(&domain, &dispatched, &claimTok) {
+		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
 			select {
 			case <-d.quit:
 				log4go.Debug("Domain iterator signaled to stop")
@@ -172,7 +175,7 @@ func (d *Dispatcher) domainIterator() {
 			default:
 			}
 
-			if claimTok == zeroTok && !dispatched {
+			if !dispatched && !excluded {
 				d.domains <- domain
 			} else if claimTok != zeroTok && !removeToks[claimTok] {
 				// remove dead fetchers
@@ -182,13 +185,10 @@ func (d *Dispatcher) domainIterator() {
 					_, present := goodToks[claimTok]
 					if !present {
 						removeToks[claimTok] = true
+						go d.cleanStrandedClaims(claimTok)
 					}
 				}
 			}
-		}
-
-		for tok := range removeToks {
-			go d.cleanStrandedClaims(tok)
 		}
 
 		// Check for exit here as well in case domain_info is empty

@@ -219,8 +219,6 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 CREATE INDEX ON {{.Keyspace}}.domain_info (claim_tok);
 CREATE INDEX ON {{.Keyspace}}.domain_info (priority);
 CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);
-CREATE INDEX ON {{.Keyspace}}.domain_info (excluded);
-
 
 -- active_fetchers lists the uuids of running fetchers
 CREATE TABLE {{.Keyspace}}.active_fetchers (
