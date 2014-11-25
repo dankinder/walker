@@ -694,7 +694,7 @@ func TestKeepAlive(t *testing.T) {
 	defer func() {
 		walker.Config.Fetcher.ActiveFetchersTtl = orig
 	}()
-	walker.Config.Fetcher.ActiveFetchersTtl = "5s"
+	walker.Config.Fetcher.ActiveFetchersTtl = "1s"
 
 	db := GetTestDB()
 	ds := getDS(t)
@@ -739,7 +739,7 @@ func TestKeepAlive(t *testing.T) {
 	}
 
 	keepAlive()
-	time.Sleep(6 * time.Second)
+	time.Sleep(1500 * time.Millisecond)
 	count, _ = read()
 	if count != 0 {
 		t.Fatalf("Failed to expire from active_fetchers")

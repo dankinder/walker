@@ -36,7 +36,7 @@ type Datastore struct {
 	crawlerUUID gocql.UUID
 
 	// Number of seconds the crawlerUUID lives in active_fetchers before
-	// it's flushed.
+	// it's flushed (unless KeepAlive is called in the interim).
 	secondsTtl int
 }
 
