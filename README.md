@@ -72,6 +72,22 @@ In order to run walker and cassandra on your local machine, you may need to make
 - Change `rpc_address` to `0.0.0.0`
 - `sudo service cassandra restart`
 
+Once you have this step completed you can go ahead and build the `walker` binary:
+```sh
+cd walker # note, there dis a walker directory within the project alter directory e.g. walker/walker
+go build
+```
+
+The next step is to build the cassandra schema:
+
+```sh
+walker schema -o schema.txt
+cqlsf -f schema.txt
+```
+
+This will create the schema for you. At this point the console can be loaded via `walker console`
+
+
 ## Basic crawl
 
 Once you've built a `walker` binary, you can crawl with the default handler easily, which simply writes pages to a directory structure in `$PWD`.
