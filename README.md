@@ -122,31 +122,48 @@ See [walker.yaml](walker.yaml) for extensive descriptions of the various configu
 
 A small sampling of common configuration items:
 ```yaml
-# Whether to dynamically add new-found domains (or their links) to the crawl (a
-# broad crawl) or discard them, assuming desired domains are manually seeded.
-add_new_domains: false
+# Fetcher configuration
+fetcher:
+    # Configure the User-Agent header
+    user_agent: Walker (http://github.com/iParadigms/walker)
 
-# Configure the User-Agent header
-user_agent: Walker (http://github.com/iParadigms/walker)
+    # Configure which formats this crawler Accepts
+    accept_formats: ["text/html", "text/*"]
 
-# Configure which formats this crawler Accepts
-accept_formats: ["text/html", "text/*"]
+    # Which link to accept based on protocol (a.k.a. schema)
+    accept_protocols: ["http", "https"]
 
-# Which link to accept based on protocol (a.k.a. schema)
-accept_protocols: ["http", "https"]
+    # Maximum size of http content
+    max_http_content_size_bytes: 20971520 # 20MB
+
+    # Crawl delay duration to use when unspecified by robots.txt. 
+    default_crawl_delay: 1s
+
+# Dispatcher configuration
+dispatcher:
+    # maximum number of links added to segments table per dispatch (must be >0)
+    num_links_per_segment: 500
+
+    # refresh_percentage is the percentage of links added per dispatch that have already been crawled.
+    # So refresh_percentage = 25 means that 25% of the links added to segments on the next dispatch
+    # will be refreshed (i.e. already crawled) links. This value must be >= 0 and <= 100.
+    refresh_percentage: 25
 
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object
 # (https://godoc.org/github.com/gocql/gocql#ClusterConfig).
 #
-# keyspace shouldn't generally need to be changed; it is mainly changed in
-# testing as an extra layer of safety.
-#
-# replication_factor is used when defining the keyspace.
 cassandra:
     hosts: ["localhost"]
-    keyspace: "walker"
-    replication_factor: 3
+    timeout: "2s"
+
+    # replication_factor is used when defining the initial keyspace.
+    # For production clusters we recommend 3 replicas.
+    replication_factor: 1
+
+    # Whether to dynamically add new-found domains (or their links) to the crawl (a
+    # broad crawl) or discard them, assuming desired domains are manually seeded.
+    add_new_domains: false
 ```
 
 # License
