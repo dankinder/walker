@@ -114,13 +114,21 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 
 func (d *Dispatcher) buildActiveFetchersCache() map[gocql.UUID]time.Time {
 	mp := map[gocql.UUID]time.Time{}
-	iter := d.db.Query(`SELECT tok FROM active_fetchers`).Iter()
-	var uuid gocql.UUID
-	now := time.Now()
-	for iter.Scan(&uuid) {
-		mp[uuid] = now
+	for {
+		iter := d.db.Query(`SELECT tok FROM active_fetchers`).Iter()
+		var uuid gocql.UUID
+		now := time.Now()
+		for iter.Scan(&uuid) {
+			mp[uuid] = now
+		}
+		err := iter.Close()
+		if err == nil {
+			return mp
+		}
+
+		log4go.Error("Failed to read active_fetchers table: %v", err)
+		time.Sleep(time.Second)
 	}
-	return mp
 }
 
 func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUID]time.Time) {
@@ -138,7 +146,7 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 			return
 		}
 
-		log4go.Error("Failed to read active_fetchers; pausing ...: %v", err)
+		log4go.Error("Failed to read active_fetchers: %v", err)
 		time.Sleep(time.Second)
 	}
 }
