@@ -87,12 +87,14 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 	tag := "cleanStrandedClaims"
 	var err error
 	db := d.db
-	iter := db.Query(`SELECT domain FROM domain_info WHERE claim_tok = ?`, tok).Iter()
+	iter := db.Query(`SELECT dom FROM domain_info WHERE claim_tok = ?`, tok).Iter()
 	var domain string
 	ecount := 0
 	for iter.Scan(&domain) && ecount < 5 {
 		err = db.Query(`UPDATE domain_info
-						SET claim_tok = 00000000-0000-0000-0000-000000000000 
+						SET 
+							claim_tok = 00000000-0000-0000-0000-000000000000,
+							dispatched = false
 						WHERE dom = ?`, domain).Exec()
 		if err != nil {
 			log4go.Error("%s failed to UPDATE domain_info: %v", tag, err)
@@ -126,7 +128,6 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 	// risk accidentally identifying a running fetcher as dead.
 	for {
 		delete(mp, qtok)
-
 		var tok gocql.UUID
 		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
 		for iter.Scan(&tok) {
@@ -155,10 +156,12 @@ func (d *Dispatcher) domainIterator() {
 		var claimTok gocql.UUID
 		removeToks := map[gocql.UUID]bool{}
 		for domainiter.Scan(&domain, &dispatched, &claimTok) {
-			if _, q := <-d.quit; q {
+			select {
+			case <-d.quit:
 				log4go.Debug("Domain iterator signaled to stop")
 				close(d.domains)
 				return
+			default:
 			}
 
 			if claimTok == zeroTok && !dispatched {

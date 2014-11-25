@@ -606,3 +606,175 @@ func TestMinLinkRefreshTime(t *testing.T) {
 	}
 
 }
+
+func TestAutoUnclaim(t *testing.T) {
+	orig := walker.Config.Dispatcher.ActiveFetchersCachetime
+	defer func() {
+		walker.Config.Dispatcher.ActiveFetchersCachetime = orig
+	}()
+	walker.Config.Dispatcher.ActiveFetchersCachetime = "1s"
+
+	// This test shows that the dispatcher will reclaim the dead.com links,
+	// but leave the ok.com links alone.
+	makeUuid := func() gocql.UUID {
+		uuid, err := gocql.RandomUUID()
+		if err != nil {
+			panic(err)
+		}
+		return uuid
+	}
+	okUuid := makeUuid()
+	deadUuid := makeUuid()
+
+	flagTime := time.Now()
+
+	var tests = []DispatcherTest{
+		DispatcherTest{
+			Tag: "UnclaimTest",
+
+			ExistingDomainInfos: []ExistingDomainInfo{
+				// Since ok.com is added to active_fetchers, it'll stay in segments
+				{
+					Dom:        "ok.com",
+					ClaimTok:   okUuid,
+					Dispatched: true,
+				},
+
+				// Since dead.com isn't on active_fetchers, then all the dead.com links
+				// should be removed from segments, and the claim_tok of dead.com in
+				// domain_info should be zeroed.
+				{
+					Dom:        "dead.com",
+					ClaimTok:   deadUuid,
+					Dispatched: true,
+				},
+			},
+
+			ExistingLinks: []ExistingLink{
+				{URL: walker.URL{URL: helpers.UrlParse("http://ok.com/page1.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://ok.com/page2.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://dead.com/page3.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://dead.com/page4.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+			},
+		},
+	}
+
+	var q *gocql.Query
+	for _, dt := range tests {
+		db := GetTestDB()
+		for _, edi := range dt.ExistingDomainInfos {
+			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
+							VALUES (?, ?, ?, ?, ?)`,
+				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
+			}
+
+			if edi.ClaimTok == okUuid {
+				q = db.Query(`INSERT INTO active_fetchers (tok) VALUES (?)`, edi.ClaimTok)
+				if err := q.Exec(); err != nil {
+					t.Fatalf("Failed to insert into active_fetchers: %v\nQuery: %v", err, q)
+				}
+			}
+		}
+
+		for _, el := range dt.ExistingLinks {
+			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
+			if el.Status == -1 {
+				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, getnow)
+								VALUES (?, ?, ?, ?, ?, ?)`,
+					dom,
+					subdom,
+					el.URL.RequestURI(),
+					el.URL.Scheme,
+					el.URL.LastCrawled,
+					el.GetNow)
+			} else {
+				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, stat, getnow)
+								VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					dom,
+					subdom,
+					el.URL.RequestURI(),
+					el.URL.Scheme,
+					el.URL.LastCrawled,
+					el.Status,
+					el.GetNow)
+			}
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)
+			}
+
+			q = db.Query(`INSERT INTO segments (dom, subdom, path, proto, time) VALUES (?, ?, ?, ?, ?)`,
+				dom,
+				subdom,
+				el.URL.RequestURI(),
+				el.URL.Scheme,
+				flagTime)
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert segments: %v\nQuery: %v", err, q)
+			}
+		}
+
+		d := &Dispatcher{}
+		go d.StartDispatcher()
+		time.Sleep(1500 * time.Millisecond)
+		d.StopDispatcher()
+
+		// Test that the UUID of dead.com has been cleared
+		expectedTok := map[string]gocql.UUID{
+			"ok.com":   okUuid,
+			"dead.com": gocql.UUID{},
+		}
+
+		iter := db.Query(`SELECT dom, claim_tok FROM domain_info`).Iter()
+		var dom string
+		var claim_tok gocql.UUID
+		for iter.Scan(&dom, &claim_tok) {
+			exp, expOk := expectedTok[dom]
+			if !expOk {
+				t.Errorf("Failed to find domain %v in expectedToks", dom)
+			} else if claim_tok != exp {
+				t.Errorf("claim_tok mismatch for domain %v: got %v, expected %v", dom, claim_tok, exp)
+			}
+		}
+		err := iter.Close()
+		if err != nil {
+			t.Fatalf("Failed select read: %v", err)
+		}
+
+		// Now we look at the time in segments, as you can see above we insert flagTime into the time
+		// slot of segments for all links in ok.com, and dead.com. But when the dead.com links are
+		// replaced, they're time field will be updated to walker.NotYetCrawled
+		expectedTimes := map[string]time.Time{
+			"ok.com":   flagTime,
+			"dead.com": walker.NotYetCrawled,
+		}
+
+		iter = db.Query(`SELECT dom, time FROM segments`).Iter()
+		var got time.Time
+		for iter.Scan(&dom, &got) {
+			exp, expOk := expectedTimes[dom]
+			if !expOk {
+				t.Errorf("Failed to find domain %v in expectedTimes", dom)
+			} else {
+				delta := got.Sub(exp)
+				if delta < 0 {
+					delta = -delta
+				}
+				seconds := delta / time.Second
+				if seconds > 3 {
+					t.Errorf("time mismatch for domain %v, delta > 3s: time-exp == duration %v", dom, delta)
+				}
+			}
+		}
+		err = iter.Close()
+		if err != nil {
+			t.Fatalf("Failed select from segments: %v", err)
+		}
+	}
+
+}
