@@ -690,10 +690,16 @@ func TestDomainPriority(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
+	orig := walker.Config.Fetcher.ActiveFetchersTtl
+	defer func() {
+		walker.Config.Fetcher.ActiveFetchersTtl = orig
+	}()
+	walker.Config.Fetcher.ActiveFetchersTtl = "5s"
+
 	db := GetTestDB()
 	ds := getDS(t)
 	read := func() (int, gocql.UUID) {
-		itr := db.Query(`SELECT * FROM active_fetchers`).Iter()
+		itr := db.Query(`SELECT tok FROM active_fetchers`).Iter()
 		var tok gocql.UUID
 		count := 0
 		for itr.Scan(&tok) {
@@ -706,8 +712,8 @@ func TestKeepAlive(t *testing.T) {
 		return count, tok
 	}
 
-	keepAlive := func(start bool) {
-		err := ds.KeepAlive(start)
+	keepAlive := func() {
+		err := ds.KeepAlive()
 		if err != nil {
 			t.Fatalf("Failed KeepAlive: %v", err)
 		}
@@ -717,18 +723,25 @@ func TestKeepAlive(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("Expected active_fetchers to be empty, but it wasn't")
 	}
-	keepAlive(true)
+	keepAlive()
 	count, tok = read()
 	if count != 1 {
 		t.Fatalf("Failed to add tok to active_fetchers correctly, count was %d", count)
 	}
 
-	keepAlive(false)
+	keepAlive()
 	count, tok2 := read()
 	if count != 1 {
 		t.Fatalf("Failed to reread count")
 	}
 	if tok != tok2 {
 		t.Fatalf("Failed to reread token")
+	}
+
+	keepAlive()
+	time.Sleep(6 * time.Second)
+	count, _ = read()
+	if count != 0 {
+		t.Fatalf("Failed to expire from active_fetchers")
 	}
 }
