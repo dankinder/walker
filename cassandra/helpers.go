@@ -215,7 +215,8 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 	-- how many uncrawled links does this domain have
 	uncrawled_links int,
 
-	-- how many links are queued to be crawled for this domain
+	-- how many links were queued last time the dispatcher updated segments for this
+	-- domain
 	queued_links int,
 
 	---- Items yet to be added to walker

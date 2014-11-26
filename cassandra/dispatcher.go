@@ -242,7 +242,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	heap.Init(&crawledLinks)
 
 	// cell push will push the argument cell onto one of the three link-lists.
-	// logs failure if CreateURL fails. It also keeps track of total and un-crawled
+	// logs failure if CreateURL fails. It also keeps track of total and uncrawled
 	// links by incrementing linksCount and uncrawledLinksCount
 	var now = time.Now()
 	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
