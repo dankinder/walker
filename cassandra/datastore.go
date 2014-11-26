@@ -374,21 +374,27 @@ func (ds *Datastore) addDomain(dom string) {
 }
 
 // addDomainWithExcludeReason adds a domain to the domain_info table if it does
-// not exist. If the domain already exists it will not change the exclusion
-// status.
+// not exist.
 func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error {
-	query := `INSERT INTO domain_info (dom, claim_tok, dispatched,
-										priority, excluded, exclude_reason)
-				VALUES (?, ?, ?, ?, ?, ?) IF NOT EXISTS`
-	var err error
-	if reason != "" {
-		err = ds.db.Query(query, dom, gocql.UUID{}, false, 0, true, reason).Exec()
-	} else {
-		err = ds.db.Query(query, dom, gocql.UUID{}, false, 0, nil, nil).Exec()
-	}
+	query := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, ?, false, 0) IF NOT EXISTS`
+	err := ds.db.Query(query, dom, gocql.UUID{}).Exec()
 	if err != nil {
-		return fmt.Errorf("Failed to add new dom %v: %v", dom, err)
+		return err
 	}
+
+	if reason != "" {
+		query := `UPDATE domain_info 
+			     	SET 
+				  		excluded = true,
+				  		exclude_reason = ?
+			  		WHERE 
+				  		dom = ?`
+		err = ds.db.Query(query, reason, dom).Exec()
+		if err != nil {
+			return err
+		}
+	}
+
 	ds.domainCache.Set(dom, true)
 	return nil
 }
@@ -469,7 +475,6 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 		// This should just be a backstop in case someone doesn't set exclude_reason.
 		reason = "Exclusion marked"
 	}
-
 	dinfo := &DomainInfo{
 		Domain:               domain,
 		ClaimToken:           claim_tok,
@@ -502,7 +507,9 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 		args = append(args, query.Seed)
 	}
 
-	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason, tot_links, uncrawled_links FROM domain_info"
+	cql := `SELECT dom, claim_tok, claim_time, excluded, exclude_reason, 
+				   tot_links, uncrawled_links, queued_links 
+			FROM domain_info`
 	if len(conditions) > 0 {
 		cql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -539,6 +546,7 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 			ExcludeReason:        reason,
 			NumberLinksTotal:     linksCount,
 			NumberLinksUncrawled: uncrawledLinksCount,
+			NumberLinksQueued:    queuedLinksCount,
 		})
 	}
 	err := itr.Close()
