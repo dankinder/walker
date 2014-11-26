@@ -242,10 +242,18 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	heap.Init(&crawledLinks)
 
 	// cell push will push the argument cell onto one of the three link-lists.
-	// logs failure if CreateURL fails.
+	// logs failure if CreateURL fails. It also keeps track of total and un-crawled
+	// links by incrementing linksCount and uncrawledLinksCount
 	var now = time.Now()
 	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
+	linksCount := 0
+	uncrawledLinksCount := 0
 	cell_push := func(c *cell) {
+		linksCount++
+		if c.crawl_time.Equal(walker.NotYetCrawled) {
+			uncrawledLinksCount++
+		}
+
 		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
 		if err != nil {
 			log4go.Error("CreateURL: " + err.Error())
@@ -286,8 +294,6 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	var finish = true
 	var current cell
 	var previous cell
-	linksCount := 0
-	uncrawledLinksCount := 0
 	iter := q.Iter()
 	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawl_time, &current.getnow) {
 		if start {
@@ -301,10 +307,6 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		// dom, subdom, path, and protocol
 		if !current.equivalent(&previous) {
 			cell_push(&previous)
-			linksCount++
-			if previous.crawl_time.Equal(walker.NotYetCrawled) {
-				uncrawledLinksCount++
-			}
 		}
 
 		previous = current

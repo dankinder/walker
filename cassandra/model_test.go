@@ -451,9 +451,8 @@ func TestListDomains(t *testing.T) {
 			continue
 		}
 		dinfos, err := store.ListDomains(DQ{
-			Seed:     test.seed,
-			Limit:    test.limit,
-			GetStats: true,
+			Seed:  test.seed,
+			Limit: test.limit,
 		})
 
 		if err != nil {
@@ -606,10 +605,9 @@ func TestListWorkingDomains(t *testing.T) {
 
 	for _, test := range tests {
 		dinfos, err := store.ListDomains(DQ{
-			Seed:     test.seed,
-			Limit:    test.limit,
-			Working:  true,
-			GetStats: true,
+			Seed:    test.seed,
+			Limit:   test.limit,
+			Working: true,
 		})
 		if err != nil {
 			t.Errorf("ListWorkingDomains for tag %s direct error %v", test.tag, err)
@@ -911,7 +909,7 @@ func TestInsertLinks(t *testing.T) {
 			allDomains = append(allDomains, domain)
 		}
 
-		dinfos, err := store.ListDomains(DQ{Limit: LIM, GetStats: true})
+		dinfos, err := store.ListDomains(DQ{Limit: LIM})
 		if err != nil {
 			t.Errorf("InsertLinks:ListDomains for tag %s direct error %v", test.tag, err)
 		}

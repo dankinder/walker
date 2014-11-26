@@ -446,11 +446,6 @@ type DQ struct {
 	// Set to true to get only dispatched domains
 	// default: get all domains
 	Working bool
-
-	// Set to true to fetch statistics (ex. NumberLinksTotal), a potentially
-	// heavy operation.
-	// Default: do not fetch stats
-	GetStats bool
 }
 
 // FindDomain returns the DomainInfo for the specified domain
