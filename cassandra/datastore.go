@@ -174,8 +174,11 @@ func (ds *Datastore) UnclaimHost(host string) {
 		log4go.Error("Failed deleting segment links for %v: %v", host, err)
 	}
 
-	err = ds.db.Query(`UPDATE domain_info SET dispatched = false,
-							claim_tok = 00000000-0000-0000-0000-000000000000
+	err = ds.db.Query(`UPDATE domain_info 
+					   SET 
+					   		dispatched = false,
+							claim_tok = 00000000-0000-0000-0000-000000000000,
+							queued_links = 0
 						WHERE dom = ?`, host).Exec()
 	if err != nil {
 		log4go.Error("Failed deleting %v from domains_to_crawl: %v", host, err)
@@ -446,13 +449,15 @@ type DQ struct {
 
 // FindDomain returns the DomainInfo for the specified domain
 func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
-	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason
+	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason, tot_links, uncrawled_links, queued_links
 						FROM domain_info WHERE dom = ?`, domain).Iter()
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
 	var exclude_reason string
-	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
+	var linksCount, uncrawledLinksCount, queuedLinksCount int
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason, &linksCount, &uncrawledLinksCount,
+		&queuedLinksCount) {
 		err := itr.Close()
 		return nil, err
 	}
@@ -466,18 +471,20 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 	}
 
 	dinfo := &DomainInfo{
-		Domain:        domain,
-		ClaimToken:    claim_tok,
-		ClaimTime:     claim_time,
-		Excluded:      excluded,
-		ExcludeReason: reason,
+		Domain:               domain,
+		ClaimToken:           claim_tok,
+		ClaimTime:            claim_time,
+		Excluded:             excluded,
+		ExcludeReason:        reason,
+		NumberLinksTotal:     linksCount,
+		NumberLinksUncrawled: uncrawledLinksCount,
+		NumberLinksQueued:    queuedLinksCount,
 	}
 	err := itr.Close()
 	if err != nil {
 		return dinfo, err
 	}
 
-	err = ds.annotateDomainInfo([]*DomainInfo{dinfo})
 	return dinfo, err
 }
 
@@ -495,7 +502,7 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 		args = append(args, query.Seed)
 	}
 
-	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info"
+	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason, tot_links, uncrawled_links FROM domain_info"
 	if len(conditions) > 0 {
 		cql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -513,7 +520,9 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
-	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
+	var linksCount, uncrawledLinksCount, queuedLinksCount int
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason, &linksCount,
+		&uncrawledLinksCount, &queuedLinksCount) {
 		reason := ""
 		if exclude_reason != "" {
 			reason = exclude_reason
@@ -523,77 +532,21 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 		}
 
 		dinfos = append(dinfos, &DomainInfo{
-			Domain:        domain,
-			ClaimToken:    claim_tok,
-			ClaimTime:     claim_time,
-			Excluded:      excluded,
-			ExcludeReason: reason,
+			Domain:               domain,
+			ClaimToken:           claim_tok,
+			ClaimTime:            claim_time,
+			Excluded:             excluded,
+			ExcludeReason:        reason,
+			NumberLinksTotal:     linksCount,
+			NumberLinksUncrawled: uncrawledLinksCount,
 		})
 	}
 	err := itr.Close()
 	if err != nil {
 		return dinfos, err
 	}
-	if query.GetStats {
-		err = ds.annotateDomainInfo(dinfos)
-	}
 
 	return dinfos, err
-}
-
-// countUniqueLinks counts
-//   (a) Total links for this domain
-//   (b) Total links for this domain, not-yet-crawled
-func (ds *Datastore) countUniqueLinks(domain string, table string) (linksTotal int, linksUncrawled int, err error) {
-	db := ds.db
-	q := fmt.Sprintf("SELECT subdom, path, proto, time FROM %s WHERE dom = ?", table)
-	itr := db.Query(q, domain).Iter()
-
-	var subdomain, path, protocol string
-	var crawlTime time.Time
-	found := map[string]time.Time{}
-	for itr.Scan(&subdomain, &path, &protocol, &crawlTime) {
-		key := fmt.Sprintf("%s:%s:%s", path, subdomain, protocol)
-		t, foundT := found[key]
-		if !foundT {
-			found[key] = crawlTime
-			if crawlTime.Equal(walker.NotYetCrawled) {
-				linksUncrawled++
-			}
-		} else if t.Before(crawlTime) {
-			found[key] = crawlTime
-			if t.Equal(walker.NotYetCrawled) {
-				linksUncrawled--
-			}
-		}
-	}
-	err = itr.Close()
-	linksTotal = len(found)
-
-	return
-}
-
-func (ds *Datastore) annotateDomainInfo(dinfos []*DomainInfo) error {
-	//
-	// Count Links
-	//
-	for i := range dinfos {
-		d := dinfos[i]
-
-		linkCount, linkUncrawled, err := ds.countUniqueLinks(d.Domain, "links")
-		if err != nil {
-			return err
-		}
-		d.NumberLinksTotal = linkCount
-		d.NumberLinksUncrawled = linkUncrawled
-
-		d.NumberLinksQueued, _, err = ds.countUniqueLinks(d.Domain, "segments")
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 //
@@ -707,8 +660,8 @@ func (ds *Datastore) FindLink(u *walker.URL) (*LinkInfo, error) {
 // SELECT * FROM links WHERE domain = startDomain AND subdomain = startSubDomain AND path > startPath
 // SELECT * FROM links WHERE domain = startDomain AND subdomain > startSubDomain
 //
-// Now the only piece left, is that crawl_time is part of the primary key. Generally we're only going to take the latest crawl time. But see
-// Historical query
+// Now the only piece left, is that crawl_time is part of the primary key. Generally we're only going to take the latest
+// crawl time. But see Historical query
 //
 
 // queryEntry is a helper struct for the layered queries in ListLinks
@@ -949,9 +902,10 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 // (b) rtimes is scratch space used to filter most recent link
 // (c) itr is a gocql.Iter instance to be read
 // (d) limit is the max length of linfos
-// (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [This is used
-//     to implement filterRegex on ListLinks]
-func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int, linkAccept func(string) bool) ([]*LinkInfo, error) {
+// (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [
+//  This is used to implement filterRegex on ListLinks]
+func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
+	linkAccept func(string) bool) ([]*LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool

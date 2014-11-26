@@ -286,6 +286,8 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	var finish = true
 	var current cell
 	var previous cell
+	linksCount := 0
+	uncrawledLinksCount := 0
 	iter := q.Iter()
 	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawl_time, &current.getnow) {
 		if start {
@@ -299,6 +301,10 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		// dom, subdom, path, and protocol
 		if !current.equivalent(&previous) {
 			cell_push(&previous)
+			linksCount++
+			if previous.crawl_time.Equal(walker.NotYetCrawled) {
+				uncrawledLinksCount++
+			}
 		}
 
 		previous = current
@@ -348,14 +354,6 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	}
 
 	//
-	// Got any links
-	//
-	if len(links) == 0 {
-		log4go.Info("No links to dispatch for %v", domain)
-		return nil
-	}
-
-	//
 	// Insert into segments
 	//
 	for _, u := range links {
@@ -375,9 +373,24 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	}
 
 	//
-	// Update dispatched flag
+	// Got any links
 	//
-	err := d.db.Query(`UPDATE domain_info SET dispatched = true WHERE dom = ?`, domain).Exec()
+	dispatched := true
+	if len(links) == 0 {
+		log4go.Info("No links to dispatch for %v", domain)
+		dispatched = false
+	}
+
+	//
+	// Update domain_info
+	//
+	err := d.db.Query(`UPDATE domain_info 
+					   SET 
+					   		dispatched = ?,
+					   		tot_links = ?,
+					   		uncrawled_links = ?,
+					   		queued_links = ?
+					   WHERE dom = ?`, dispatched, linksCount, uncrawledLinksCount, len(links), domain).Exec()
 	if err != nil {
 		return fmt.Errorf("error inserting %v to domains_to_crawl: %v", domain, err)
 	}

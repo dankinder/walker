@@ -209,6 +209,15 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 	-- the reason this domain is excluded, null if not excluded
 	exclude_reason text,
 
+	-- how many links does this domain have
+	tot_links int,
+
+	-- how many uncrawled links does this domain have
+	uncrawled_links int,
+
+	-- how many links are queued to be crawled for this domain
+	queued_links int,
+
 	---- Items yet to be added to walker
 
 	-- If not null, identifies another domain as a mirror of this one
