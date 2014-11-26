@@ -155,7 +155,7 @@ CREATE TABLE {{.Keyspace}}.links (
 
 	PRIMARY KEY (dom, subdom, path, proto, time)
 ) WITH compaction = { 'class' : 'LeveledCompactionStrategy' }
-	AND caching = { 'keys' : 'NONE', 'rows_per_partition' : 'NONE' };
+	AND caching = 'NONE';
 
 -- segments contains groups of links that are ready to be crawled for a given domain.
 -- Links belonging to the same domain are considered one segment.
@@ -170,7 +170,7 @@ CREATE TABLE {{.Keyspace}}.segments (
 
 	PRIMARY KEY (dom, subdom, path, proto)
 ) WITH compaction = { 'class' : 'LeveledCompactionStrategy' }
-	AND caching = { 'keys' : 'NONE', 'rows_per_partition' : 'NONE' }
+	AND caching = 'NONE'
 	-- Since we delete segments frequently, gc_grace_seconds = 0 indicates that
 	-- we should immediately delete the records. In certain failure scenarios
 	-- this could cause a deleted row to reappear, but for this table that is

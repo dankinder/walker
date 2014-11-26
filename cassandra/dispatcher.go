@@ -36,10 +36,16 @@ type Dispatcher struct {
 	// them to finish before we start a new domain iteration
 	generatingWG sync.WaitGroup
 
+	// do not dispatch any link that has been crawled within this amount of
+	// time; set by dispatcher.min_link_refresh_time config parameter
 	minRecrawlDelta time.Duration
 
 	// Age at at which an active_fetcher cache entry is considered stale
 	activeFetcherCachetime time.Duration
+
+	// Sleep this long between domain iterations;
+	// set by dispatcher.dispatch_interval config parameter
+	dispatchInterval time.Duration
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -61,6 +67,11 @@ func (d *Dispatcher) StartDispatcher() error {
 	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
+	}
+
+	d.dispatchInterval, err = time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
+	if err != nil {
+		panic(err) // Should not happen since it is parsed at config load
 	}
 	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
 
@@ -167,12 +178,9 @@ func (d *Dispatcher) domainIterator() {
 		var excluded bool
 		removeToks := map[gocql.UUID]bool{}
 		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
-			select {
-			case <-d.quit:
-				log4go.Debug("Domain iterator signaled to stop")
+			if d.quitSignaled() {
 				close(d.domains)
 				return
-			default:
 			}
 
 			if !dispatched && !excluded {
@@ -191,22 +199,39 @@ func (d *Dispatcher) domainIterator() {
 			}
 		}
 
-		// Check for exit here as well in case domain_info is empty
-		select {
-		case <-d.quit:
-			log4go.Debug("Domain iterator signaled to stop")
-			close(d.domains)
-			return
-		default:
-		}
-
 		if err := domainiter.Close(); err != nil {
 			log4go.Error("Error iterating domains from domain_info: %v", err)
 		}
-
-		//TODO: configure this sleep time
-		time.Sleep(time.Second)
 		d.generatingWG.Wait()
+
+		// Check for quit signal right away, otherwise if there are no domains
+		// to claim and the dispatchInterval is 0, then the dispatcher will
+		// never quit
+		if d.quitSignaled() {
+			close(d.domains)
+			return
+		}
+
+		endSleep := time.Now().Add(d.dispatchInterval)
+		for time.Now().Before(endSleep) {
+			if d.quitSignaled() {
+				close(d.domains)
+				return
+			}
+			time.Sleep(time.Millisecond * 10)
+		}
+	}
+}
+
+// quitSignaled returns true if a value was passed down the quit channel. This
+// should only be called once.
+func (d *Dispatcher) quitSignaled() bool {
+	select {
+	case <-d.quit:
+		log4go.Debug("Domain iterator signaled to stop")
+		return true
+	default:
+		return false
 	}
 }
 

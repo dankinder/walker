@@ -37,7 +37,7 @@ type Datastore struct {
 
 	// Number of seconds the crawlerUUID lives in active_fetchers before
 	// it's flushed (unless KeepAlive is called in the interim).
-	secondsTTL int
+	activeFetchersTTL int
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -62,7 +62,7 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
-	ds.secondsTTL = int(durr / time.Second)
+	ds.activeFetchersTTL = int(durr / time.Second)
 
 	return ds, nil
 }
@@ -355,7 +355,7 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 
 func (ds *Datastore) KeepAlive() error {
 	err := ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
-		ds.crawlerUUID, ds.secondsTTL).Exec()
+		ds.crawlerUUID, ds.activeFetchersTTL).Exec()
 	return err
 }
 
@@ -869,8 +869,21 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 	return linfos, err
 }
 
-//NOTE: InsertLinks should try to insert as much information as possible
-//return errors for things it can't handle
+// InsertLink inserts the given link into the database, adding it's domain if
+// it does not exist. If excludeDomainReason is not empty, this domain will be
+// excluded from crawling marked with the given reason.
+func (ds *Datastore) InsertLink(link string, excludeDomainReason string) error {
+	errors := ds.InsertLinks([]string{link}, excludeDomainReason)
+	if len(errors) > 0 {
+		return errors[0]
+	} else {
+		return nil
+	}
+}
+
+// InsertLinks does the same as InsertLink with many potential errors. It will
+// insert as many as it can (it won't stop once it hits a bad link) and only
+// return errors for problematic links or domains.
 func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []error {
 	//
 	// Collect domains

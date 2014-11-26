@@ -777,5 +777,38 @@ func TestAutoUnclaim(t *testing.T) {
 			}
 		}
 	}
+}
 
+func TestDispatchInterval(t *testing.T) {
+	origDispatchInterval := walker.Config.Dispatcher.DispatchInterval
+	defer func() {
+		walker.Config.Dispatcher.DispatchInterval = origDispatchInterval
+	}()
+	walker.Config.Dispatcher.DispatchInterval = "500ms"
+
+	GetTestDB() // Clear the database
+	ds := getDS(t)
+	p := helpers.Parse("http://test.com/")
+
+	ds.InsertLink(p.String(), "")
+
+	d := &Dispatcher{}
+	go d.StartDispatcher()
+	time.Sleep(time.Millisecond * 200)
+
+	// By now the link should have been dispatched. Pretend we crawled it.
+	host := ds.ClaimNewHost()
+	for _ = range ds.LinksForHost(host) {
+	}
+	ds.UnclaimHost(host)
+
+	// Give it time to dispatch again; it should not do it due to 500ms interval
+	time.Sleep(time.Millisecond * 200)
+
+	d.StopDispatcher()
+
+	host = ds.ClaimNewHost()
+	if host != "" {
+		t.Error("Expected host not to be dispatched again due to dispatch interval")
+	}
 }

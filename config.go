@@ -65,6 +65,7 @@ type WalkerConfig struct {
 		RefreshPercentage    float64 `yaml:"refresh_percentage"`
 		NumConcurrentDomains int     `yaml:"num_concurrent_domains"`
 		MinLinkRefreshTime   string  `yaml:"min_link_refresh_time"`
+		DispatchInterval     string  `yaml:"dispatch_interval"`
 	} `yaml:"dispatcher"`
 
 	Cassandra struct {
@@ -133,6 +134,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.RefreshPercentage = 25
 	Config.Dispatcher.NumConcurrentDomains = 1
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
+	Config.Dispatcher.DispatchInterval = "10s"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
@@ -185,6 +187,10 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(dis.MinLinkRefreshTime)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.MinLinkRefreshTime failed to parse: %v", err))
+	}
+	_, err = time.ParseDuration(dis.DispatchInterval)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.DispatchInterval failed to parse: %v", err))
 	}
 
 	fet := &Config.Fetcher
