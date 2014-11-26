@@ -37,7 +37,7 @@ type Datastore struct {
 
 	// Number of seconds the crawlerUUID lives in active_fetchers before
 	// it's flushed (unless KeepAlive is called in the interim).
-	secondsTtl int
+	secondsTTL int
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -62,7 +62,7 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
-	ds.secondsTtl = int(durr / time.Second)
+	ds.secondsTTL = int(durr / time.Second)
 
 	return ds, nil
 }
@@ -355,7 +355,7 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 
 func (ds *Datastore) KeepAlive() error {
 	err := ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
-		ds.crawlerUUID, ds.secondsTtl).Exec()
+		ds.crawlerUUID, ds.secondsTTL).Exec()
 	return err
 }
 
