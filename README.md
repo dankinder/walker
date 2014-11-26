@@ -74,15 +74,14 @@ In order to run walker and cassandra on your local machine, you may need to make
 
 Once you have this step completed you can go ahead and build the `walker` binary:
 ```sh
-cd walker # note, there dis a walker directory within the project alter directory e.g. walker/walker
-go build
+go install ./walker
 ```
 
 The next step is to build the cassandra schema:
 
 ```sh
 walker schema -o schema.txt
-cqlsf -f schema.txt
+cqlsh -f schema.txt # optionally change replication information for the keyspace in schema.txt
 ```
 
 This will create the schema for you. At this point the console can be loaded via `walker console`
