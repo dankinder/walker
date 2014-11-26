@@ -1508,13 +1508,13 @@ func TestKeepAlive(t *testing.T) {
 	defer func() {
 		walker.Config.Fetcher.ActiveFetchersTtl = orig
 	}()
-	walker.Config.Fetcher.ActiveFetchersTtl = "15s"
+	walker.Config.Fetcher.ActiveFetchersTtl = "1s"
 
 	tests := TestSpec{
 		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),
 	}
 
-	results := runFetcher(tests, 7*time.Second, t)
+	results := runFetcher(tests, 3*time.Second, t)
 
 	kacount := results.dsCountKeepAliveCalls()
 	if kacount < 2 {
