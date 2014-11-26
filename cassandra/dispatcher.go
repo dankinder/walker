@@ -36,7 +36,13 @@ type Dispatcher struct {
 	// them to finish before we start a new domain iteration
 	generatingWG sync.WaitGroup
 
+	// do not dispatch any link that has been crawled within this amount of
+	// time; set by dispatcher.min_link_refresh_time config parameter
 	minRecrawlDelta time.Duration
+
+	// Sleep this long between domain iterations;
+	// set by dispatcher.dispatch_interval config parameter
+	dispatchInterval time.Duration
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -53,9 +59,12 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
-		// This shouldn't happen since MinLinkRefreshTime is parsed during config
-		// load.
-		panic(err)
+		panic(err) // Should not happen since it is parsed at config load
+	}
+
+	d.dispatchInterval, err = time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
+	if err != nil {
+		panic(err) // Should not happen since it is parsed at config load
 	}
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
@@ -89,12 +98,9 @@ func (d *Dispatcher) domainIterator() {
 		var dispatched bool
 		var excluded bool
 		for domainiter.Scan(&domain, &dispatched, &excluded) {
-			select {
-			case <-d.quit:
-				log4go.Debug("Domain iterator signaled to stop")
+			if d.quitSignaled() {
 				close(d.domains)
 				return
-			default:
 			}
 
 			if !dispatched && !excluded {
@@ -102,22 +108,39 @@ func (d *Dispatcher) domainIterator() {
 			}
 		}
 
-		// Check for exit here as well in case domain_info is empty
-		select {
-		case <-d.quit:
-			log4go.Debug("Domain iterator signaled to stop")
-			close(d.domains)
-			return
-		default:
-		}
-
 		if err := domainiter.Close(); err != nil {
 			log4go.Error("Error iterating domains from domain_info: %v", err)
 		}
-
-		//TODO: configure this sleep time
-		time.Sleep(time.Second)
 		d.generatingWG.Wait()
+
+		// Check for quit signal right away, otherwise if there are no domains
+		// to claim and the dispatchInterval is 0, then the dispatcher will
+		// never quit
+		if d.quitSignaled() {
+			close(d.domains)
+			return
+		}
+
+		endSleep := time.Now().Add(d.dispatchInterval)
+		for time.Now().Before(endSleep) {
+			if d.quitSignaled() {
+				close(d.domains)
+				return
+			}
+			time.Sleep(time.Millisecond * 10)
+		}
+	}
+}
+
+// quitSignaled returns true if a value was passed down the quit channel. This
+// should only be called once.
+func (d *Dispatcher) quitSignaled() bool {
+	select {
+	case <-d.quit:
+		log4go.Debug("Domain iterator signaled to stop")
+		return true
+	default:
+		return false
 	}
 }
 

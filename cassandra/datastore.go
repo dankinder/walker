@@ -853,8 +853,21 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 	return linfos, err
 }
 
-//NOTE: InsertLinks should try to insert as much information as possible
-//return errors for things it can't handle
+// InsertLink inserts the given link into the database, adding it's domain if
+// it does not exist. If excludeDomainReason is not empty, this domain will be
+// excluded from crawling marked with the given reason.
+func (ds *Datastore) InsertLink(link string, excludeDomainReason string) error {
+	errors := ds.InsertLinks([]string{link}, excludeDomainReason)
+	if len(errors) > 0 {
+		return errors[0]
+	} else {
+		return nil
+	}
+}
+
+// InsertLinks does the same as InsertLink with many potential errors. It will
+// insert as many as it can (it won't stop once it hits a bad link) and only
+// return errors for problematic links or domains.
 func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []error {
 	//
 	// Collect domains
