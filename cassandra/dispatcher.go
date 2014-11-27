@@ -125,25 +125,6 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 	}
 }
 
-func (d *Dispatcher) buildActiveFetchersCache() map[gocql.UUID]time.Time {
-	mp := map[gocql.UUID]time.Time{}
-	for {
-		iter := d.db.Query(`SELECT tok FROM active_fetchers`).Iter()
-		var uuid gocql.UUID
-		now := time.Now()
-		for iter.Scan(&uuid) {
-			mp[uuid] = now
-		}
-		err := iter.Close()
-		if err == nil {
-			return mp
-		}
-
-		log4go.Error("Failed to read active_fetchers table: %v", err)
-		time.Sleep(time.Second)
-	}
-}
-
 func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUID]time.Time) {
 	// We have to loop until we get a good read of active_fetchers. We can't
 	// risk accidentally identifying a running fetcher as dead.
@@ -165,7 +146,7 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 }
 
 func (d *Dispatcher) domainIterator() {
-	goodToks := d.buildActiveFetchersCache()
+	goodToks := map[gocql.UUID]time.Time{}
 	zeroTok := gocql.UUID{}
 
 	for {
