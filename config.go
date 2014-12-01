@@ -55,7 +55,7 @@ type WalkerConfig struct {
 		DefaultCrawlDelay        string   `yaml:"default_crawl_delay"`
 		MaxCrawlDelay            string   `yaml:"max_crawl_delay"`
 		PurgeSidList             []string `yaml:"purge_sid_list"`
-		ActiveFetchersTtl        string   `yaml:"active_fetchers_ttl"`
+		ActiveFetchersTTL        string   `yaml:"active_fetchers_ttl"`
 		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
 	} `yaml:"fetcher"`
@@ -126,7 +126,7 @@ func SetDefaultConfig() {
 	Config.Fetcher.DefaultCrawlDelay = "1s"
 	Config.Fetcher.MaxCrawlDelay = "5m"
 	Config.Fetcher.PurgeSidList = nil
-	Config.Fetcher.ActiveFetchersTtl = "15m"
+	Config.Fetcher.ActiveFetchersTTL = "15m"
 	Config.Fetcher.ActiveFetchersCacheratio = 0.75
 	Config.Fetcher.ActiveFetchersKeepratio = 0.75
 
@@ -206,12 +206,12 @@ func assertConfigInvariants() error {
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
-	afTtl, err := time.ParseDuration(fet.ActiveFetchersTtl)
+	afTTL, err := time.ParseDuration(fet.ActiveFetchersTTL)
 	if err != nil {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl failed to parse: %v", err))
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL failed to parse: %v", err))
 	}
-	if int(afTtl/time.Second) < 1 {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTtl must be 1s or larger", err))
+	if int(afTTL/time.Second) < 1 {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL must be 1s or larger", err))
 	}
 
 	def, err := time.ParseDuration(fet.DefaultCrawlDelay)

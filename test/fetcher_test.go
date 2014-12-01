@@ -1504,11 +1504,11 @@ func TestMaxContentSize(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	orig := walker.Config.Fetcher.ActiveFetchersTtl
+	orig := walker.Config.Fetcher.ActiveFetchersTTL
 	defer func() {
-		walker.Config.Fetcher.ActiveFetchersTtl = orig
+		walker.Config.Fetcher.ActiveFetchersTTL = orig
 	}()
-	walker.Config.Fetcher.ActiveFetchersTtl = "1s"
+	walker.Config.Fetcher.ActiveFetchersTTL = "1s"
 
 	tests := TestSpec{
 		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),

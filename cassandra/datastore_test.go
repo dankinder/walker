@@ -690,11 +690,11 @@ func TestDomainPriority(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	orig := walker.Config.Fetcher.ActiveFetchersTtl
+	orig := walker.Config.Fetcher.ActiveFetchersTTL
 	defer func() {
-		walker.Config.Fetcher.ActiveFetchersTtl = orig
+		walker.Config.Fetcher.ActiveFetchersTTL = orig
 	}()
-	walker.Config.Fetcher.ActiveFetchersTtl = "1s"
+	walker.Config.Fetcher.ActiveFetchersTTL = "1s"
 
 	db := GetTestDB()
 	ds := getDS(t)

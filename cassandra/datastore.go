@@ -58,7 +58,7 @@ func NewDatastore() (*Datastore, error) {
 	}
 	ds.crawlerUUID = u
 
-	durr, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
+	durr, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTTL)
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}

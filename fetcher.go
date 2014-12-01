@@ -137,7 +137,7 @@ func (fm *FetchManager) Start() {
 		panic(err)
 	}
 
-	ttl, err := time.ParseDuration(Config.Fetcher.ActiveFetchersTtl)
+	ttl, err := time.ParseDuration(Config.Fetcher.ActiveFetchersTTL)
 	if err != nil {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}

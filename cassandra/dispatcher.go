@@ -73,7 +73,7 @@ func (d *Dispatcher) StartDispatcher() error {
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
-	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTtl)
+	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTTL)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
 	}
