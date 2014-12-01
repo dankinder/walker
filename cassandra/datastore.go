@@ -419,6 +419,9 @@ type DomainInfo struct {
 
 	// Number of links not yet crawled
 	NumberLinksUncrawled int
+
+	// Priority of this domain
+	Priority int
 }
 
 // DQ is a domain query struct used for getting domains from cassandra.
@@ -446,13 +449,14 @@ type DQ struct {
 
 // FindDomain returns the DomainInfo for the specified domain
 func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
-	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason
+	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason, priority
 						FROM domain_info WHERE dom = ?`, domain).Iter()
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
 	var exclude_reason string
-	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason) {
+	var priority int
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason, &priority) {
 		err := itr.Close()
 		return nil, err
 	}
@@ -471,6 +475,7 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 		ClaimTime:     claim_time,
 		Excluded:      excluded,
 		ExcludeReason: reason,
+		Priority:      priority,
 	}
 	err := itr.Close()
 	if err != nil {
@@ -495,7 +500,7 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 		args = append(args, query.Seed)
 	}
 
-	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason FROM domain_info"
+	cql := "SELECT dom, claim_tok, claim_time, excluded, exclude_reason, priority FROM domain_info"
 	if len(conditions) > 0 {
 		cql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -513,7 +518,8 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
-	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason) {
+	var priority int
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason, &priority) {
 		reason := ""
 		if exclude_reason != "" {
 			reason = exclude_reason
@@ -528,6 +534,7 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 			ClaimTime:     claim_time,
 			Excluded:      excluded,
 			ExcludeReason: reason,
+			Priority:      priority,
 		})
 	}
 	err := itr.Close()
