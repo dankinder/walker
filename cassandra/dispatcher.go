@@ -46,6 +46,13 @@ type Dispatcher struct {
 	// Sleep this long between domain iterations;
 	// set by dispatcher.dispatch_interval config parameter
 	dispatchInterval time.Duration
+
+	// which UUIDs are queued up to be removed (And mutex to protect it).
+	removedToks      map[gocql.UUID]bool
+	removedToksMutex sync.Mutex
+
+	// map of active UUIDs -- i.e. fetchers that are still alive
+	activeToks map[gocql.UUID]time.Time
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -59,6 +66,8 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
+	d.removedToks = make(map[gocql.UUID]bool)
+	d.activeToks = make(map[gocql.UUID]time.Time)
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
@@ -98,6 +107,7 @@ func (d *Dispatcher) StopDispatcher() error {
 func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 	tag := "cleanStrandedClaims"
 	var err error
+
 	db := d.db
 	iter := db.Query(`SELECT dom FROM domain_info WHERE claim_tok = ?`, tok).Iter()
 	var domain string
@@ -123,17 +133,21 @@ func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
 	if err != nil {
 		log4go.Error("%s failed to find domain: %v", tag, err)
 	}
+
+	d.removedToksMutex.Lock()
+	delete(d.removedToks, tok)
+	d.removedToksMutex.Unlock()
 }
 
-func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUID]time.Time) {
+func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID) {
 	// We have to loop until we get a good read of active_fetchers. We can't
 	// risk accidentally identifying a running fetcher as dead.
+	delete(d.activeToks, qtok)
 	for {
-		delete(mp, qtok)
 		var tok gocql.UUID
 		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
 		for iter.Scan(&tok) {
-			mp[tok] = time.Now()
+			d.activeToks[tok] = time.Now()
 		}
 		err := iter.Close()
 		if err == nil {
@@ -145,10 +159,38 @@ func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID, mp map[gocql.UUI
 	}
 }
 
-func (d *Dispatcher) domainIterator() {
-	goodToks := map[gocql.UUID]time.Time{}
+func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 	zeroTok := gocql.UUID{}
+	if claimTok == zeroTok {
+		return true
+	}
 
+	// If the token is already queued up to be removed, you must
+	// return true here so that cleanStrandedClaims is not called
+	d.removedToksMutex.Lock()
+	removed := d.removedToks[claimTok]
+	d.removedToksMutex.Unlock()
+	if removed {
+		return true
+	}
+
+	// remove dead fetchers
+	readTime, present := d.activeToks[claimTok]
+	if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
+		d.updateActiveFetchersCache(claimTok)
+		_, present := d.activeToks[claimTok]
+		if !present {
+			d.removedToksMutex.Lock()
+			d.removedToks[claimTok] = true
+			d.removedToksMutex.Unlock()
+			return false
+		}
+	}
+
+	return true
+}
+
+func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
 		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
@@ -157,7 +199,6 @@ func (d *Dispatcher) domainIterator() {
 		var dispatched bool
 		var claimTok gocql.UUID
 		var excluded bool
-		removeToks := map[gocql.UUID]bool{}
 		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
 			if d.quitSignaled() {
 				close(d.domains)
@@ -166,17 +207,8 @@ func (d *Dispatcher) domainIterator() {
 
 			if !dispatched && !excluded {
 				d.domains <- domain
-			} else if claimTok != zeroTok && !removeToks[claimTok] {
-				// remove dead fetchers
-				readTime, present := goodToks[claimTok]
-				if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
-					d.updateActiveFetchersCache(claimTok, goodToks)
-					_, present := goodToks[claimTok]
-					if !present {
-						removeToks[claimTok] = true
-						go d.cleanStrandedClaims(claimTok)
-					}
-				}
+			} else if !d.fetcherIsAlive(claimTok) {
+				go d.cleanStrandedClaims(claimTok)
 			}
 		}
 
