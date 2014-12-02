@@ -6,8 +6,8 @@
             <table class="console-table table table-striped table-condensed">
                 <tr>
                     <th class="col-xs-3"> Field </th>
-                    <th class="col-xs-4"> Value </th>
-                    <th class="col-xs-1"> &nbsp; </th> 
+                    <th class="col-xs-3"> Value </th>
+                    <th class="col-xs-2"> &nbsp; </th> 
                 </tr>
                 
                 <tr>
@@ -61,6 +61,23 @@
                     <td>  {{.Dinfo.NumberLinksUncrawled}} </td>
                     <td> &nbsp; </td>                    
                 </tr>
+
+                <tr>
+                    <td> Priority </td>
+                    <td>  {{.Dinfo.Priority}} </td>
+                    <td> 
+                        <form role="form" action="/filterLinks" method="post">
+                            <select name="priority">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                            </select>
+
+                             <input type="submit" value="Submit" />
+                        </form>
+                    </td>                    
+                </tr>                
 
             </table>
         </div>

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"code.google.com/p/log4go"
@@ -39,6 +40,7 @@ func Routes() []Route {
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
+		Route{Path: "/changePriority/{domain}", Controller: ChangePriorityController},
 	}
 }
 
@@ -533,13 +535,62 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err := DS.UpdateDomain(domain, info)
+	err := DS.UpdateDomain(domain, info, cassandra.DomainInfoUpdateConfig{Exclude: true})
 	if err != nil {
 		replyServerError(w, err)
 		return
 	}
 
 	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+}
+
+func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		replyServerError(w, fmt.Errorf("Non-post recieved by changePriority"))
+		return
+	}
+
+	err := req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	vars := mux.Vars(req)
+	domain := vars["domain"]
+	priorityStr, priorityOK := vars["priority"]
+	if !priorityOK {
+		replyServerError(w, fmt.Errorf("No priority specified in form fields"))
+		return
+	}
+	priority, err := strconv.Atoi(priorityStr)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	foundP := false
+	for _, p := range cassandra.AllowedPriorities {
+		if p == priority {
+			foundP = true
+			break
+		}
+	}
+	if !foundP {
+		replyServerError(w, fmt.Errorf("Priority value not found in AllowedPriority"))
+		return
+	}
+
+	info := cassandra.DomainInfo{Priority: priority}
+	cfg := cassandra.DomainInfoUpdateConfig{Priority: true}
+	err = DS.UpdateDomain(domain, &info, cfg)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+	return
 }
 
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {

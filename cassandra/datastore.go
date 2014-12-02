@@ -1,6 +1,7 @@
 package cassandra
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"code.google.com/p/log4go"
-
 	"github.com/dropbox/godropbox/container/lrucache"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
@@ -422,6 +422,11 @@ type DomainInfo struct {
 
 	// Priority of this domain
 	Priority int
+}
+
+type DomainInfoUpdateConfig struct {
+	Exclude  bool
+	Priority bool
 }
 
 // DQ is a domain query struct used for getting domains from cassandra.
@@ -1008,19 +1013,44 @@ func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]reme
 
 // UpdateDomain updates the given domain with fields from `info`. If Excluded
 // is true, it automatically clears ExcludedReason.
-// TODO: currently only updates exclusion; do other fields
-func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo) error {
-	query := `UPDATE domain_info 
-			  SET 
-				  excluded = ?,
-				  exclude_reason = ?
-			  WHERE 
-				  dom = ?`
-	reason := info.ExcludeReason
-	if !info.Excluded {
-		reason = ""
+func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInfoUpdateConfig) error {
+
+	vars := []string{}
+	args := []interface{}{}
+
+	if cfg.Exclude {
+		reason := info.ExcludeReason
+		if !info.Excluded {
+			reason = ""
+		}
+		vars = append(vars, "excluded", "exclude_reason")
+		args = append(args, info.Excluded, reason)
 	}
-	err := ds.db.Query(query, info.Excluded, reason, domain).Exec()
+
+	if cfg.Priority {
+		vars = append(vars, "priority")
+		args = append(args, info.Priority)
+	}
+
+	if len(vars) < 1 {
+		return fmt.Errorf("Expected at least one variable set in cfg (of type DomainInfoUpdateConfig)")
+	}
+
+	var buffer bytes.Buffer
+	buffer.WriteString("UPDATE domain_info\n")
+	buffer.WriteString("SET\n")
+	for i, v := range vars {
+		buffer.WriteString(v)
+		if i != len(vars)-1 {
+			buffer.WriteString(" = ?,\n")
+		} else {
+			buffer.WriteString(" = ?\n")
+		}
+	}
+	buffer.WriteString("WHERE dom = ?\n")
+	query := buffer.String()
+
+	err := ds.db.Query(query, args...).Exec()
 	return err
 }
 
