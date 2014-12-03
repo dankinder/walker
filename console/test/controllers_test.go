@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1068,4 +1069,42 @@ func TestFilterLinks(t *testing.T) {
 	if loc[0] != expectedLoc {
 		t.Fatalf("TestFilterLinks redirect url got %q, but expected %q", loc[0], expectedLoc)
 	}
+}
+
+func TestChangePriority(t *testing.T) {
+	spoofData()
+
+	//
+	// First get the filter page and verify it looks correct
+	//
+	doc, body, status := callController("http://localhost:3000/links/t1.com", "", "/links/{domain}",
+		console.LinksController)
+	if status != http.StatusOK {
+		t.Errorf("TestFilterLinks bad status code got %d, expected %d", status, http.StatusOK)
+		body = ""
+		t.Log(body)
+		t.FailNow()
+	}
+
+	sub := doc.Find(".container .row table tr").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		title := sel.Find("td").First().Text()
+		return strings.Contains(title, "Priority")
+	})
+
+	if sub.Size() < 1 {
+		t.Fatalf("Failed to find Priority row")
+	}
+	valueSel := sub.Find("td:nth-child(2)")
+	if valueSel.Size() < 1 {
+		t.Fatalf("Failed to find Priority value")
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(valueSel.Text()))
+	if err != nil {
+		t.Fatalf("Failed to transform priority value: %v", err)
+	}
+
+	if value != 0 {
+		t.Fatalf("Bad priority value")
+	}
+
 }
