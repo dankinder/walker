@@ -257,7 +257,7 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-// Simple aggregate datatype that holds both the link in the priority and text of a dropdown element
+// Simple aggregate datatype that holds both the link, and text of the given priority
 type priorityDropdownElement struct {
 	Link string
 	Text string

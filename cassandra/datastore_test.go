@@ -747,14 +747,20 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestUpdateDomain(t *testing.T) {
-	insertDomainInfo := `INSERT INTO domain_info (dom, excluded, exclude_reason, priority)
-						     VALUES (?, ?, ?, ?)`
 
-	domain := "foo.com"
+	// Check variables
 	excluded := false
 	excludeReason := ""
 	priority := 0
+
+	// Other variables
+	domain := "foo.com"
+	insertDomainInfo := `INSERT INTO domain_info (dom, excluded, exclude_reason, priority)
+						     VALUES (?, ?, ?, ?)`
 	ds := getDS(t)
+
+	// the check function will verify that the DomainInfo found in the database for foo.com, has the expected values
+	// (see the Check variables above)
 	check := func(tag string) {
 		dinfo, err := ds.FindDomain(domain)
 		if dinfo == nil || err != nil {
@@ -762,10 +768,6 @@ func TestUpdateDomain(t *testing.T) {
 		}
 
 		var buffer string
-
-		if dinfo.Domain != domain {
-			buffer += fmt.Sprintf("\tDomain mismatch: got %s, expected %s\n", dinfo.Domain, domain)
-		}
 
 		if dinfo.Excluded != excluded {
 			buffer += fmt.Sprintf("\tExcluded mismatch: got %v, expected %v\n", dinfo.Excluded, excluded)

@@ -906,7 +906,6 @@ func TestAddLinks(t *testing.T) {
 	doc, body, status := callController("http://localhost:3000/add", "", "/add", console.AddLinkIndexController)
 	if status != http.StatusOK {
 		t.Errorf("TestAddLinks bad status code got %d, expected %d", status, http.StatusOK)
-		body = ""
 		t.Log(body)
 		t.FailNow()
 	}
@@ -1074,6 +1073,7 @@ func TestFilterLinks(t *testing.T) {
 func TestChangePriority(t *testing.T) {
 	spoofData()
 
+	// priority function will read the priority value out of the links page
 	var doc *goquery.Document
 	priority := func() int {
 		sub := doc.Find(".container .row table tr").FilterFunction(func(index int, sel *goquery.Selection) bool {
@@ -1103,7 +1103,6 @@ func TestChangePriority(t *testing.T) {
 		console.LinksController)
 	if status != http.StatusOK {
 		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
-		body = ""
 		t.Log(body)
 		t.FailNow()
 	}
@@ -1121,8 +1120,6 @@ func TestChangePriority(t *testing.T) {
 		console.ChangePriorityController)
 	if status != http.StatusFound {
 		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusFound)
-		body = ""
-		t.Log(body)
 		t.FailNow()
 	}
 
@@ -1133,8 +1130,6 @@ func TestChangePriority(t *testing.T) {
 		console.LinksController)
 	if status != http.StatusOK {
 		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
-		body = ""
-		t.Log(body)
 		t.FailNow()
 	}
 
