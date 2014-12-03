@@ -803,4 +803,22 @@ func TestUpdateDomain(t *testing.T) {
 		DomainInfoUpdateConfig{Exclude: true})
 	check("clear 1")
 
+	priority = 4
+	ds.UpdateDomain(domain, &DomainInfo{Priority: priority}, DomainInfoUpdateConfig{Priority: true})
+	check("Priority")
+
+	priority = 0
+	ds.UpdateDomain(domain, &DomainInfo{Priority: priority}, DomainInfoUpdateConfig{Priority: true})
+	check("clear 2")
+
+	excluded = true
+	excludeReason = "Excluded reason"
+	priority = 4
+	ds.UpdateDomain(domain, &DomainInfo{
+		Excluded:      excluded,
+		ExcludeReason: excludeReason,
+		Priority:      priority,
+	}, DomainInfoUpdateConfig{Exclude: true, Priority: true})
+	check("Priority & Exclude")
+
 }
