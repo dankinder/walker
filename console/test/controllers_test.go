@@ -345,6 +345,7 @@ func TestListLinksWeb(t *testing.T) {
 		"Links Dispatched",
 		"Unique Links Crawled",
 		"Unique Links Not Yet Crawled",
+		"Priority",
 	}
 
 	sub = domainTable.Find("tr > td:nth-child(1)")

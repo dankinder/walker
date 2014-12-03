@@ -745,3 +745,62 @@ func TestKeepAlive(t *testing.T) {
 		t.Fatalf("Failed to expire from active_fetchers")
 	}
 }
+
+func TestUpdateDomain(t *testing.T) {
+	insertDomainInfo := `INSERT INTO domain_info (dom, excluded, exclude_reason, priority)
+						     VALUES (?, ?, ?, ?)`
+
+	domain := "foo.com"
+	excluded := false
+	excludeReason := ""
+	priority := 0
+	ds := getDS(t)
+	check := func(tag string) {
+		dinfo, err := ds.FindDomain(domain)
+		if dinfo == nil || err != nil {
+			t.Fatalf("Failed to FindDomain for tag %s: %v", tag, err)
+		}
+
+		var buffer string
+
+		if dinfo.Domain != domain {
+			buffer += fmt.Sprintf("\tDomain mismatch: got %s, expected %s\n", dinfo.Domain, domain)
+		}
+
+		if dinfo.Excluded != excluded {
+			buffer += fmt.Sprintf("\tExcluded mismatch: got %v, expected %v\n", dinfo.Excluded, excluded)
+		}
+
+		if dinfo.ExcludeReason != excludeReason {
+			buffer += fmt.Sprintf("\tExcludeReason mismatch: got %q, expected %q\n", dinfo.ExcludeReason, excludeReason)
+		}
+
+		if dinfo.Priority != priority {
+			buffer += fmt.Sprintf("\tPriority mismatch: got %d, expected %d\n", dinfo.Priority, priority)
+		}
+
+		if buffer != "" {
+			t.Errorf("Domain info had unexpected problems for tag %s:\n%s", tag, buffer)
+		}
+	}
+
+	db := GetTestDB()
+	err := db.Query(insertDomainInfo, domain, excluded, excludeReason, priority).Exec()
+	if err != nil {
+		t.Fatalf("Unexpected error during domain insert: %v", err)
+	}
+	check("First Insert")
+
+	excluded = true
+	excludeReason = "Excluded reason"
+	ds.UpdateDomain(domain, &DomainInfo{Excluded: excluded, ExcludeReason: excludeReason},
+		DomainInfoUpdateConfig{Exclude: true})
+	check("Exclude updated")
+
+	excluded = false
+	excludeReason = ""
+	ds.UpdateDomain(domain, &DomainInfo{Excluded: excluded, ExcludeReason: excludeReason},
+		DomainInfoUpdateConfig{Exclude: true})
+	check("clear 1")
+
+}
