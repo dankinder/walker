@@ -392,23 +392,30 @@ func (ds *Datastore) addDomain(dom string) {
 // addDomainWithExcludeReason adds a domain to the domain_info table if it does
 // not exist.
 func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error {
-	query := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, ?, false, 0) IF NOT EXISTS`
+
+	// Try insert with excluded set to avoid dispatcher picking this domain up before the
+	// excluded reason is established.
+	query := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority, excluded) 
+					 VALUES (?, ?, false, 0, true) IF NOT EXISTS`
 	err := ds.db.Query(query, dom, gocql.UUID{}).Exec()
 	if err != nil {
 		return err
 	}
 
-	if reason != "" {
-		query := `UPDATE domain_info 
-			     	SET 
-				  		excluded = true,
-				  		exclude_reason = ?
-			  		WHERE 
-				  		dom = ?`
-		err = ds.db.Query(query, reason, dom).Exec()
-		if err != nil {
-			return err
-		}
+	// Now set the exclude reason
+	excluded := true
+	if reason == "" {
+		excluded = false
+	}
+	query = `UPDATE domain_info 
+	     	 SET 
+	  	    	excluded = ?,
+	  	    	exclude_reason = ?
+	  		 WHERE 
+	  	  		dom = ?`
+	err = ds.db.Query(query, excluded, reason, dom).Exec()
+	if err != nil {
+		return err
 	}
 
 	ds.domainCache.Set(dom, true)
