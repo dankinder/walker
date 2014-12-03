@@ -218,7 +218,14 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 ) WITH compaction = { 'class' : 'LeveledCompactionStrategy' };
 CREATE INDEX ON {{.Keyspace}}.domain_info (claim_tok);
 CREATE INDEX ON {{.Keyspace}}.domain_info (priority);
-CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);`
+CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);
+
+-- active_fetchers lists the uuids of running fetchers
+CREATE TABLE {{.Keyspace}}.active_fetchers (
+	tok uuid,
+	PRIMARY KEY (tok)
+)
+`
 
 // initdb ensures we only try to create the cassandra schema once in testing
 var initdb sync.Once
@@ -246,7 +253,7 @@ func GetTestDB() *gocql.Session {
 		panic(fmt.Sprintf("Could not connect to local cassandra db: %v", err))
 	}
 
-	tables := []string{"links", "segments", "domain_info"}
+	tables := []string{"links", "segments", "domain_info", "active_fetchers"}
 	for _, table := range tables {
 		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
 		if err != nil {

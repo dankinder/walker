@@ -38,23 +38,26 @@ type WalkerConfig struct {
 	//TODO: allow -1 as a no max value
 
 	Fetcher struct {
-		MaxDNSCacheEntries      int      `yaml:"max_dns_cache_entries"`
-		UserAgent               string   `yaml:"user_agent"`
-		AcceptFormats           []string `yaml:"accept_formats"`
-		AcceptProtocols         []string `yaml:"accept_protocols"`
-		MaxHTTPContentSizeBytes int64    `yaml:"max_http_content_size_bytes"`
-		IgnoreTags              []string `yaml:"ignore_tags"`
-		MaxLinksPerPage         int      `yaml:"max_links_per_page"`
-		NumSimultaneousFetchers int      `yaml:"num_simultaneous_fetchers"`
-		BlacklistPrivateIPs     bool     `yaml:"blacklist_private_ips"`
-		HttpTimeout             string   `yaml:"http_timeout"`
-		HonorMetaNoindex        bool     `yaml:"honor_meta_noindex"`
-		HonorMetaNofollow       bool     `yaml:"honor_meta_nofollow"`
-		ExcludeLinkPatterns     []string `yaml:"exclude_link_patterns"`
-		IncludeLinkPatterns     []string `yaml:"include_link_patterns"`
-		DefaultCrawlDelay       string   `yaml:"default_crawl_delay"`
-		MaxCrawlDelay           string   `yaml:"max_crawl_delay"`
-		PurgeSidList            []string `yaml:"purge_sid_list"`
+		MaxDNSCacheEntries       int      `yaml:"max_dns_cache_entries"`
+		UserAgent                string   `yaml:"user_agent"`
+		AcceptFormats            []string `yaml:"accept_formats"`
+		AcceptProtocols          []string `yaml:"accept_protocols"`
+		MaxHTTPContentSizeBytes  int64    `yaml:"max_http_content_size_bytes"`
+		IgnoreTags               []string `yaml:"ignore_tags"`
+		MaxLinksPerPage          int      `yaml:"max_links_per_page"`
+		NumSimultaneousFetchers  int      `yaml:"num_simultaneous_fetchers"`
+		BlacklistPrivateIPs      bool     `yaml:"blacklist_private_ips"`
+		HttpTimeout              string   `yaml:"http_timeout"`
+		HonorMetaNoindex         bool     `yaml:"honor_meta_noindex"`
+		HonorMetaNofollow        bool     `yaml:"honor_meta_nofollow"`
+		ExcludeLinkPatterns      []string `yaml:"exclude_link_patterns"`
+		IncludeLinkPatterns      []string `yaml:"include_link_patterns"`
+		DefaultCrawlDelay        string   `yaml:"default_crawl_delay"`
+		MaxCrawlDelay            string   `yaml:"max_crawl_delay"`
+		PurgeSidList             []string `yaml:"purge_sid_list"`
+		ActiveFetchersTTL        string   `yaml:"active_fetchers_ttl"`
+		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
+		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
@@ -123,6 +126,9 @@ func SetDefaultConfig() {
 	Config.Fetcher.DefaultCrawlDelay = "1s"
 	Config.Fetcher.MaxCrawlDelay = "5m"
 	Config.Fetcher.PurgeSidList = nil
+	Config.Fetcher.ActiveFetchersTTL = "15m"
+	Config.Fetcher.ActiveFetchersCacheratio = 0.75
+	Config.Fetcher.ActiveFetchersKeepratio = 0.75
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -200,6 +206,14 @@ func assertConfigInvariants() error {
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
+	afTTL, err := time.ParseDuration(fet.ActiveFetchersTTL)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL failed to parse: %v", err))
+	}
+	if int(afTTL/time.Second) < 1 {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL must be 1s or larger", err))
+	}
+
 	def, err := time.ParseDuration(fet.DefaultCrawlDelay)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("DefaultCrawlDelay failed to parse: %v", err))
@@ -215,6 +229,18 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(Config.Cassandra.Timeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
+	}
+
+	keeprat := Config.Fetcher.ActiveFetchersKeepratio
+	if keeprat < 0 || keeprat >= 1.0 {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersKeepratio failed to be in the correct range:"+
+			" must choose X such that 0 <= X < 1", err))
+	}
+
+	cacherat := Config.Fetcher.ActiveFetchersCacheratio
+	if cacherat < 0 || cacherat >= 1.0 {
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersCacheratio failed to be in the correct range:"+
+			" must choose X such that 0 <= X < 1", err))
 	}
 
 	if len(errs) > 0 {

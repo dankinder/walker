@@ -40,9 +40,19 @@ type Dispatcher struct {
 	// time; set by dispatcher.min_link_refresh_time config parameter
 	minRecrawlDelta time.Duration
 
+	// Age at at which an active_fetcher cache entry is considered stale
+	activeFetcherCachetime time.Duration
+
 	// Sleep this long between domain iterations;
 	// set by dispatcher.dispatch_interval config parameter
 	dispatchInterval time.Duration
+
+	// which UUIDs are queued up to be removed (And mutex to protect it).
+	removedToks      map[gocql.UUID]bool
+	removedToksMutex sync.Mutex
+
+	// map of active UUIDs -- i.e. fetchers that are still alive
+	activeToks map[gocql.UUID]time.Time
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -56,16 +66,23 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
+	d.removedToks = make(map[gocql.UUID]bool)
+	d.activeToks = make(map[gocql.UUID]time.Time)
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
-		panic(err) // Should not happen since it is parsed at config load
+		panic(err) //Not going to happen, parsed in config
+	}
+	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTTL)
+	if err != nil {
+		panic(err) //Not going to happen, parsed in config
 	}
 
 	d.dispatchInterval, err = time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
 	if err != nil {
 		panic(err) // Should not happen since it is parsed at config load
 	}
+	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
@@ -87,17 +104,102 @@ func (d *Dispatcher) StopDispatcher() error {
 	return nil
 }
 
+func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
+	tag := "cleanStrandedClaims"
+	var err error
+
+	db := d.db
+	iter := db.Query(`SELECT dom FROM domain_info WHERE claim_tok = ?`, tok).Iter()
+	var domain string
+	ecount := 0
+	for iter.Scan(&domain) && ecount < 5 {
+		err = db.Query(`DELETE FROM segments WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			log4go.Error("%s failed to DELETE from segments: %v", tag, err)
+			ecount++
+		}
+
+		err = db.Query(`UPDATE domain_info
+						SET 
+							claim_tok = 00000000-0000-0000-0000-000000000000,
+							dispatched = false
+						WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			log4go.Error("%s failed to UPDATE domain_info: %v", tag, err)
+			ecount++
+		}
+	}
+	err = iter.Close()
+	if err != nil {
+		log4go.Error("%s failed to find domain: %v", tag, err)
+	}
+
+	d.removedToksMutex.Lock()
+	delete(d.removedToks, tok)
+	d.removedToksMutex.Unlock()
+}
+
+func (d *Dispatcher) updateActiveFetchersCache(qtok gocql.UUID) {
+	// We have to loop until we get a good read of active_fetchers. We can't
+	// risk accidentally identifying a running fetcher as dead.
+	delete(d.activeToks, qtok)
+	for {
+		var tok gocql.UUID
+		iter := d.db.Query(`SELECT tok FROM active_fetchers WHERE tok = ?`, qtok).Iter()
+		for iter.Scan(&tok) {
+			d.activeToks[tok] = time.Now()
+		}
+		err := iter.Close()
+		if err == nil {
+			return
+		}
+
+		log4go.Error("Failed to read active_fetchers: %v", err)
+		time.Sleep(time.Second)
+	}
+}
+
+func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
+	zeroTok := gocql.UUID{}
+	if claimTok == zeroTok {
+		return true
+	}
+
+	// If the token is already queued up to be removed, you must
+	// return true here so that cleanStrandedClaims is not called
+	d.removedToksMutex.Lock()
+	removed := d.removedToks[claimTok]
+	d.removedToksMutex.Unlock()
+	if removed {
+		return true
+	}
+
+	// remove dead fetchers
+	readTime, present := d.activeToks[claimTok]
+	if !present || readTime.Before(time.Now().Add(-d.activeFetcherCachetime)) {
+		d.updateActiveFetchersCache(claimTok)
+		_, present := d.activeToks[claimTok]
+		if !present {
+			d.removedToksMutex.Lock()
+			d.removedToks[claimTok] = true
+			d.removedToksMutex.Unlock()
+			return false
+		}
+	}
+
+	return true
+}
+
 func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, excluded FROM domain_info
-									WHERE claim_tok = 00000000-0000-0000-0000-000000000000
-									AND dispatched = false ALLOW FILTERING`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
 
 		var domain string
 		var dispatched bool
+		var claimTok gocql.UUID
 		var excluded bool
-		for domainiter.Scan(&domain, &dispatched, &excluded) {
+		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
 			if d.quitSignaled() {
 				close(d.domains)
 				return
@@ -105,6 +207,8 @@ func (d *Dispatcher) domainIterator() {
 
 			if !dispatched && !excluded {
 				d.domains <- domain
+			} else if !d.fetcherIsAlive(claimTok) {
+				go d.cleanStrandedClaims(claimTok)
 			}
 		}
 

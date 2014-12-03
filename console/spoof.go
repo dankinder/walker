@@ -64,7 +64,7 @@ func spoofDataLong() {
 	//
 	// Clear out the tables first
 	//
-	tables := []string{"links", "segments", "domain_info"}
+	tables := []string{"links", "segments", "domain_info", "active_fetchers"}
 	for _, table := range tables {
 		err := db.Query(fmt.Sprintf(`TRUNCATE %v`, table)).Exec()
 		if err != nil {

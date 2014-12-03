@@ -99,6 +99,12 @@ type FetchManager struct {
 
 	defCrawlDelay time.Duration
 	maxCrawlDelay time.Duration
+
+	// how long to wait between Datastore.KeepAlive() calls.
+	activeFetcherHeartbeat time.Duration
+
+	// close this channel to kill the keep-alive thread
+	keepAliveQuit chan struct{}
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -131,10 +137,43 @@ func (fm *FetchManager) Start() {
 		panic(err)
 	}
 
+	ttl, err := time.ParseDuration(Config.Fetcher.ActiveFetchersTTL)
+	if err != nil {
+		panic(err) // This won't happen b/c this duration is checked in Config
+	}
+	fm.activeFetcherHeartbeat = time.Duration(float32(ttl) * Config.Fetcher.ActiveFetchersKeepratio)
+
 	fm.acceptFormats, err = mimetools.NewMatcher(Config.Fetcher.AcceptFormats)
 	if err != nil {
 		panic(fmt.Errorf("mimetools.NewMatcher failed to initialize: %v", err))
 	}
+
+	// Make sure that the initial KeepAlive work is done
+	err = fm.Datastore.KeepAlive()
+	if err != nil {
+		err = fmt.Errorf("Initial KeepAlive call fatally failed: %v", err)
+		log4go.Error(err.Error())
+		panic(err)
+	}
+
+	// Create keep-alive thread
+	fm.keepAliveQuit = make(chan struct{})
+	fm.fetchWait.Add(1)
+	go func() {
+		for {
+			select {
+			case <-fm.keepAliveQuit:
+				fm.fetchWait.Done()
+				return
+			case <-time.After(fm.activeFetcherHeartbeat):
+			}
+
+			err := fm.Datastore.KeepAlive()
+			if err != nil {
+				log4go.Error("KeepAlive Failed: %v", err)
+			}
+		}
+	}()
 
 	fm.started = true
 
@@ -188,6 +227,7 @@ func (fm *FetchManager) Stop() {
 	for _, f := range fm.fetchers {
 		go f.stop()
 	}
+	close(fm.keepAliveQuit)
 	fm.fetchWait.Wait()
 }
 
