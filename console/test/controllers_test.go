@@ -1074,37 +1074,72 @@ func TestFilterLinks(t *testing.T) {
 func TestChangePriority(t *testing.T) {
 	spoofData()
 
+	var doc *goquery.Document
+	priority := func() int {
+		sub := doc.Find(".container .row table tr").FilterFunction(func(index int, sel *goquery.Selection) bool {
+			title := sel.Find("td").First().Text()
+			return strings.Contains(title, "Priority")
+		})
+
+		if sub.Size() < 1 {
+			t.Fatalf("Failed to find Priority row")
+		}
+		valueSel := sub.Find("td:nth-child(2)")
+		if valueSel.Size() < 1 {
+			t.Fatalf("Failed to find Priority value")
+		}
+		value, err := strconv.Atoi(strings.TrimSpace(valueSel.Text()))
+		if err != nil {
+			t.Fatalf("Failed to transform priority value: %v", err)
+		}
+
+		return value
+	}
+
 	//
-	// First get the filter page and verify it looks correct
+	// First get the links page and verify it looks correct
 	//
 	doc, body, status := callController("http://localhost:3000/links/t1.com", "", "/links/{domain}",
 		console.LinksController)
 	if status != http.StatusOK {
-		t.Errorf("TestFilterLinks bad status code got %d, expected %d", status, http.StatusOK)
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
 		body = ""
 		t.Log(body)
 		t.FailNow()
 	}
 
-	sub := doc.Find(".container .row table tr").FilterFunction(func(index int, sel *goquery.Selection) bool {
-		title := sel.Find("td").First().Text()
-		return strings.Contains(title, "Priority")
-	})
-
-	if sub.Size() < 1 {
-		t.Fatalf("Failed to find Priority row")
-	}
-	valueSel := sub.Find("td:nth-child(2)")
-	if valueSel.Size() < 1 {
-		t.Fatalf("Failed to find Priority value")
-	}
-	value, err := strconv.Atoi(strings.TrimSpace(valueSel.Text()))
-	if err != nil {
-		t.Fatalf("Failed to transform priority value: %v", err)
+	prio := priority()
+	if prio != 0 {
+		t.Errorf("Expected initial priority to be zero, but found %d", prio)
 	}
 
-	if value != 0 {
-		t.Fatalf("Bad priority value")
+	//
+	// Now set a new priority
+	//
+	doc, body, status = callController("http://localhost:3000/changePriority/t1.com/-4", "",
+		"/changePriority/{domain}/{priority}",
+		console.ChangePriorityController)
+	if status != http.StatusFound {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusFound)
+		body = ""
+		t.Log(body)
+		t.FailNow()
 	}
 
+	//
+	// Now verify that the priority got changed
+	//
+	doc, body, status = callController("http://localhost:3000/links/t1.com", "", "/links/{domain}",
+		console.LinksController)
+	if status != http.StatusOK {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
+		body = ""
+		t.Log(body)
+		t.FailNow()
+	}
+
+	prio = priority()
+	if prio != -4 {
+		t.Errorf("Expected modified priority to be -4, but found %d", prio)
+	}
 }
