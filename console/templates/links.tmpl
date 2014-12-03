@@ -1,4 +1,26 @@
 
+<!--
+<script type="text/javascript">
+$(document).ready(function(){
+    console.log("PETE IS HERE\n")
+    console.log(">> " + $("#foo").text())
+    $(".dropdown").on("show.bs.dropdown", function(e){
+        console.log("FIRING ....")
+        var linkText = $(e.relatedTarget).text(); // Get the link text
+        alert("Click on OK button to view the dropdown menu for - " + linkText);
+    });
+
+    $(".dropdown").on("hide.bs.dropdown", function(e){
+        console.log("FIRING for " + e.relatedTarget)
+        var linkText = $(e.relatedTarget).text(); // Get the link text
+        console.log("PETE FOUND " + linkText)
+        // alert("Click on OK button to view the dropdown menu for - " + linkText);
+    });
+
+});
+</script>
+-->
+
 {{if .HasHeader}}
     <div class="row">
         <div class="col-xs-8">
@@ -66,16 +88,20 @@
                     <td> Priority </td>
                     <td>  {{.Dinfo.Priority}} </td>
                     <td> 
-                        <form role="form" action="/filterLinks" method="post">
-                            <select name="priority">
-                                <option value="1">1</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4</option>
-                            </select>
+                        <div class="btn-group dropdown" style="width: 100%;">
 
-                             <input type="submit" value="Submit" />
-                        </form>
+                            <button id="foo" type="button" style="width: 100%; color: white; background-color: green;"
+                                    data-toggle="dropdown" class="btn btn-default dropdown-toggle">
+                                &nbsp; &nbsp; Set Priority &nbsp; &nbsp;
+                                <span class="caret"></span>
+                            </button> 
+
+                            <ul class="dropdown-menu">
+                                {{range .PriorityLinks}}
+                                    <li><a href="{{.Link}}" style="text-align: center;">{{.Text}}</a></li>
+                                {{end}}
+                            </ul>
+                        </div>
                     </td>                    
                 </tr>                
 

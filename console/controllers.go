@@ -257,6 +257,12 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// Simple aggregate datatype that holds both the link in the priority and text of a dropdown element
+type priorityDropdownElement struct {
+	Link string
+	Text string
+}
+
 //IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
 // seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
@@ -364,6 +370,15 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
 	}
 
+	// set up priority dropdown
+	prio := []priorityDropdownElement{}
+	for _, p := range cassandra.AllowedPriorities {
+		prio = append(prio, priorityDropdownElement{
+			Link: fmt.Sprintf("/changePriority/%s/%d", domain, p),
+			Text: fmt.Sprintf("%d", p),
+		})
+	}
+
 	//
 	// Lets render
 	//
@@ -384,6 +399,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeTag":   excludeTag,
 		"ExcludeColor": excludeColor,
 		"ExcludeLink":  excludeLink,
+
+		"PriorityLinks": prio,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
