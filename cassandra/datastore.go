@@ -394,7 +394,7 @@ func (ds *Datastore) addDomain(dom string) {
 func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error {
 
 	// Try insert with excluded set to avoid dispatcher picking this domain up before the
-	// excluded reason is established.
+	// excluded reason can be set.
 	query := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority, excluded) 
 					 VALUES (?, ?, false, 0, true) IF NOT EXISTS`
 	err := ds.db.Query(query, dom, gocql.UUID{}).Exec()
