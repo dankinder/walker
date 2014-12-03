@@ -1064,6 +1064,7 @@ func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInf
 		}
 	}
 	buffer.WriteString("WHERE dom = ?\n")
+	args = append(args, domain)
 	query := buffer.String()
 
 	err := ds.db.Query(query, args...).Exec()

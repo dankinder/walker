@@ -40,7 +40,7 @@ func Routes() []Route {
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
-		Route{Path: "/changePriority/{domain}", Controller: ChangePriorityController},
+		Route{Path: "/changePriority/{domain}/{priority}", Controller: ChangePriorityController},
 	}
 }
 
@@ -562,24 +562,9 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 }
 
 func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		replyServerError(w, fmt.Errorf("Non-post recieved by changePriority"))
-		return
-	}
-
-	err := req.ParseForm()
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-
 	vars := mux.Vars(req)
 	domain := vars["domain"]
-	priorityStr, priorityOK := vars["priority"]
-	if !priorityOK {
-		replyServerError(w, fmt.Errorf("No priority specified in form fields"))
-		return
-	}
+	priorityStr := vars["priority"]
 	priority, err := strconv.Atoi(priorityStr)
 	if err != nil {
 		replyServerError(w, err)
@@ -602,6 +587,7 @@ func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
 	cfg := cassandra.DomainInfoUpdateConfig{Priority: true}
 	err = DS.UpdateDomain(domain, &info, cfg)
 	if err != nil {
+		err = fmt.Errorf("UpdateDomain failed: %v", err)
 		replyServerError(w, err)
 		return
 	}
