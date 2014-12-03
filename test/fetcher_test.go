@@ -134,6 +134,16 @@ func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
 	return r1
 }
 
+func (self *TestResults) dsCountKeepAliveCalls() int {
+	r1 := 0
+	for _, call := range self.datastore.Calls {
+		if call.Method == "KeepAlive" {
+			r1++
+		}
+	}
+	return r1
+}
+
 // assertExpectations verifies the expectations set up for the mocked
 // datastore and handler.
 func (self *TestResults) assertExpectations(t *testing.T) {
@@ -197,6 +207,8 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Configure mocks
 	//
+	ds.On("KeepAlive").Return(nil)
+
 	if !test.hasNoLinks {
 		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	}
@@ -377,9 +389,16 @@ func TestBasicNoRobots(t *testing.T) {
 	results := runFetcher(tests, 1*time.Second, t)
 
 	//
+	// Make sure KeepAlive was called
+	//
+	kacount := results.dsCountKeepAliveCalls()
+	if kacount < 1 {
+		t.Errorf("Expected KeepAlive to be called, but it wasn't")
+	}
+
+	//
 	// Make sure expected results are there
 	//
-
 	expected := map[string]bool{
 		"http://norobots.com/page1.html": true,
 		"http://norobots.com/page2.html": true,
@@ -1481,5 +1500,24 @@ func TestMaxContentSize(t *testing.T) {
 	}
 	if !page2Ok {
 		t.Errorf("Didn't find link http://a.com/page2.html in datastore calls, but expected too")
+	}
+}
+
+func TestKeepAlive(t *testing.T) {
+	orig := walker.Config.Fetcher.ActiveFetchersTTL
+	defer func() {
+		walker.Config.Fetcher.ActiveFetchersTTL = orig
+	}()
+	walker.Config.Fetcher.ActiveFetchersTTL = "1s"
+
+	tests := TestSpec{
+		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),
+	}
+
+	results := runFetcher(tests, 3*time.Second, t)
+
+	kacount := results.dsCountKeepAliveCalls()
+	if kacount < 2 {
+		t.Errorf("Expected two calls to keep alive, found only %d calls", kacount)
 	}
 }

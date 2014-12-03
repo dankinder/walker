@@ -34,6 +34,10 @@ type Datastore struct {
 
 	// This is a unique UUID for the entire crawler.
 	crawlerUUID gocql.UUID
+
+	// Number of seconds the crawlerUUID lives in active_fetchers before
+	// it's flushed (unless KeepAlive is called in the interim).
+	activeFetchersTTL int
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -53,6 +57,12 @@ func NewDatastore() (*Datastore, error) {
 		return ds, err
 	}
 	ds.crawlerUUID = u
+
+	durr, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTTL)
+	if err != nil {
+		panic(err) // This won't happen b/c this duration is checked in Config
+	}
+	ds.activeFetchersTTL = int(durr / time.Second)
 
 	return ds, nil
 }
@@ -344,6 +354,12 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 			log4go.Error("failed inserting parsed url (%v): %v", u, err)
 		}
 	}
+}
+
+func (ds *Datastore) KeepAlive() error {
+	err := ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
+		ds.crawlerUUID, ds.activeFetchersTTL).Exec()
+	return err
 }
 
 // hasDomain expects a TopLevelDomain+1 (no subdomain) and returns true if the

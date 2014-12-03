@@ -48,6 +48,11 @@ func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
 	return ch
 }
 
+func (ds *MockDatastore) KeepAlive() error {
+	ds.Mock.Called()
+	return nil
+}
+
 type MockHandler struct {
 	mock.Mock
 }

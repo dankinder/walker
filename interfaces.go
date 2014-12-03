@@ -47,6 +47,10 @@ type Datastore interface {
 	// This layer should handle efficiently deduplicating
 	// links (i.e. a fetcher should be safe feeding the same URL many times.
 	StoreParsedURL(u *URL, fr *FetchResults)
+
+	// This method will be called periodically in fetcher. This method should
+	// notify the datastore that this fetcher is still alive.
+	KeepAlive() error
 }
 
 // Dispatcher defines the calls a dispatcher should respond to. A dispatcher
