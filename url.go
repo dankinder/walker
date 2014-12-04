@@ -123,7 +123,20 @@ func (u *URL) Normalize() {
 		}
 		rawURL.RawQuery = params.Encode()
 	}
+}
 
+func (u *URL) Clone() *URL {
+	nurl := *u.URL
+
+	if nurl.User != nil {
+		userInfo := *nurl.User
+		nurl.User = &userInfo
+	}
+
+	return &URL{
+		URL:         &nurl,
+		LastCrawled: u.LastCrawled,
+	}
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
