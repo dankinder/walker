@@ -332,7 +332,7 @@ func TestUrlParsing(t *testing.T) {
 	}
 
 	for _, tst := range tests {
-		u, err := walker.ParseURL(tst.input)
+		u, err := walker.ParseAndNormalizeURL(tst.input)
 		if err != nil {
 			t.Fatalf("For tag %q ParseURL failed %v", tst.tag, err)
 		}

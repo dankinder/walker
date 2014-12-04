@@ -46,7 +46,7 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 var parseURLPathStrip *regexp.Regexp
 var parseURLPurgeMap map[string]bool
 
-func setupParseURL() error {
+func setupNormalizeURL() error {
 	if len(Config.Fetcher.PurgeSidList) == 0 {
 		parseURLPathStrip = nil
 	} else {
@@ -85,31 +85,45 @@ func ParseURL(ref string) (*URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
+	return wurl, nil
+}
 
-	// Apply standard normalization filters to u. This call will
-	// modify u in place.
-	purell.NormalizeURL(u, purell.FlagsSafe|purell.FlagRemoveFragment)
+func ParseAndNormalizeURL(ref string) (*URL, error) {
+	u, err := ParseURL(ref)
+	if err != nil {
+		return u, err
+	}
+	u.Normalize()
+	return u, nil
+}
+
+// This method will normalize the URL according to the current set of normalizing rules.
+func (u *URL) Normalize() {
+	rawURL := u.URL
+
+	// Apply standard normalization filters to url. This call will
+	// modify the url in place.
+	purell.NormalizeURL(rawURL, purell.FlagsSafe|purell.FlagRemoveFragment)
 
 	// Filter the path to catch embedded session ids
 	if parseURLPathStrip != nil {
 		// Remove SID from path
-		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+		u.Path = parseURLPathStrip.ReplaceAllString(rawURL.Path, "")
 	}
 
 	//Rewrite the query string to canonical order, removing SID's as needed.
-	if u.RawQuery != "" {
+	if rawURL.RawQuery != "" {
 		purge := parseURLPurgeMap
-		params := u.Query()
+		params := rawURL.Query()
 		for k := range params {
 			if purge[strings.ToLower(k)] {
 				delete(params, k)
 			}
 		}
-		u.RawQuery = params.Encode()
+		rawURL.RawQuery = params.Encode()
 	}
 
-	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
-	return wurl, nil
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as

@@ -263,7 +263,7 @@ func assertConfigInvariants() error {
 // call this function. This function is idempotent; so you can call it as many
 // times as you like.
 func PostConfigHooks() {
-	err := setupParseURL()
+	err := setupNormalizeURL()
 	if err != nil {
 		panic(err)
 	}
