@@ -332,7 +332,7 @@ func (pq *PriorityUrl) Pop() interface{} {
 	return x
 }
 
-// correctURLNormailzation will verify that u is normalized. This method always returns the normalized link. If this
+// correctURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
 // method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
 // link.
 // NOTE: It is always assumed that normalization CAN NOT change the domain, subdomain, or proto of a link
@@ -344,7 +344,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 	dom, subdom, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
-		log4go.Debug("correctURLNormalization error; can't get dom, sobdom for URL %v: %v", u.URL, err)
+		log4go.Error("correctURLNormalization error; can't get dom, sobdom for URL %v: %v", u.URL, err)
 		return u
 	}
 	path := u.RequestURI()
@@ -353,7 +353,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 	if newpath == path {
 		// this shouldn't happen
-		log4go.Debug("correctURLNormalization error; INTERNAL ERROR for URL %v", u.URL)
+		log4go.Error("correctURLNormalization error; INTERNAL ERROR for URL %v", u.URL)
 		return u
 	}
 
@@ -386,16 +386,21 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 		err := d.db.Query(insert, vals...).Exec()
 		if err != nil {
-			log4go.Debug("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
+			log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
 			return u
 		}
+	}
+	err = itr.Close()
+	if err != nil {
+		log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
+		return u
 	}
 
 	// Now clobber the old rows
 	del := `DELETE FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
 	err = d.db.Query(del, dom, subdom, proto, path).Exec()
 	if err != nil {
-		log4go.Debug("correctURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
+		log4go.Error("correctURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
 		return u
 	}
 
