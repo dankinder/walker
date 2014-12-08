@@ -139,6 +139,30 @@ func (u *URL) Clone() *URL {
 	}
 }
 
+// If u is NOT normalized, return a normalized version of u. Otherwise, return nil.
+func (u *URL) NormalizedForm() *URL {
+	// We compare the fields of url.URL below. A few notes:
+	//   (a) We do not compare the Opaque field, as it doesn't appear links we'll be looking at will use that field.
+	//   (b) We do not consider the User field (of type Userinfo). You can see where the User field comes into play by
+	//       looking at this (from url.URL)
+	//           scheme://[userinfo@]host/path[?query][#fragment]
+	//    the userinfo information should never be changed by normalization, so it appears there is no need to compare
+	//    it.
+	c := u.Clone()
+	c.Normalize()
+	normal := c.URL.Scheme == u.URL.Scheme &&
+		c.URL.Host == u.URL.Host &&
+		c.URL.Path == u.URL.Path &&
+		c.URL.RawQuery == u.URL.RawQuery &&
+		c.URL.Fragment == u.URL.Fragment
+
+	if normal {
+		return nil
+	} else {
+		return c
+	}
+}
+
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
 // defined by https://publicsuffix.org/, plus one extra domain component.
 //

@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -331,6 +332,76 @@ func (pq *PriorityUrl) Pop() interface{} {
 	return x
 }
 
+// correctURLNormailzation will verify that u is normalized. This method always returns the normalized link. If this
+// method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
+// link.
+// NOTE: It is always assumed that normalization CAN NOT change the domain, subdomain, or proto of a link
+func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
+	c := u.NormalizedForm()
+	if c == nil {
+		return u
+	}
+
+	dom, subdom, err := u.TLDPlusOneAndSubdomain()
+	if err != nil {
+		log4go.Debug("correctURLNormalization error; can't get dom, sobdom for URL %v: %v", u.URL, err)
+		return u
+	}
+	path := u.RequestURI()
+	proto := u.Scheme
+	newpath := c.RequestURI()
+
+	if newpath == path {
+		// this shouldn't happen
+		log4go.Debug("correctURLNormalization error; INTERNAL ERROR for URL %v", u.URL)
+		return u
+	}
+
+	// Read existing links with select
+	read := `SELECT * FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
+	itr := d.db.Query(read, dom, subdom, proto, path).Iter()
+
+	// Set up insert to copy the row to a new primary key
+	cols := itr.Columns()
+	colHeaders := []string{}
+	questions := []string{}
+	for _, c := range cols {
+		colHeaders = append(colHeaders, c.Name)
+		questions = append(questions, "?")
+	}
+	insert := fmt.Sprintf(`INSERT INTO links (%s) VALUES (%s)`,
+		strings.Join(colHeaders, ","),
+		strings.Join(questions, ","))
+
+	// Now loop through the old rows, copying them (with slight modification) to the new rows NOTE: we do NOT hardcode
+	// the column names in this algorithm in order to make this code resilient against  adding NON-PRIMARY-KEY columns.
+	mp := map[string]interface{}{}
+	for itr.MapScan(mp) {
+		mp["path"] = newpath
+
+		vals := []interface{}{}
+		for _, head := range colHeaders {
+			vals = append(vals, mp[head])
+		}
+
+		err := d.db.Query(insert, vals...).Exec()
+		if err != nil {
+			log4go.Debug("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
+			return u
+		}
+	}
+
+	// Now clobber the old rows
+	del := `DELETE FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
+	err = d.db.Query(del, dom, subdom, proto, path).Exec()
+	if err != nil {
+		log4go.Debug("correctURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
+		return u
+	}
+
+	return c
+}
+
 // generateSegment reads links in for this domain, generates a segment for it,
 // and inserts the domain into domains_to_crawl (assuming a segment is ready to
 // go)
@@ -355,6 +426,8 @@ func (d *Dispatcher) generateSegment(domain string) error {
 			log4go.Error("CreateURL: " + err.Error())
 			return
 		}
+
+		u = d.correctURLNormalization(u)
 
 		if c.getnow {
 			getNowLinks = append(getNowLinks, u)
