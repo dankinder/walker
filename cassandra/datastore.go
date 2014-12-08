@@ -440,8 +440,15 @@ type DomainInfo struct {
 	Priority int
 }
 
+// DomainInfoUpdateConfig is used to configure the method Datastore.UpdateDomain
 type DomainInfoUpdateConfig struct {
-	Exclude  bool
+
+	// Setting Exclude to true indicates that the ExcludeReason field of the DomainInfo passed to UpdateDomain should be
+	// persisted to the database.
+	Exclude bool
+
+	// Setting Priority to true indicates that the Priority field of the DomainInfo passed to UpdateDomain should be
+	// persisted to the database.
 	Priority bool
 }
 
@@ -1027,8 +1034,10 @@ func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]reme
 	return linfos, nil
 }
 
-// UpdateDomain updates the given domain with fields from `info`. If Excluded
-// is true, it automatically clears ExcludedReason.
+// UpdateDomain updates the given domain with fields from `info`. Which fields will be persisted to the store from
+// the argument DomainInfo is configured from the DomainInfoUpdateConfig argument. For example, to persist
+// the Priority field in the info strut, one would pass DomainInfoUpdateConfig{Priority: true} as the cfg
+// argument to UpdateDomain.
 func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInfoUpdateConfig) error {
 
 	vars := []string{}
