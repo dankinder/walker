@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"code.google.com/p/log4go"
@@ -39,6 +40,7 @@ func Routes() []Route {
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
+		Route{Path: "/changePriority/{domain}/{priority}", Controller: ChangePriorityController},
 	}
 }
 
@@ -255,6 +257,12 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// Simple aggregate datatype that holds both the link, and text of the given priority
+type priorityDropdownElement struct {
+	Link string
+	Text string
+}
+
 //IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
 // seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
@@ -362,6 +370,15 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
 	}
 
+	// set up priority dropdown
+	prio := []priorityDropdownElement{}
+	for _, p := range cassandra.AllowedPriorities {
+		prio = append(prio, priorityDropdownElement{
+			Link: fmt.Sprintf("/changePriority/%s/%d", domain, p),
+			Text: fmt.Sprintf("%d", p),
+		})
+	}
+
 	//
 	// Lets render
 	//
@@ -382,6 +399,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeTag":   excludeTag,
 		"ExcludeColor": excludeColor,
 		"ExcludeLink":  excludeLink,
+
+		"PriorityLinks": prio,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -533,13 +552,48 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err := DS.UpdateDomain(domain, info)
+	err := DS.UpdateDomain(domain, info, cassandra.DomainInfoUpdateConfig{Exclude: true})
 	if err != nil {
 		replyServerError(w, err)
 		return
 	}
 
 	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+}
+
+func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	domain := vars["domain"]
+	priorityStr := vars["priority"]
+	priority, err := strconv.Atoi(priorityStr)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	foundP := false
+	for _, p := range cassandra.AllowedPriorities {
+		if p == priority {
+			foundP = true
+			break
+		}
+	}
+	if !foundP {
+		replyServerError(w, fmt.Errorf("Priority value not found in AllowedPriority"))
+		return
+	}
+
+	info := cassandra.DomainInfo{Priority: priority}
+	cfg := cassandra.DomainInfoUpdateConfig{Priority: true}
+	err = DS.UpdateDomain(domain, &info, cfg)
+	if err != nil {
+		err = fmt.Errorf("UpdateDomain failed: %v", err)
+		replyServerError(w, err)
+		return
+	}
+
+	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+	return
 }
 
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {
