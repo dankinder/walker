@@ -915,7 +915,9 @@ func TestURLCorrection(t *testing.T) {
 		t.Fatalf("Failed to iterate over links: %v", err)
 	}
 
-	for k := range expected {
-		t.Errorf("Expected to find link %v in post-dispatched links, but didn't", k)
+	for k, count := range expected {
+		if count != 2 {
+			t.Errorf("Expected to find link %v in post-dispatched links, but didn't", k)
+		}
 	}
 }

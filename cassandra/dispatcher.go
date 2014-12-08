@@ -335,12 +335,13 @@ func (pq *PriorityUrl) Pop() interface{} {
 // correctURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
 // method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
 // link.
-// NOTE: It is always assumed that normalization CAN NOT change the domain, subdomain, or proto of a link
 func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	c := u.NormalizedForm()
 	if c == nil {
 		return u
 	}
+
+	log4go.Debug("correctURLNormalization starting on %v", u)
 
 	dom, subdom, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
@@ -349,13 +350,14 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	}
 	path := u.RequestURI()
 	proto := u.Scheme
-	newpath := c.RequestURI()
 
-	if newpath == path {
-		// this shouldn't happen
-		log4go.Error("correctURLNormalization error; INTERNAL ERROR for URL %v", u.URL)
+	newdom, newsubdom, err := c.TLDPlusOneAndSubdomain()
+	if err != nil {
+		log4go.Error("correctURLNormalization error; can't get new dom, new sobdom for URL %v: %v", c.URL, err)
 		return u
 	}
+	newpath := c.RequestURI()
+	newproto := c.Scheme
 
 	// Read existing links with select
 	read := `SELECT * FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
@@ -377,7 +379,10 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	// the column names in this algorithm in order to make this code resilient against  adding NON-PRIMARY-KEY columns.
 	mp := map[string]interface{}{}
 	for itr.MapScan(mp) {
+		mp["dom"] = newdom
+		mp["subdom"] = newsubdom
 		mp["path"] = newpath
+		mp["proto"] = newproto
 
 		vals := []interface{}{}
 		for _, head := range colHeaders {
