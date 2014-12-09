@@ -332,6 +332,13 @@ func (pq *PriorityUrl) Pop() interface{} {
 	return x
 }
 
+// createInsertAllColumns produces an insert statement that will usable to clone a CQL row. Arguments are:
+//   (a) the table that the cloned rows are coming from
+//   (b) An iterator that points to the set of rows the user plans to copy
+// and returns:
+//   (a) a string that can be used as a CQL insert statement for all of the columns of itr.
+//   (b) The name of the columns that are included in the insert statement.
+//
 func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
 	cols := itr.Columns()
 	colHeaders := []string{}
@@ -356,7 +363,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		return u
 	}
 
-	log4go.Debug("correctURLNormalization correcting %v", u)
+	log4go.Debug("correctURLNormalization correcting %v --> %v", u, c)
 
 	// Grab new and old variables
 	dom, subdom, err := u.TLDPlusOneAndSubdomain()
@@ -395,8 +402,8 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		// Copy the data for old into new
 		insert, colHeaders := createInsertAllColumns("domain_info", itr)
 		vals := []interface{}{}
+		mp["dom"] = newdom
 		for _, head := range colHeaders {
-			mp["dom"] = newdom
 			vals = append(vals, mp[head])
 		}
 		err = d.db.Query(insert, vals...).Exec()
