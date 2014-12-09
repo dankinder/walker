@@ -139,7 +139,7 @@ func (u *URL) Clone() *URL {
 	}
 }
 
-// If u is NOT normalized, return a normalized version of u. Otherwise, return nil.
+// Return nil if u is normalized. Otherwise, return the normalized version of u.
 func (u *URL) NormalizedForm() *URL {
 	// We compare the fields of url.URL below. A few notes:
 	//   (a) We do not compare the Opaque field, as it doesn't appear links we'll be looking at will use that field.
