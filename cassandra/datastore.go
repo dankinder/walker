@@ -1,6 +1,7 @@
 package cassandra
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"code.google.com/p/log4go"
-
 	"github.com/dropbox/godropbox/container/lrucache"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
@@ -451,6 +451,21 @@ type DomainInfo struct {
 
 	// Number of links not yet crawled
 	NumberLinksUncrawled int
+
+	// Priority of this domain
+	Priority int
+}
+
+// DomainInfoUpdateConfig is used to configure the method Datastore.UpdateDomain
+type DomainInfoUpdateConfig struct {
+
+	// Setting Exclude to true indicates that the ExcludeReason field of the DomainInfo passed to UpdateDomain should be
+	// persisted to the database.
+	Exclude bool
+
+	// Setting Priority to true indicates that the Priority field of the DomainInfo passed to UpdateDomain should be
+	// persisted to the database.
+	Priority bool
 }
 
 // DQ is a domain query struct used for getting domains from cassandra.
@@ -473,14 +488,14 @@ type DQ struct {
 
 // FindDomain returns the DomainInfo for the specified domain
 func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
-	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason, tot_links, uncrawled_links, queued_links
-						FROM domain_info WHERE dom = ?`, domain).Iter()
+	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason, priority, tot_links, uncrawled_links, 
+						queued_links FROM domain_info WHERE dom = ?`, domain).Iter()
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
 	var exclude_reason string
-	var linksCount, uncrawledLinksCount, queuedLinksCount int
-	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason, &linksCount, &uncrawledLinksCount,
+	var priority, linksCount, uncrawledLinksCount, queuedLinksCount int
+	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason, &priority, &linksCount, &uncrawledLinksCount,
 		&queuedLinksCount) {
 		err := itr.Close()
 		return nil, err
@@ -499,6 +514,7 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 		ClaimTime:            claim_time,
 		Excluded:             excluded,
 		ExcludeReason:        reason,
+		Priority:             priority,
 		NumberLinksTotal:     linksCount,
 		NumberLinksUncrawled: uncrawledLinksCount,
 		NumberLinksQueued:    queuedLinksCount,
@@ -525,9 +541,10 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 		args = append(args, query.Seed)
 	}
 
-	cql := `SELECT dom, claim_tok, claim_time, excluded, exclude_reason, 
+	cql := `SELECT dom, claim_tok, claim_time, excluded, exclude_reason, priority,
 				   tot_links, uncrawled_links, queued_links 
 			FROM domain_info`
+
 	if len(conditions) > 0 {
 		cql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -545,8 +562,8 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	var claim_tok gocql.UUID
 	var claim_time time.Time
 	var excluded bool
-	var linksCount, uncrawledLinksCount, queuedLinksCount int
-	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason, &linksCount,
+	var priority, linksCount, uncrawledLinksCount, queuedLinksCount int
+	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason, &priority, &linksCount,
 		&uncrawledLinksCount, &queuedLinksCount) {
 		reason := ""
 		if exclude_reason != "" {
@@ -562,6 +579,7 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 			ClaimTime:            claim_time,
 			Excluded:             excluded,
 			ExcludeReason:        reason,
+			Priority:             priority,
 			NumberLinksTotal:     linksCount,
 			NumberLinksUncrawled: uncrawledLinksCount,
 			NumberLinksQueued:    queuedLinksCount,
@@ -979,21 +997,49 @@ func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]reme
 	return linfos, nil
 }
 
-// UpdateDomain updates the given domain with fields from `info`. If Excluded
-// is true, it automatically clears ExcludedReason.
-// TODO: currently only updates exclusion; do other fields
-func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo) error {
-	query := `UPDATE domain_info 
-			  SET 
-				  excluded = ?,
-				  exclude_reason = ?
-			  WHERE 
-				  dom = ?`
-	reason := info.ExcludeReason
-	if !info.Excluded {
-		reason = ""
+// UpdateDomain updates the given domain with fields from `info`. Which fields will be persisted to the store from
+// the argument DomainInfo is configured from the DomainInfoUpdateConfig argument. For example, to persist
+// the Priority field in the info strut, one would pass DomainInfoUpdateConfig{Priority: true} as the cfg
+// argument to UpdateDomain.
+func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInfoUpdateConfig) error {
+
+	vars := []string{}
+	args := []interface{}{}
+
+	if cfg.Exclude {
+		reason := info.ExcludeReason
+		if !info.Excluded {
+			reason = ""
+		}
+		vars = append(vars, "excluded", "exclude_reason")
+		args = append(args, info.Excluded, reason)
 	}
-	err := ds.db.Query(query, info.Excluded, reason, domain).Exec()
+
+	if cfg.Priority {
+		vars = append(vars, "priority")
+		args = append(args, info.Priority)
+	}
+
+	if len(vars) < 1 {
+		return fmt.Errorf("Expected at least one variable set in cfg (of type DomainInfoUpdateConfig)")
+	}
+
+	var buffer bytes.Buffer
+	buffer.WriteString("UPDATE domain_info\n")
+	buffer.WriteString("SET\n")
+	for i, v := range vars {
+		buffer.WriteString(v)
+		if i != len(vars)-1 {
+			buffer.WriteString(" = ?,\n")
+		} else {
+			buffer.WriteString(" = ?\n")
+		}
+	}
+	buffer.WriteString("WHERE dom = ?\n")
+	args = append(args, domain)
+	query := buffer.String()
+
+	err := ds.db.Query(query, args...).Exec()
 	return err
 }
 
