@@ -209,6 +209,18 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 	-- the reason this domain is excluded, null if not excluded
 	exclude_reason text,
 
+	-- How many links does this domain have. NOTE: this data item is updated by the dispatcher during dispatch. That
+	-- means that this number could be stale if the dispatcher hasn't run recently. uncrawled_links and queued_links
+	-- has the same pathology.
+	tot_links int,
+
+	-- How many uncrawled links does this domain have. See NOTE over tot_links above.
+	uncrawled_links int,
+
+	-- How many links were queued last time the dispatcher updated segments for this
+	-- domain. See NOTE over tot_links above.
+	queued_links int,
+
 	---- Items yet to be added to walker
 
 	-- If not null, identifies another domain as a mirror of this one
