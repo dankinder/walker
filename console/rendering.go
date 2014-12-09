@@ -13,6 +13,7 @@ import (
 
 	"code.google.com/p/log4go"
 	"github.com/gocql/gocql"
+	"github.com/gorilla/sessions"
 	"github.com/iParadigms/walker"
 	"github.com/unrolled/render"
 )
@@ -21,7 +22,7 @@ var zeroTime = time.Time{}
 var zeroUuid = gocql.UUID{}
 var timeFormat = "2006-01-02 15:04:05 -0700"
 
-const PageWindowLength = 15
+const DefaultPageWindowLength = 15
 
 func yesOnFilledFunc(s string) string {
 	if s == "" {
@@ -113,4 +114,44 @@ func decode32(s string) (string, error) {
 func encode32(s string) string {
 	b := base32.StdEncoding.EncodeToString([]byte(s))
 	return string(b)
+}
+
+// SESSIONS
+var sessionManager = sessions.NewCookieStore(
+	[]byte("17a0902d-ee58-4cbc-b0ec-666c0b74189f"),
+	[]byte("6382520d-ee6e-4ed1-8535-9437aec59a1e"))
+
+type Session struct {
+	req  *http.Request
+	w    http.ResponseWriter
+	sess *sessions.Session
+}
+
+func GetSession(w http.ResponseWriter, req *http.Request) (*Session, error) {
+	sess, err := sessionManager.Get(req, "walker")
+	if err != nil {
+		return nil, err
+	}
+	return &Session{req: req, w: w, sess: sess}, nil
+}
+
+func (self *Session) Save() error {
+	return self.sess.Save(self.req, self.w)
+}
+
+func (self *Session) PageLength() int {
+	val, valOk := self.sess.Values["pwl"]
+	if !valOk {
+		return DefaultPageWindowLength
+	}
+	pwl, pwlOk := val.(int)
+	if !pwlOk {
+		return DefaultPageWindowLength
+	}
+
+	return pwl
+}
+
+func (self *Session) SetPageLength(plen int) {
+	self.sess.Values["pwl"] = plen
 }

@@ -55,7 +55,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	seed := vars["seed"]
 	prevButtonClass := ""
 
-	query := cassandra.DQ{Limit: PageWindowLength}
+	query := cassandra.DQ{Limit: DefaultPageWindowLength}
 	if seed == "" {
 		prevButtonClass = "disabled"
 	} else {
@@ -75,7 +75,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 
 	nextDomain := ""
 	nextButtonClass := "disabled"
-	if len(dinfos) == PageWindowLength {
+	if len(dinfos) == DefaultPageWindowLength {
 		nextDomain = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
 		nextButtonClass = ""
 	}
@@ -290,7 +290,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query := cassandra.LQ{Limit: PageWindowLength}
+	query := cassandra.LQ{Limit: DefaultPageWindowLength}
 
 	seedURL := vars["seedURL"]
 	needHeader := false
