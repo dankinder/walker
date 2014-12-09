@@ -41,6 +41,7 @@ func Routes() []Route {
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
 		Route{Path: "/changePriority/{domain}/{priority}", Controller: ChangePriorityController},
+		Route{Path: "/setPageLength/{page}/{length}/{returnLink}", Controller: SetPageLengthController},
 	}
 }
 
@@ -258,7 +259,7 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 }
 
 // Simple aggregate datatype that holds both the link, and text of the given priority
-type priorityDropdownElement struct {
+type dropdownElement struct {
 	Link string
 	Text string
 }
@@ -371,11 +372,21 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// set up priority dropdown
-	prio := []priorityDropdownElement{}
+	prio := []dropdownElement{}
 	for _, p := range cassandra.AllowedPriorities {
-		prio = append(prio, priorityDropdownElement{
+		prio = append(prio, dropdownElement{
 			Link: fmt.Sprintf("/changePriority/%s/%d", domain, p),
 			Text: fmt.Sprintf("%d", p),
+		})
+	}
+
+	// set up page length dropdown
+	pageLenDropdown := []dropdownElement{}
+	encodedReturnAddress := encode32(req.RequestURI)
+	for _, ln := range PageWindowLengthChoices {
+		pageLenDropdown = append(pageLenDropdown, dropdownElement{
+			Link: fmt.Sprintf("/setPageLength/links/%d/%s", ln, encodedReturnAddress),
+			Text: fmt.Sprintf("%d", ln),
 		})
 	}
 
@@ -400,7 +411,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeColor": excludeColor,
 		"ExcludeLink":  excludeLink,
 
-		"PriorityLinks": prio,
+		"PriorityLinks":   prio,
+		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -652,6 +664,46 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 
 	url := fmt.Sprintf("/links/%s?filterRegex=%s", domain[0], encode32(regex[0]))
 	http.Redirect(w, req, url, http.StatusSeeOther)
+	return
+}
+
+func SetPageLengthController(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	//page := vars["page"]
+	lengthStr := vars["length"]
+	length, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+	returnAddress, err := decode32(vars["returnLink"])
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	foundP := false
+	for _, p := range PageWindowLengthChoices {
+		if p == length {
+			foundP = true
+			break
+		}
+	}
+	if !foundP {
+		replyServerError(w, fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices"))
+		return
+	}
+
+	log4go.Error("PETE: changing the page length to %d", length)
+	sess, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+	sess.SetPageLength(length)
+	sess.Save()
+
+	http.Redirect(w, req, returnAddress, http.StatusFound)
 	return
 }
 

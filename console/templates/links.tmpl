@@ -90,11 +90,34 @@
 
 {{if .HasLinks}}
     <div class="row" style="width: 90%;">
-        {{if .AltTitle}}
-            <h2> Searched for links </h2>
-        {{else}}
-            <h2> Links for domain {{.Dinfo.Domain}} {{.FilterRegexSuffix}}</h2>
-        {{end}}
+        <div class="col-xs-6">
+            {{if .AltTitle}}
+                <h2> Searched for links </h2>
+            {{else}}
+                <h2> Links for domain {{.Dinfo.Domain}} {{.FilterRegexSuffix}}</h2>
+            {{end}}
+        </div>
+        <div class="col-xs-3">
+        </div>
+        <div class="col-xs-3">
+            <div class="btn-group dropdown" style="width: 100%;">
+
+                <button type="button" style="width: 100%; color: white; background-color: green; margin-top: 15px;"
+                        data-toggle="dropdown" class="btn btn-default dropdown-toggle">
+                     Set Page Length
+                    <span class="caret"></span>
+                </button> 
+
+                <ul class="dropdown-menu">
+                    {{range .PageLengthLinks}}
+                        <li><a href="{{.Link}}" style="text-align: center;">{{.Text}}</a></li>
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" style="width: 90%;">
         <table class="console-table table table-condensed table-striped">
             <thead>
                 <th class="col-xs-4"> Link </th>

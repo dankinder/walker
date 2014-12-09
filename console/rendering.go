@@ -22,8 +22,6 @@ var zeroTime = time.Time{}
 var zeroUuid = gocql.UUID{}
 var timeFormat = "2006-01-02 15:04:05 -0700"
 
-const DefaultPageWindowLength = 15
-
 func yesOnFilledFunc(s string) string {
 	if s == "" {
 		return ""
@@ -116,7 +114,12 @@ func encode32(s string) string {
 	return string(b)
 }
 
-// SESSIONS
+//
+// S E S S I O N S
+//
+const DefaultPageWindowLength = 15
+
+var PageWindowLengthChoices = []int{10, 25, 50, 100, 150, 250}
 var sessionManager = sessions.NewCookieStore(
 	[]byte("17a0902d-ee58-4cbc-b0ec-666c0b74189f"),
 	[]byte("6382520d-ee6e-4ed1-8535-9437aec59a1e"))
