@@ -892,20 +892,22 @@ func TestURLCorrection(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	d.StopDispatcher()
 
+	//
+	// Verify that the links have been changed correctly
+	//
 	var dom, subdom, path, proto string
 	itr := db.Query("SELECT dom, subdom, path, proto FROM links").Iter()
 	for itr.Scan(&dom, &subdom, &path, &proto) {
-		// func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) (*URL, error) {
 		u, err := walker.CreateURL(dom, subdom, path, proto, walker.NotYetCrawled)
 		if err != nil {
 			t.Fatalf("Failed to create url: %v", err)
 		}
 		count, found := expected[u.String()]
 		if !found {
-			t.Error("Failed to find link %v in post-dispatched links", u.String())
+			t.Errorf("Failed to find link %v in post-dispatched links", u.String())
 			continue
 		} else if count > 1 {
-			t.Error("Double counted link %v in post-dispatched links", u.String())
+			t.Errorf("Double counted link %v in post-dispatched links", u.String())
 			continue
 		}
 		expected[u.String()] = 2
@@ -919,5 +921,21 @@ func TestURLCorrection(t *testing.T) {
 		if count != 2 {
 			t.Errorf("Expected to find link %v in post-dispatched links, but didn't", k)
 		}
+	}
+
+	//
+	// The UpCase tag above changes the domain, which triggers an addition to domain_info. Verify
+	// that it is present
+	//
+	expectedDomainsAdded := map[string]bool{
+		"a1.com": true,
+	}
+	itr = db.Query("SELECT dom FROM domain_info").Iter()
+	for itr.Scan(&dom) {
+		delete(expectedDomainsAdded, dom)
+	}
+
+	for dom := range expectedDomainsAdded {
+		t.Errorf("Expected to find %q added to domain_info, but didn't find that", dom)
 	}
 }

@@ -332,6 +332,21 @@ func (pq *PriorityUrl) Pop() interface{} {
 	return x
 }
 
+func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
+	cols := itr.Columns()
+	colHeaders := []string{}
+	questions := []string{}
+	for _, c := range cols {
+		colHeaders = append(colHeaders, c.Name)
+		questions = append(questions, "?")
+	}
+	insert := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s)`,
+		table,
+		strings.Join(colHeaders, ","),
+		strings.Join(questions, ","))
+	return insert, colHeaders
+}
+
 // correctURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
 // method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
 // link.
@@ -341,8 +356,9 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		return u
 	}
 
-	log4go.Debug("correctURLNormalization starting on %v", u)
+	log4go.Debug("correctURLNormalization correcting %v", u)
 
+	// Grab new and old variables
 	dom, subdom, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
 		log4go.Error("correctURLNormalization error; can't get dom, sobdom for URL %v: %v", u.URL, err)
@@ -359,21 +375,44 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	newpath := c.RequestURI()
 	newproto := c.Scheme
 
-	// Read existing links with select
+	// Create a new domain_info if needed. XXX: note that currently old domain_infos are left alone, since we
+	// can't tell easily if they're still being used.
+	if dom != newdom {
+		log4go.Debug("correctURLNormalization adding domain_info entry for %q (derived from %q)", newdom, dom)
+		// Grab all the data for the domain in question
+		mp := map[string]interface{}{}
+		itr := d.db.Query(`SELECT * FROM domain_info WHERE dom = ?`, dom).Iter()
+		if !itr.MapScan(mp) {
+			log4go.Error("correctURLNormalization error; Failed to select from domain_info for URL %v", u.URL)
+			return u
+		}
+		err := itr.Close()
+		if err != nil {
+			log4go.Error("correctURLNormalization error; Failed to select from domain_info for URL %v: iter err %v",
+				u.URL, err)
+		}
+
+		// Copy the data for old into new
+		insert, colHeaders := createInsertAllColumns("domain_info", itr)
+		vals := []interface{}{}
+		for _, head := range colHeaders {
+			mp["dom"] = newdom
+			vals = append(vals, mp[head])
+		}
+		err = d.db.Query(insert, vals...).Exec()
+		if err != nil {
+			log4go.Error("correctURLNormalization error; Failed to insert into domain_info for URL %v: %v", u.URL, err)
+			return u
+		}
+	}
+
+	// Create read iterator
 	read := `SELECT * FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
 	itr := d.db.Query(read, dom, subdom, proto, path).Iter()
 
-	// Set up insert to copy the row to a new primary key
-	cols := itr.Columns()
-	colHeaders := []string{}
-	questions := []string{}
-	for _, c := range cols {
-		colHeaders = append(colHeaders, c.Name)
-		questions = append(questions, "?")
-	}
-	insert := fmt.Sprintf(`INSERT INTO links (%s) VALUES (%s)`,
-		strings.Join(colHeaders, ","),
-		strings.Join(questions, ","))
+	// Use the read iterator to fashion a generic insert statement to move all fields from one primary key
+	// to another.
+	insert, colHeaders := createInsertAllColumns("links", itr)
 
 	// Now loop through the old rows, copying them (with slight modification) to the new rows NOTE: we do NOT hardcode
 	// the column names in this algorithm in order to make this code resilient against  adding NON-PRIMARY-KEY columns.
