@@ -204,6 +204,26 @@ func (u *URL) TLDPlusOneAndSubdomain() (string, string, error) {
 	return dom, subdom, nil
 }
 
+// Return the 5 tuple that is the primary key for this url in the links table. The return values
+// are (with cassandra keys in parens)
+// (a) Domain (dom)
+// (b) Subdomain (subdom)
+// (c) Path part of url (path)
+// (d) Schema of url (proto)
+// (e) last update time of link (time)
+// (f) any errors that occurred
+func (u *URL) PrimaryKey() (dom string, subdom string, path string, proto string, time time.Time, err error) {
+	// Grab new and old variables
+	dom, subdom, err = u.TLDPlusOneAndSubdomain()
+	if err != nil {
+		return
+	}
+	path = u.RequestURI()
+	proto = u.Scheme
+	time = u.LastCrawled
+	return
+}
+
 // MakeAbsolute uses URL.ResolveReference to make this URL object an absolute
 // reference (having Schema and Host), if it is not one already. It is
 // resolved using `base` as the base URL.

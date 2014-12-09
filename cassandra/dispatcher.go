@@ -365,22 +365,17 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 	log4go.Debug("correctURLNormalization correcting %v --> %v", u, c)
 
-	// Grab new and old variables
-	dom, subdom, err := u.TLDPlusOneAndSubdomain()
+	// Grab primary keys of old and new urls
+	dom, subdom, path, proto, _, err := u.PrimaryKey()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; can't get dom, sobdom for URL %v: %v", u.URL, err)
+		log4go.Error("correctURLNormalization error; can't get primary key for URL %v: %v", u.URL, err)
 		return u
 	}
-	path := u.RequestURI()
-	proto := u.Scheme
-
-	newdom, newsubdom, err := c.TLDPlusOneAndSubdomain()
+	newdom, newsubdom, newpath, newproto, _, err := c.PrimaryKey()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; can't get new dom, new sobdom for URL %v: %v", c.URL, err)
+		log4go.Error("correctURLNormalization error; can't get NEW primary key for URL %v: %v", u.URL, err)
 		return u
 	}
-	newpath := c.RequestURI()
-	newproto := c.Scheme
 
 	// Create a new domain_info if needed. XXX: note that currently old domain_infos are left alone, since we
 	// can't tell easily if they're still being used.
