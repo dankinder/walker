@@ -24,6 +24,12 @@ type Route struct {
 	Controller func(w http.ResponseWriter, req *http.Request)
 }
 
+// Simple aggregate datatype that holds both the link, and text of the given priority
+type dropdownElement struct {
+	Link string
+	Text string
+}
+
 func Routes() []Route {
 	return []Route{
 		Route{Path: "/", Controller: HomeController},
@@ -56,7 +62,13 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	seed := vars["seed"]
 	prevButtonClass := ""
 
-	query := cassandra.DQ{Limit: DefaultPageWindowLength}
+	session, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
+		return
+	}
+
+	query := cassandra.DQ{Limit: session.ListPageWindowLength()}
 	if seed == "" {
 		prevButtonClass = "disabled"
 	} else {
@@ -76,9 +88,19 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 
 	nextDomain := ""
 	nextButtonClass := "disabled"
-	if len(dinfos) == DefaultPageWindowLength {
+	if len(dinfos) == query.Limit {
 		nextDomain = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
 		nextButtonClass = ""
+	}
+
+	// set up page length dropdown
+	pageLenDropdown := []dropdownElement{}
+	encodedReturnAddress := encode32(req.RequestURI)
+	for _, ln := range PageWindowLengthChoices {
+		pageLenDropdown = append(pageLenDropdown, dropdownElement{
+			Link: fmt.Sprintf("/setPageLength/list/%d/%s", ln, encodedReturnAddress),
+			Text: fmt.Sprintf("%d", ln),
+		})
 	}
 
 	mp := map[string]interface{}{
@@ -86,6 +108,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		"NextButtonClass": nextButtonClass,
 		"Domains":         dinfos,
 		"Next":            nextDomain,
+		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "list", mp)
 }
@@ -256,12 +279,6 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	}
 	Render.HTML(w, http.StatusOK, "add", mp)
 	return
-}
-
-// Simple aggregate datatype that holds both the link, and text of the given priority
-type dropdownElement struct {
-	Link string
-	Text string
 }
 
 //IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
