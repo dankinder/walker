@@ -874,14 +874,14 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 	var urls []*walker.URL
 	for i := range links {
 		link := links[i]
-		url, err := walker.ParseURL(link)
+		url, err := walker.ParseAndNormalizeURL(link)
 		if err != nil {
-			errList = append(errList, fmt.Errorf("%v # ParseURL: %v", link, err))
+			errList = append(errList, fmt.Errorf("%v # ParseAndNormalizeURL: %v", link, err))
 			domains = append(domains, "")
 			urls = append(urls, nil)
 			continue
 		} else if url.Scheme == "" {
-			errList = append(errList, fmt.Errorf("%v # ParseURL: undefined scheme (http:// or https://)", link))
+			errList = append(errList, fmt.Errorf("%v # ParseAndNormalizeURL: undefined scheme (http:// or https://)", link))
 			domains = append(domains, "")
 			urls = append(urls, nil)
 			continue

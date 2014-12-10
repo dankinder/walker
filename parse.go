@@ -169,7 +169,7 @@ func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) 
 	} else { //!docsrc
 		if !metaNofollow {
 			var u *URL
-			u, err = ParseURL(body)
+			u, err = ParseAndNormalizeURL(body)
 			if err != nil {
 				log4go.Error("parseEmbed failed to parse src: %v", err)
 				return
@@ -216,7 +216,7 @@ func parseObjectAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, dataWordBytes) == 0 {
-			return ParseURL(string(val))
+			return ParseAndNormalizeURL(string(val))
 		}
 
 		if !moreAttr {
@@ -231,7 +231,7 @@ func parseEmbedAttrs(tokenizer *html.Tokenizer) (*URL, error) {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, srcWordBytes) == 0 {
-			return ParseURL(string(val))
+			return ParseAndNormalizeURL(string(val))
 		}
 
 		if !moreAttr {
@@ -278,7 +278,7 @@ func parseAnchorAttrs(tokenizer *html.Tokenizer, links []*URL) []*URL {
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, []byte("href")) == 0 {
-			u, err := ParseURL(strings.TrimSpace(string(val)))
+			u, err := ParseAndNormalizeURL(strings.TrimSpace(string(val)))
 			if err == nil {
 				links = append(links, u)
 			}

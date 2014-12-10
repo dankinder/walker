@@ -813,6 +813,136 @@ func TestDispatchInterval(t *testing.T) {
 	}
 }
 
+func TestURLCorrection(t *testing.T) {
+	origPurgeSidList := walker.Config.Fetcher.PurgeSidList
+	origCorrectLinkNormalization := walker.Config.Dispatcher.CorrectLinkNormalization
+	defer func() {
+		walker.Config.Fetcher.PurgeSidList = origPurgeSidList
+		walker.Config.Dispatcher.CorrectLinkNormalization = origCorrectLinkNormalization
+		walker.PostConfigHooks()
+	}()
+	walker.Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.Config.Dispatcher.CorrectLinkNormalization = true
+	walker.PostConfigHooks()
+
+	db := GetTestDB()
+
+	tests := []struct {
+		tag    string
+		input  string
+		expect string
+	}{
+		{
+			tag:    "UpCase",
+			input:  "HTTP://A1.com/page1.com",
+			expect: "http://a1.com/page1.com",
+		},
+		{
+			tag:    "Fragment",
+			input:  "http://a2.com/page1.com#Fragment",
+			expect: "http://a2.com/page1.com",
+		},
+		{
+			tag:    "PathSID",
+			input:  "http://a3.com/page1.com;jsEssIoniD=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a3.com/page1.com",
+		},
+		{
+			tag:    "PathSID2",
+			input:  "http://a4.com/page1.com;phPseSsId=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a4.com/page1.com",
+		},
+		{
+			tag:    "QuerySID",
+			input:  "http://a5.com/page1.com?foo=bar&jsessionID=436100313FAFBBB9B4DC8BA3C2EC267B&baz=niffler",
+			expect: "http://a5.com/page1.com?baz=niffler&foo=bar",
+		},
+		{
+			tag:    "QuerySID2",
+			input:  "http://a6.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
+			expect: "http://a6.com/page1.com",
+		},
+	}
+
+	expected := map[string]int{}
+	for _, tst := range tests {
+		expected[tst.expect] = 1
+
+		u, err := walker.ParseURL(tst.input)
+		if err != nil {
+			t.Fatalf("Failed to parse url %v: %v", tst.input, err)
+		}
+
+		dom, subdom, err := u.TLDPlusOneAndSubdomain()
+		if err != nil {
+			t.Fatalf("Failed to find dom/subdom for %v: %v", tst.input, err)
+		}
+		path := u.RequestURI()
+		proto := u.Scheme
+		err = db.Query(`INSERT INTO links (dom, subdom, path, proto, time) VALUES (?, ?, ?, ?, ?)`,
+			dom, subdom, path, proto, walker.NotYetCrawled).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert into links for %v: %v", tst.input, err)
+		}
+		err = db.Query(`INSERT INTO domain_info (dom) VALUES (?)`, dom).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert into domain_info for %v: %v", tst.input, err)
+		}
+	}
+
+	d := &Dispatcher{}
+	go d.StartDispatcher()
+	time.Sleep(1500 * time.Millisecond)
+	d.StopDispatcher()
+
+	//
+	// Verify that the links have been changed correctly
+	//
+	var dom, subdom, path, proto string
+	itr := db.Query("SELECT dom, subdom, path, proto FROM links").Iter()
+	for itr.Scan(&dom, &subdom, &path, &proto) {
+		u, err := walker.CreateURL(dom, subdom, path, proto, walker.NotYetCrawled)
+		if err != nil {
+			t.Fatalf("Failed to create url: %v", err)
+		}
+		count, found := expected[u.String()]
+		if !found {
+			t.Errorf("Failed to find link %v in post-dispatched links", u.String())
+			continue
+		} else if count > 1 {
+			t.Errorf("Double counted link %v in post-dispatched links", u.String())
+			continue
+		}
+		expected[u.String()] = 2
+	}
+	err := itr.Close()
+	if err != nil {
+		t.Fatalf("Failed to iterate over links: %v", err)
+	}
+
+	for k, count := range expected {
+		if count != 2 {
+			t.Errorf("Expected to find link %v in post-dispatched links, but didn't", k)
+		}
+	}
+
+	//
+	// The UpCase tag above changes the domain, which triggers an addition to domain_info. Verify
+	// that it is present
+	//
+	expectedDomainsAdded := map[string]bool{
+		"a1.com": true,
+	}
+	itr = db.Query("SELECT dom FROM domain_info").Iter()
+	for itr.Scan(&dom) {
+		delete(expectedDomainsAdded, dom)
+	}
+
+	for dom := range expectedDomainsAdded {
+		t.Errorf("Expected to find %q added to domain_info, but didn't find that", dom)
+	}
+}
+
 func TestDomainInfoStats(t *testing.T) {
 	orig := walker.Config.Dispatcher.MinLinkRefreshTime
 	func() {

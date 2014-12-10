@@ -232,7 +232,7 @@ crawl, regardless of the add_new_domains configuration setting.`,
 			if seedURL == "" {
 				fatalf("Seed URL needed to execute; add on with --url/-u")
 			}
-			u, err := walker.ParseURL(seedURL)
+			u, err := walker.ParseAndNormalizeURL(seedURL)
 			if err != nil {
 				fatalf("Could not parse %v as a url: %v", seedURL, err)
 			}
