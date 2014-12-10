@@ -35,9 +35,9 @@ problems, and yes Walker frequently deletes data as it writes new crawl
 segments (links to crawl for a given domain) and then deletes them.
 
 Deletes in Cassandra cause two separate problems:
-- The larger problem: if you frequently issue queries that could select deleted
-  data if it hadn't been deleted, then your queries will slow way down as they
-  select more and more tombstones
+- The larger problem: if you frequently issue queries with criteria that would
+  select deleted data (if it hand't yet been deleted), then your queries will
+  slow way down as they select more and more tombstones
 - The lesser problem: for a transient data set, the volume of data will be
   larger than is immediately obvious
 
