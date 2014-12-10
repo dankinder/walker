@@ -28,12 +28,12 @@ what can be done with data, and easy to set up. Use it if you:
 - Want a broad or scalable focused crawl of the web
 - Want to prioritize what you (re)crawl, and how often
 - Want control over where you store crawled data and what you use it for
-  (walker stores links and metadata internally, passing pages and files on to
-  you)
+  (walker needs to store links and metadata, where to store and what to do with
+  returned data is up to you)
 - Want a smart crawler that will avoid junk (ex. crawler traps)
 - Want the performance of Cassandra and flexibility to do batch processing
 - Want to crawl non-html file types
-- Aren't interested in built-in web graph generation and search indexing (or
+- Aren't interested in built-in page rank generation and search indexing (or
   want to do it yourself)
 
 # Architecture in brief
