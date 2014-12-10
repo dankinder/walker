@@ -294,8 +294,9 @@ func getModelTestDatastore(t *testing.T) *Datastore {
 	}
 
 	{
-		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) VALUES (?, ?, 0, true, ?)`
-		dom := fmt.Sprintf("exclude.com")
+		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) 
+									 VALUES (?, ?, 0, true, ?)`
+		dom := fmt.Sprintf("excluded.com")
 		reason := "Reason for exclusion"
 		err := db.Query(insertDomainInfoExcluded, dom, walker.NotYetCrawled, reason).Exec()
 		if err != nil {
@@ -381,6 +382,19 @@ func getModelTestDatastore(t *testing.T) *Datastore {
 		bazSeed = beforeBazComLink.String()
 	}
 
+	// Update the domain_info stats
+	for _, d := range []DomainInfo{bazDomain, fooDomain, barDomain, testDomain, filterDomain, excludedDomain} {
+		err := db.Query(`UPDATE domain_info 
+					   SET 					   	
+					   		tot_links = ?,
+					   		uncrawled_links = ?,
+					   		queued_links = ?
+					   WHERE dom = ?`, d.NumberLinksTotal, d.NumberLinksUncrawled, d.NumberLinksQueued, d.Domain).Exec()
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	return getDS(t)
 }
 
@@ -396,10 +410,10 @@ func TestListDomains(t *testing.T) {
 			limit: LIM,
 			expected: []DomainInfo{
 				bazDomain,
+				excludedDomain,
 				filterDomain,
 				fooDomain,
 				barDomain,
-				excludedDomain,
 				testDomain,
 			},
 		},
@@ -418,7 +432,6 @@ func TestListDomains(t *testing.T) {
 			limit: LIM,
 			expected: []DomainInfo{
 				barDomain,
-				excludedDomain,
 				testDomain,
 			},
 		},
@@ -438,40 +451,50 @@ func TestListDomains(t *testing.T) {
 			continue
 		}
 		dinfos, err := store.ListDomains(DQ{
-			Seed:     test.seed,
-			Limit:    test.limit,
-			GetStats: true,
+			Seed:  test.seed,
+			Limit: test.limit,
 		})
+
 		if err != nil {
 			t.Errorf("ListDomains direct error %v", err)
 			continue
 		}
 
 		if len(dinfos) != len(test.expected) {
-			t.Errorf("ListDomains length mismatch %v: got %d, expected %d", test.tag, len(dinfos), len(test.expected))
+			t.Errorf("ListDomains for tag '%s' length mismatch: got %d, expected %d",
+				test.tag, len(dinfos), len(test.expected))
 			continue
 		}
 
 		for i := range dinfos {
 			got := dinfos[i]
 			exp := test.expected[i]
+			if got.Domain != exp.Domain {
+				t.Errorf("ListDomains for tag %q domain mismatch: got %v, expected %v", test.tag, got.Domain, exp.Domain)
+			}
 			if got.NumberLinksTotal != exp.NumberLinksTotal {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksTotal mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksTotal, exp.NumberLinksTotal)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksTotal mismatch got %v, expected %v",
+					got.Domain, test.tag, got.NumberLinksTotal, exp.NumberLinksTotal)
 			}
 			if got.NumberLinksQueued != exp.NumberLinksQueued {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksQueued mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksQueued mismatch got %v, expected %v",
+					got.Domain, test.tag, got.NumberLinksQueued, exp.NumberLinksQueued)
 			}
 			if got.NumberLinksUncrawled != exp.NumberLinksUncrawled {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v", got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' NumberLinksUncrawled mismatch got %v, expected %v",
+					got.Domain, test.tag, got.NumberLinksUncrawled, exp.NumberLinksUncrawled)
 			}
 			if !timeClose(got.ClaimTime, exp.ClaimTime) {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimTime mismatch got %v, expected %v", got.Domain, test.tag, got.ClaimTime, exp.ClaimTime)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimTime mismatch got %v, expected %v", got.Domain,
+					test.tag, got.ClaimTime, exp.ClaimTime)
 			}
 			if got.ClaimToken != exp.ClaimToken {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimToken mismatch got %v, expected %v", got.Domain, test.tag, got.ClaimToken, exp.ClaimToken)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' ClaimToken mismatch got %v, expected %v", got.Domain,
+					test.tag, got.ClaimToken, exp.ClaimToken)
 			}
 			if got.ExcludeReason != exp.ExcludeReason {
-				t.Errorf("ListDomains with domain '%s' for tag '%s' ExcludeReason mismatch got %v, expected %v", got.Domain, test.tag, got.ExcludeReason, exp.ExcludeReason)
+				t.Errorf("ListDomains with domain '%s' for tag '%s' ExcludeReason mismatch got %v, expected %v",
+					got.Domain, test.tag, got.ExcludeReason, exp.ExcludeReason)
 			}
 		}
 	}
@@ -582,10 +605,9 @@ func TestListWorkingDomains(t *testing.T) {
 
 	for _, test := range tests {
 		dinfos, err := store.ListDomains(DQ{
-			Seed:     test.seed,
-			Limit:    test.limit,
-			Working:  true,
-			GetStats: true,
+			Seed:    test.seed,
+			Limit:   test.limit,
+			Working: true,
 		})
 		if err != nil {
 			t.Errorf("ListWorkingDomains for tag %s direct error %v", test.tag, err)
@@ -887,7 +909,7 @@ func TestInsertLinks(t *testing.T) {
 			allDomains = append(allDomains, domain)
 		}
 
-		dinfos, err := store.ListDomains(DQ{Limit: LIM, GetStats: true})
+		dinfos, err := store.ListDomains(DQ{Limit: LIM})
 		if err != nil {
 			t.Errorf("InsertLinks:ListDomains for tag %s direct error %v", test.tag, err)
 		}

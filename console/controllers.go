@@ -55,7 +55,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	seed := vars["seed"]
 	prevButtonClass := ""
 
-	query := cassandra.DQ{Limit: PageWindowLength, GetStats: true}
+	query := cassandra.DQ{Limit: PageWindowLength}
 	if seed == "" {
 		prevButtonClass = "disabled"
 	} else {

@@ -942,3 +942,91 @@ func TestURLCorrection(t *testing.T) {
 		t.Errorf("Expected to find %q added to domain_info, but didn't find that", dom)
 	}
 }
+
+func TestDomainInfoStats(t *testing.T) {
+	orig := walker.Config.Dispatcher.MinLinkRefreshTime
+	func() {
+		walker.Config.Dispatcher.MinLinkRefreshTime = orig
+	}()
+	walker.Config.Dispatcher.MinLinkRefreshTime = "12h"
+
+	var now = time.Now()
+	var tests = []DispatcherTest{
+		DispatcherTest{
+			Tag: "BasicTest",
+
+			ExistingDomainInfos: []ExistingDomainInfo{
+				{Dom: "test.com"},
+			},
+
+			ExistingLinks: []ExistingLink{
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+					LastCrawled: now.AddDate(0, 0, -1)}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+					LastCrawled: now.AddDate(0, 0, -2)}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+					LastCrawled: now.AddDate(0, 0, -3)}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page1.html"),
+					LastCrawled: now.AddDate(0, 0, -4)}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page2.html"),
+					LastCrawled: walker.NotYetCrawled}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page3.html"),
+					LastCrawled: walker.NotYetCrawled}},
+				{URL: walker.URL{URL: helpers.UrlParse("http://test.com/page4.html"),
+					LastCrawled: time.Now()}},
+			},
+		},
+	}
+
+	var q *gocql.Query
+	for _, dt := range tests {
+		db := GetTestDB() // runs between tests to reset the db
+
+		for _, edi := range dt.ExistingDomainInfos {
+			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
+							VALUES (?, ?, ?, ?, ?)`,
+				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
+			}
+		}
+
+		for _, el := range dt.ExistingLinks {
+			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
+			q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, getnow)
+								VALUES (?, ?, ?, ?, ?, ?)`,
+				dom,
+				subdom,
+				el.URL.RequestURI(),
+				el.URL.Scheme,
+				el.URL.LastCrawled,
+				el.GetNow)
+			if err := q.Exec(); err != nil {
+				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)
+			}
+		}
+
+		d := &Dispatcher{}
+		go d.StartDispatcher()
+		time.Sleep(time.Millisecond * 100)
+		d.StopDispatcher()
+
+		var linksCount, uncrawledLinksCount, queuedLinksCount int
+		err := db.Query(`SELECT tot_links, uncrawled_links, queued_links 
+						 FROM domain_info 
+						 WHERE dom = 'test.com'`).Scan(&linksCount, &uncrawledLinksCount, &queuedLinksCount)
+		if err != nil {
+			t.Fatalf("Select direct error: %v", err)
+		}
+		if linksCount != 4 {
+			t.Errorf("tot_links mismatch: got %d, expected %d", linksCount, 4)
+		}
+		if uncrawledLinksCount != 2 {
+			t.Errorf("uncrawled_links mismatch: got %d, expected %d", uncrawledLinksCount, 2)
+		}
+		if queuedLinksCount != 3 {
+			t.Errorf("queued_links mismatch: got %d, expected %d", queuedLinksCount, 3)
+		}
+	}
+
+}

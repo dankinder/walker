@@ -468,10 +468,18 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	heap.Init(&crawledLinks)
 
 	// cell push will push the argument cell onto one of the three link-lists.
-	// logs failure if CreateURL fails.
+	// logs failure if CreateURL fails. It also keeps track of total and uncrawled
+	// links by incrementing linksCount and uncrawledLinksCount
 	var now = time.Now()
 	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
+	linksCount := 0
+	uncrawledLinksCount := 0
 	cell_push := func(c *cell) {
+		linksCount++
+		if c.crawl_time.Equal(walker.NotYetCrawled) {
+			uncrawledLinksCount++
+		}
+
 		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
 		if err != nil {
 			log4go.Error("CreateURL: " + err.Error())
@@ -578,14 +586,6 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	}
 
 	//
-	// Got any links
-	//
-	if len(links) == 0 {
-		log4go.Info("No links to dispatch for %v", domain)
-		return nil
-	}
-
-	//
 	// Insert into segments
 	//
 	for _, u := range links {
@@ -605,9 +605,24 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	}
 
 	//
-	// Update dispatched flag
+	// Got any links
 	//
-	err := d.db.Query(`UPDATE domain_info SET dispatched = true WHERE dom = ?`, domain).Exec()
+	dispatched := true
+	if len(links) == 0 {
+		log4go.Info("No links to dispatch for %v", domain)
+		dispatched = false
+	}
+
+	//
+	// Update domain_info
+	//
+	err := d.db.Query(`UPDATE domain_info 
+					   SET 
+					   		dispatched = ?,
+					   		tot_links = ?,
+					   		uncrawled_links = ?,
+					   		queued_links = ?
+					   WHERE dom = ?`, dispatched, linksCount, uncrawledLinksCount, len(links), domain).Exec()
 	if err != nil {
 		return fmt.Errorf("error inserting %v to domains_to_crawl: %v", domain, err)
 	}
