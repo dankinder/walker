@@ -61,11 +61,12 @@ type WalkerConfig struct {
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
-		MaxLinksPerSegment   int     `yaml:"num_links_per_segment"`
-		RefreshPercentage    float64 `yaml:"refresh_percentage"`
-		NumConcurrentDomains int     `yaml:"num_concurrent_domains"`
-		MinLinkRefreshTime   string  `yaml:"min_link_refresh_time"`
-		DispatchInterval     string  `yaml:"dispatch_interval"`
+		MaxLinksPerSegment       int     `yaml:"num_links_per_segment"`
+		RefreshPercentage        float64 `yaml:"refresh_percentage"`
+		NumConcurrentDomains     int     `yaml:"num_concurrent_domains"`
+		MinLinkRefreshTime       string  `yaml:"min_link_refresh_time"`
+		DispatchInterval         string  `yaml:"dispatch_interval"`
+		CorrectLinkNormalization bool    `yaml:"correct_link_normalization"`
 	} `yaml:"dispatcher"`
 
 	Cassandra struct {
@@ -135,6 +136,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.NumConcurrentDomains = 1
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
 	Config.Dispatcher.DispatchInterval = "10s"
+	Config.Dispatcher.CorrectLinkNormalization = false
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"

@@ -116,6 +116,10 @@ dispatcher:
     # wait this long before iterating again.
     dispatch_interval: 10s
 
+    # If this variable is true, the dispatcher will change links in the datastore that
+    # are not normalized (according to the current normalization configuration).
+    correct_link_normalization: false
+
 # Cassandra configuration for the datastore.
 # Generally these are used to create a gocql.ClusterConfig object
 # (https://godoc.org/github.com/gocql/gocql#ClusterConfig).

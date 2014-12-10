@@ -478,7 +478,9 @@ func (d *Dispatcher) generateSegment(domain string) error {
 			return
 		}
 
-		u = d.correctURLNormalization(u)
+		if walker.Config.Dispatcher.CorrectLinkNormalization {
+			u = d.correctURLNormalization(u)
+		}
 
 		if c.getnow {
 			getNowLinks = append(getNowLinks, u)

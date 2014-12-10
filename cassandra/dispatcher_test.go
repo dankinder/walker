@@ -814,12 +814,15 @@ func TestDispatchInterval(t *testing.T) {
 }
 
 func TestURLCorrection(t *testing.T) {
-	orig := walker.Config.Fetcher.PurgeSidList
+	origPurgeSidList := walker.Config.Fetcher.PurgeSidList
+	origCorrectLinkNormalization := walker.Config.Dispatcher.CorrectLinkNormalization
 	defer func() {
-		walker.Config.Fetcher.PurgeSidList = orig
+		walker.Config.Fetcher.PurgeSidList = origPurgeSidList
+		walker.Config.Dispatcher.CorrectLinkNormalization = origCorrectLinkNormalization
 		walker.PostConfigHooks()
 	}()
 	walker.Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	walker.Config.Dispatcher.CorrectLinkNormalization = true
 	walker.PostConfigHooks()
 
 	db := GetTestDB()
