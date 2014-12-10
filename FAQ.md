@@ -68,7 +68,7 @@ but 0 works more optimally.
 
 #### Can I run Walker with Cassandra on (Mac OS X | Windows | etc.)?
 
-Yes, though Walker is primary qualified for linux. In most cases you can use an
+Yes, though Walker is primary qualified for Linux. In most cases you can use an
 install package from http://planetcassandra.org/cassandra/
 
 However on Mac OS X you may not have a recent enough version of Java. If that
