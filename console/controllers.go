@@ -291,7 +291,13 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query := cassandra.LQ{Limit: DefaultPageWindowLength}
+	session, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
+		return
+	}
+
+	query := cassandra.LQ{Limit: session.PageLength()}
 
 	seedURL := vars["seedURL"]
 	needHeader := false
@@ -701,7 +707,11 @@ func SetPageLengthController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	sess.SetPageLength(length)
-	sess.Save()
+	err = sess.Save()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
 
 	http.Redirect(w, req, returnAddress, http.StatusFound)
 	return
