@@ -329,6 +329,11 @@ func TestUrlParsing(t *testing.T) {
 			input:  "http://a.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a.com/page1.com",
 		},
+		{
+			tag:    "EmbeddedPort",
+			input:  "http://a.com:8080/page1.com",
+			expect: "http://a.com:8080/page1.com",
+		},
 	}
 
 	for _, tst := range tests {
