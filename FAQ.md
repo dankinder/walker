@@ -13,13 +13,14 @@ the following changes have.
 
 *cassandra.yaml*
 - Change concurrent_reads to match your CPU profile.
-- Increase tombstone_warn_threshold (default 1000, suggested 10000), since the
-  way segments are selected can easily cause this warning.
-- Increase column_index_size_in_kb if you have individual sites with millions
+- Increase `tombstone_warn_threshold` (default 1000, suggested 10000), since
+  the way segments are selected can easily cause this warning.
+- Increase `column_index_size_in_kb` if you have individual sites with millions
   of links or more (default 64, suggested 2048)
-- Increase timeouts (read_request_timeout_in_ms, range_request_timeout_in_ms,
-  write_request_timeout_in_ms) if needed, since Walker does not require
-  requests to have low latency. Suggested 3x increase.
+- Increase timeouts (`read_request_timeout_in_ms`,
+  `range_request_timeout_in_ms`, `write_request_timeout_in_ms`) if needed,
+  since Walker does not require requests to have low latency. Suggested 3x
+  increase.
 
 *cassandra-env.conf*
 - Dispatching can cause many allocations of short-lived objects. Increasing
