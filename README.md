@@ -7,39 +7,64 @@ An efficient, scalable, continuous crawler leveraging Go/Cassandra
 [![GoDoc](https://godoc.org/github.com/iParadigms/walker?status.svg)](https://godoc.org/github.com/iParadigms/walker)
 
 # Documentation
-- [The walker-user mailing list](https://groups.google.com/forum/#!forum/walker-user)
+- [The walker-user mailing
+  list](https://groups.google.com/forum/#!forum/walker-user)
 - [API GoDoc](http://godoc.org/github.com/iParadigms/walker)
 - [Travis CI](https://travis-ci.org/iParadigms/walker)
 - [FAQ](FAQ.md)
-- [contributing](contributing.md) (see about development, logging, and running tests)
+- [contributing](contributing.md) (see about development, logging, and running
+  tests)
 
 # Alpha Warning
-This project is a work in progress and not ready for production release. Much of the design described below is pending development. Stay tuned for an Alpha release.
+This project is a work in progress and not ready for production release. Much
+of the design described below is pending development. Stay tuned for an Alpha
+release.
 
 # Overview
 
-Walker is a web crawler on it's feet. It has been built from the start to be horizontally scalable, smart about recrawling, lean on storage, flexible about what can be done with data, and easy to set up. Use it if you:
+Walker is a web crawler on it's feet. It has been built from the start to be
+horizontally scalable, smart about recrawling, lean on storage, flexible about
+what can be done with data, and easy to set up. Use it if you:
 - Want a broad or scalable focused crawl of the web
 - Want to prioritize what you (re)crawl, and how often
-- Want control over where you store crawled data and what you use it for (walker stores links and metadata internally, passing pages and files on to you)
+- Want control over where you store crawled data and what you use it for
+  (walker stores links and metadata internally, passing pages and files on to
+  you)
 - Want a smart crawler that will avoid junk (ex. crawler traps)
 - Want the performance of Cassandra and flexibility to do batch processing
 - Want to crawl non-html file types
-- Aren't interested in built-in web graph generation and search indexing (or want to do it yourself)
+- Aren't interested in built-in web graph generation and search indexing (or
+  want to do it yourself)
 
 # Architecture in brief
 
-Walker takes advantage of Cassandra's distributed nature to store all links it has crawled and still needs to crawl. The database holds these links, all domains we've seen (with metadata), and new segments (groups of links) to crawl for a given domain.
+Walker takes advantage of Cassandra's distributed nature to store all links it
+has crawled and still needs to crawl. The database holds these links, all
+domains we've seen (with metadata), and new segments (groups of links) to crawl
+for a given domain.
 
-The *fetcher manager* component claims domains (meaning: fetchers can be distributed to anywhere they can connect to Cassandra), reads in their segments, and crawls pages politely, respecting robots.txt rules. It will parse pages for new links to feed into the system and output crawled content. You can add your own content processor or use a built-in one like writing pages to local files.
+The *fetcher manager* component claims domains (meaning: fetchers can be
+distributed to anywhere they can connect to Cassandra), reads in their
+segments, and crawls pages politely, respecting robots.txt rules. It will parse
+pages for new links to feed into the system and output crawled content. You can
+add your own content processor or use a built-in one like writing pages to
+local files.
 
-The *dispatcher* runs batch jobs looking for domains that don't yet have segments generated, reads the links we already have, and intelligently chooses a subset to crawl next.
+The *dispatcher* runs batch jobs looking for domains that don't yet have
+segments generated, reads the links we already have, and intelligently chooses
+a subset to crawl next.
 
-_Note_: the fetchers uses a pluggable *datastore* component to tell it what to crawl (see the `Datastore` interface). Though the Cassandra datastore is the primarily supported implementation, the fetchers could be backed by alternative implementations (in-memory, classic SQL, etc.) that may not need a dispatcher to run at all.
+_Note_: the fetchers uses a pluggable *datastore* component to tell it what to
+crawl (see the `Datastore` interface). Though the Cassandra datastore is the
+primarily supported implementation, the fetchers could be backed by alternative
+implementations (in-memory, classic SQL, etc.) that may not need a dispatcher
+to run at all.
 
 # Console
 
-Walker comes with a friendly console accessible from the browser. It provides an easy way to add new links to your crawl and see information about what you have crawled so far.
+Walker comes with a friendly console accessible from the browser. It provides
+an easy way to add new links to your crawl and see information about what you
+have crawled so far.
 
 ![walker-console](https://cloud.githubusercontent.com/assets/5198575/4909655/a0dbc666-6475-11e4-87e5-726502ed2fe7.png)
 
@@ -53,7 +78,11 @@ Make sure you have [go installed and a GOPATH set](https://golang.org/doc/instal
 go get github.com/iParadigms/walker
 ```
 
-To get going quickly, you need to install Cassandra. A simple install of Cassandra on Centos 6 is demonstrated below. See the [datastax documentation](http://www.datastax.com/documentation/cassandra/2.0/cassandra/install/install_cassandraTOC.html) non-RHEL-based installs and recommended settings (Oracle Java is recommended but not required)
+To get going quickly, you need to install Cassandra. A simple install of
+Cassandra on Centos 6 is demonstrated below. See the [datastax
+documentation](http://www.datastax.com/documentation/cassandra/2.0/cassandra/install/install_cassandraTOC.html)
+non-RHEL-based installs and recommended settings (Oracle Java is recommended
+but not required)
 
 ```sh
 echo "[datastax]
@@ -67,7 +96,9 @@ sudo yum install java-1.7.0-openjdk dsc20
 sudo service cassandra start # it can take a few minutes for this to actually start up
 ```
 
-In order to run walker and cassandra on your local machine, you may need to make the following changes to [cassandra.yaml](http://www.datastax.com/documentation/cassandra/2.0/cassandra/configuration/configCassandra_yaml_r.html):
+In order to run walker and cassandra on your local machine, you may need to
+make the following changes to
+[cassandra.yaml](http://www.datastax.com/documentation/cassandra/2.0/cassandra/configuration/configCassandra_yaml_r.html):
 - Change `listen_address` to empty
 - Change `rpc_address` to `0.0.0.0`
 - `sudo service cassandra restart`
@@ -84,12 +115,13 @@ walker schema -o schema.txt
 cqlsh -f schema.txt # optionally change replication information for the keyspace in schema.txt
 ```
 
-This will create the schema for you. At this point the console can be loaded via `walker console`
-
+This will create the schema for you. At this point the console can be loaded
+via `walker console`
 
 ## Basic crawl
 
-Once you've built a `walker` binary, you can crawl with the default handler easily, which simply writes pages to a directory structure in `$PWD`.
+Once you've built a `walker` binary, you can crawl with the default handler
+easily, which simply writes pages to a directory structure in `$PWD`.
 
 ```sh
 # These assume walker is in your $PATH
@@ -103,7 +135,9 @@ walker help
 
 ## Writing your own handler
 
-In most cases you will want to use walker for some kind of processing. The easiest way is to create a new Go project that implements your own handler. You can still take advantage of walker's command-line interface. For example:
+In most cases you will want to use walker for some kind of processing. The
+easiest way is to create a new Go project that implements your own handler. You
+can still take advantage of walker's command-line interface. For example:
 
 ```go
 package main
@@ -133,7 +167,11 @@ go run main.go # Has the same CLI as the walker binary
 
 ## Advanced features and configuration
 
-See [walker.yaml](walker.yaml) for extensive descriptions of the various configuration parameters available for walker. This file is the primary way of configuring your crawl. It is not required to exist, but will be read if it is in the working directory of the walker process or configured with a command line parameter.
+See [walker.yaml](walker.yaml) for extensive descriptions of the various
+configuration parameters available for walker. This file is the primary way of
+configuring your crawl. It is not required to exist, but will be read if it is
+in the working directory of the walker process or configured with a command
+line parameter.
 
 A small sampling of common configuration items:
 ```yaml
@@ -183,4 +221,5 @@ cassandra:
 
 # License
 
-All code contributed to the Walker repository is open source software released under the BSD 3-clause license. See [LICENSE.txt](LICENSE.txt) for details.
+All code contributed to the Walker repository is open source software released
+under the BSD 3-clause license. See [LICENSE.txt](LICENSE.txt) for details.
