@@ -140,7 +140,7 @@ func (self *Session) Save() error {
 	return self.sess.Save(self.req, self.w)
 }
 
-func (self *Session) PageLength() int {
+func (self *Session) ListPageWindowLength() int {
 	val, valOk := self.sess.Values["pwl"]
 	if !valOk {
 		return DefaultPageWindowLength
@@ -153,6 +153,23 @@ func (self *Session) PageLength() int {
 	return pwl
 }
 
-func (self *Session) SetPageLength(plen int) {
+func (self *Session) SetListPageWindowLength(plen int) {
 	self.sess.Values["pwl"] = plen
+}
+
+func (self *Session) LinksPageWindowLength() int {
+	val, valOk := self.sess.Values["lpwl"]
+	if !valOk {
+		return DefaultPageWindowLength
+	}
+	pwl, pwlOk := val.(int)
+	if !pwlOk {
+		return DefaultPageWindowLength
+	}
+
+	return pwl
+}
+
+func (self *Session) SetLinksPageWindowLength(plen int) {
+	self.sess.Values["lpwl"] = plen
 }

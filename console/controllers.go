@@ -297,7 +297,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query := cassandra.LQ{Limit: session.PageLength()}
+	query := cassandra.LQ{Limit: session.LinksPageWindowLength()}
 
 	seedURL := vars["seedURL"]
 	needHeader := false
@@ -675,7 +675,7 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 
 func SetPageLengthController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
-	//page := vars["page"]
+	page := vars["page"]
 	lengthStr := vars["length"]
 	length, err := strconv.Atoi(lengthStr)
 	if err != nil {
@@ -700,13 +700,22 @@ func SetPageLengthController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	log4go.Error("PETE: changing the page length to %d", length)
 	sess, err := GetSession(w, req)
 	if err != nil {
 		replyServerError(w, err)
 		return
 	}
-	sess.SetPageLength(length)
+
+	switch page {
+	case "links":
+		sess.SetLinksPageWindowLength(length)
+	case "list":
+		sess.SetListPageWindowLength(length)
+	default:
+		replyServerError(w, fmt.Errorf("Bad page type to SetPageLengthController"))
+		return
+	}
+
 	err = sess.Save()
 	if err != nil {
 		replyServerError(w, err)
