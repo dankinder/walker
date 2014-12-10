@@ -57,6 +57,48 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// func processPrevList(req *http.Request) (prevLink string, prevList string, err error) {
+// 	//Manage the prevlist
+// 	prevlistArr, prevlistOk := req.Form["prevlist"]
+// 	if prevlistOk && len(prevlistArr) > 0 {
+// 		prevList, err = decode32(prevlistArr[0])
+// 		if err != nil {
+// 			return
+// 		}
+// 	}
+
+// 	pushprev, pushprevOk := req.Form["pushprev"]
+// 	isPrev := false
+// 	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
+// 		isPrev = true
+// 	}
+
+// 	index = strings.LastIndex(prevList, ";")
+// 	if index < 0 {
+// 		if isPrev {
+// 			prevLink = "/list"
+// 			prevList = ""
+// 		}
+// 	}
+// 	link := prevList[index+1:]
+// 	list := prevList[:index-1]
+
+// 		if index >= 0 {
+// 			prevLink = prevList[index+1:]
+// 			prevList = prevList[:index-1]
+// 		} else {
+// 			prevLink = "/list"
+// 			prevList = ""
+// 		}
+// 	} else {
+
+// 		prevList += ";"
+// 		prevList += req.RequestURI
+// 	}
+
+// 	prevList = encode32(prevList)
+// }
+
 func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seed := vars["seed"]
@@ -67,6 +109,30 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
 		return
 	}
+
+	err = req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	// //Manage the prevlist
+	// prevlistArr, prevlistOk := req.Form["prevlist"]
+	// prevlist := ""
+	// if prevlistOk && len(prevlistArr) > 0 {
+	// 	prevlist = prevlistArr[0]
+	// 	prevlist, err = decode32(prevlist)
+	// 	if err != nil {
+	// 		replyServerError(w, err)
+	// 		return
+	// 	}
+	// }
+
+	// pushprev, pushprevOk := req.Form["pushprev"]
+	// if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
+	// 	// We need to pop off the last element in prev list
+	// 	// ......
+	// }
 
 	query := cassandra.DQ{Limit: session.ListPageWindowLength()}
 	if seed == "" {
@@ -108,6 +174,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		"NextButtonClass": nextButtonClass,
 		"Domains":         dinfos,
 		"Next":            nextDomain,
+		"Prev":            "",
 		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "list", mp)

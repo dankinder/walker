@@ -1,7 +1,29 @@
 
-<div style="width: 80%;" class="row">
-    <h2>List of Domains</h2>
+<div class="row">
+    <div class="col-xs-4">
+        <h2>List of Domains</h2>
+    </div>
+    <div class="col-xs-3">
+    </div>
+    <div class="col-xs-2">
+        <div class="btn-group dropdown" style="width: 100%;">
 
+            <button type="button" style="width: 100%; color: white; background-color: green; margin-top: 15px;"
+                    data-toggle="dropdown" class="btn btn-default dropdown-toggle">
+                 Set Page Length
+                <span class="caret"></span>
+            </button> 
+
+            <ul class="dropdown-menu">
+                {{range .PageLengthLinks}}
+                    <li><a href="{{.Link}}" style="text-align: center;">{{.Text}}</a></li>
+                {{end}}
+            </ul>
+        </div>
+      </div>
+</div>
+
+<div style="width: 80%;" class="row">
     <table class="console-table table table-striped table-condensed">
         <thead> 
           <td class="col-xs-4"> Domain </td>
@@ -25,11 +47,28 @@
 </div>
 
 <div style="width: 80%;" class="row">
-    <a href="" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" onclick="window.history.back()">
+
+    <script type="text/javascript">
+        function callWithPrevList(a){
+            var f = document.getElementById("prevlist")
+            f.action = a.href
+            f.submit()
+            return false
+        }
+    </script>
+
+    <a href="/list/{{.Prev}}" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" 
+               onclick="callWithPrevList(this)">
           <i class="icon-white icon-backward"></i> Previous</a>
 
     <div class="col-xs-1"></div>
 
-    <a href="/list/{{.Next}}" class="col-xs-3 btn btn-info btn-large {{.NextButtonClass}}">
+    <a href="/list/{{.Next}}" class="col-xs-3 btn btn-info btn-large {{.NextButtonClass}}"
+              onclick="callWithPrevList(this)">
           <i class="icon-white icon-forward"></i> Next </a>
 </div>
+
+<form id="prevlist" action="#" class="hidden" method="POST">
+    <input type="hidden" name="prevlist" value="">
+</form>
+
