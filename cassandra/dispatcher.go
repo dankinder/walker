@@ -438,7 +438,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	}
 	err = itr.Close()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
+		log4go.Error("correctURLNormalization error; Failed to close insert iterator for URL %v: %v", u.URL, err)
 		return u
 	}
 

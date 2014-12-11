@@ -862,6 +862,11 @@ func TestURLCorrection(t *testing.T) {
 			input:  "http://a6.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a6.com/page1.com",
 		},
+		{
+			tag:    "ReorderedQueryParams",
+			input:  "http://a7.com/index.php?option=com_alphacontent&section=26&Itemid=357&limitstart=100",
+			expect: "http://a7.com/index.php?Itemid=357&limitstart=100&option=com_alphacontent&section=26",
+		},
 	}
 
 	expected := map[string]int{}
