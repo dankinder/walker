@@ -71,39 +71,46 @@ func processPrevList(req *http.Request) (string, string, error) {
 		}
 	}
 
-	log4go.Error("PETE: prev list: %v", prevList)
+	log4go.Error("PETE: prev list: %v (%d)", prevList, len(prevList))
 
 	pushprev, pushprevOk := req.Form["pushprev"]
 	isPrev := false
+	log4go.Error("PETE: pushprev: %v", pushprev)
 	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
 		log4go.Error("PETE: pushpreving")
 		isPrev = true
 	}
 
 	theLink := ""
-	theList := strings.Split(prevList, ";")
-	end := len(theList) - 1
+	theList := []string{}
+	if prevList != "" {
+		theList = strings.Split(prevList, ";")
+	}
 	if isPrev {
 		switch len(theList) {
 		case 0, 1:
-			theLink = "/list"
+			theLink = ""
 			theList = []string{}
 		case 2:
-			theLink = "/list"
-			theList = theList[:end-1]
+			theLink = ""
+			theList = theList[:1]
 		default:
+			end := len(theList) - 1
 			theLink = theList[end-2]
-			theList = theList[:end-1]
+			theList = theList[:end]
 		}
 	} else {
 		if len(theList) == 0 {
-			theLink = "/list"
+			theLink = ""
 		} else {
-			theLink = theList[end]
+			theLink = theList[len(theList)-1]
 		}
-		theList = append(theList, req.RequestURI)
+		if !(len(theList) == 0 && req.RequestURI == "/list") {
+			theList = append(theList, strings.TrimPrefix(req.RequestURI, "/list"))
+		}
 	}
-	log4go.Error("PETE last look: %v : %v", theLink, theList)
+
+	log4go.Error("PETE last look: %v : (%d) [%v]", theLink, len(theList), strings.Join(theList, ";"))
 
 	return theLink, encode32(strings.Join(theList, ";")), nil
 }

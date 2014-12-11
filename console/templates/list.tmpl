@@ -50,7 +50,7 @@
 
     <script type="text/javascript">
         function callPrevWithPrevList(a){
-          var f = document.getElementById("prevlist")
+          var f = document.getElementById("pushprev")
           f.value = "1"
           return callWithPrevList(a)
         }
@@ -58,12 +58,13 @@
         function callWithPrevList(a){
             var f = document.getElementById("prevlist")
             f.action = a.href
+            a.href = "#"
             f.submit()
             return false
         }
     </script>
 
-    <a href="/list/{{.Prev}}" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" 
+    <a href="/list{{.Prev}}" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" 
                onclick="callPrevWithPrevList(this)">
           <i class="icon-white icon-backward"></i> Previous</a>
 
