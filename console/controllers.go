@@ -56,8 +56,14 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-// Given an input request
-func processPrevList(req *http.Request, sess *Session, isLinks bool) (string, string, error) {
+// The links and list templates have a hidden form that is used to track the list of previous links
+// so that the previous button works correctly (see https://jira2.iparadigms.com/browse/TRN-134). The
+// same form is used to allow the user to reset the window-length (i.e. number of results per page).
+// The return value of this function is
+//   (a) the link that should be used for the Previous button href
+//   (b) the encoded previous list to be inserted in the hidden-form on server dispatch.
+//   (c) any errors that occur.
+func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, string, error) {
 	// First grab prevlist
 	var prevList string
 	var err error
@@ -100,13 +106,20 @@ func processPrevList(req *http.Request, sess *Session, isLinks bool) (string, st
 		isWindowResize = true
 	}
 
+	// Detect if the user pushed the Previous button. Notice it's impossible for isPrev and isWindowResize to
+	// be true at the same time.
 	isPrev := false
-	pushprev, pushprevOk := req.Form["pushprev"]
-	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
-		isPrev = true
+	if !isWindowResize {
+		pushprev, pushprevOk := req.Form["pushprev"]
+		if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
+			isPrev = true
+		}
 	}
 
-	theLink := ""         // This variable will hold the link that should end up on the prev button
+	//
+	// Now set theLink and theList (see defn below) based on what kind of post this was.
+	//
+	theLink := ""         // This variable will hold the link that should end up on the prev buttons href
 	theList := []string{} // This variable holds the list of links already visited
 	if prevList != "" {
 		theList = strings.Split(prevList, ";")
@@ -142,8 +155,6 @@ func processPrevList(req *http.Request, sess *Session, isLinks bool) (string, st
 		}
 	}
 
-	log4go.Error("PETE last look: %v : (%d) [%v]", theLink, len(theList), strings.Join(theList, ";"))
-
 	return theLink, encode32(strings.Join(theList, ";")), nil
 }
 
@@ -164,9 +175,9 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	prevLink, prevList, err := processPrevList(req, session, false)
+	prevLink, prevList, err := processHiddenForm(req, session, false)
 	if err != nil {
-		replyServerError(w, fmt.Errorf("processPrevList failed: %v", err))
+		replyServerError(w, fmt.Errorf("processHiddenForm failed: %v", err))
 		return
 	}
 
@@ -197,10 +208,8 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 
 	// set up page length dropdown
 	pageLenDropdown := []dropdownElement{}
-	// encodedReturnAddress := encode32(req.RequestURI)
 	for _, ln := range PageWindowLengthChoices {
 		pageLenDropdown = append(pageLenDropdown, dropdownElement{
-			Link: req.RequestURI,
 			Text: fmt.Sprintf("%d", ln),
 		})
 	}

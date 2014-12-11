@@ -1,13 +1,18 @@
 
 <script type="text/javascript">
     function clickPrev(a){
-      var f = document.getElementById("pushprev")
-      f.value = "1"
-      return clickNext(a)
+        var x = document.getElementById("pushprev")
+        x.value = "1"
+
+        var f = document.getElementById("hideForm")
+        f.action = a.href
+        a.href = "#"
+        f.submit()
+        return false
     }
     
     function clickNext(a){
-        var f = document.getElementById("prevlist")
+        var f = document.getElementById("hideForm")
         f.action = a.href
         a.href = "#"
         f.submit()
@@ -15,15 +20,21 @@
     }
 
     function clickWindowResize(a){
-        var f = document.getElementById("prevlist")
+        var f = document.getElementById("hideForm")
         f.action = document.URL
         var x = document.getElementById("pageWindowLength")
         x.value = a.text
-        console.log(x.value)
         f.submit()
         return false
     }
+
 </script>
+
+<form id="hideForm" action="#" class="hidden" method="POST">
+    <input type="hidden" name="prevlist" value="{{.PrevList}}">
+    <input type="hidden" id="pushprev" name="pushprev" value="">
+    <input type="hidden" id="pageWindowLength" name="pageWindowLength" value="">
+</form>
 
 <div class="row">
     <div class="col-xs-4">
@@ -87,9 +98,5 @@
           <i class="icon-white icon-forward"></i> Next </a>
 </div>
 
-<form id="prevlist" action="#" class="hidden" method="POST">
-    <input type="hidden" name="prevlist" value="{{.PrevList}}">
-    <input type="hidden" id="pushprev" name="pushprev" value="">
-    <input type="hidden" id="pageWindowLength" name="pageWindowLength" value="">
-</form>
+
 
