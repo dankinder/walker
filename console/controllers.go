@@ -47,7 +47,6 @@ func Routes() []Route {
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
 		Route{Path: "/changePriority/{domain}/{priority}", Controller: ChangePriorityController},
-		Route{Path: "/setPageLength/{page}/{length}/{returnLink}", Controller: SetPageLengthController},
 	}
 }
 
@@ -792,59 +791,6 @@ func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 
 	url := fmt.Sprintf("/links/%s?filterRegex=%s", domain[0], encode32(regex[0]))
 	http.Redirect(w, req, url, http.StatusSeeOther)
-	return
-}
-
-func SetPageLengthController(w http.ResponseWriter, req *http.Request) {
-	vars := mux.Vars(req)
-	page := vars["page"]
-	lengthStr := vars["length"]
-	length, err := strconv.Atoi(lengthStr)
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-	returnAddress, err := decode32(vars["returnLink"])
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-
-	foundP := false
-	for _, p := range PageWindowLengthChoices {
-		if p == length {
-			foundP = true
-			break
-		}
-	}
-	if !foundP {
-		replyServerError(w, fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices"))
-		return
-	}
-
-	sess, err := GetSession(w, req)
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-
-	switch page {
-	case "links":
-		sess.SetLinksPageWindowLength(length)
-	case "list":
-		sess.SetListPageWindowLength(length)
-	default:
-		replyServerError(w, fmt.Errorf("Bad page type to SetPageLengthController"))
-		return
-	}
-
-	err = sess.Save()
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
-
-	http.Redirect(w, req, returnAddress, http.StatusFound)
 	return
 }
 
