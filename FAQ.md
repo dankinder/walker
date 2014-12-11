@@ -36,7 +36,7 @@ segments (links to crawl for a given domain) and then deletes them.
 
 Deletes in Cassandra cause two separate problems:
 - The larger problem: if you frequently issue queries with criteria that would
-  select deleted data (if it hand't yet been deleted), then your queries will
+  select deleted data (if it hadn't yet been deleted), then your queries will
   slow way down as they select more and more tombstones
 - The lesser problem: for a transient data set, the volume of data will be
   larger than is immediately obvious
@@ -51,11 +51,11 @@ we will simply crawl them again. The aforementioned failure condition should
 also be rare, especially with [hinted
 handoff](http://www.datastax.com/documentation/cassandra/2.0/cassandra/dml/dml_about_hh_c.html).
 
-To briefly illustrate how Walker would behave if gc_grace_seconds were not 0,
-imagine we dispatch and crawl `test.com` twice per day, and gc_grace_seconds is
-set to 5 days. We will delete and create segments (500 links by default) each
-time we crawl, and those deletion records will remain for 5 days. This means
-500*2*5 = 5000 links will stay around on disk for `test.com` at a time.
+To briefly illustrate how Walker would behave if `gc_grace_seconds` were not 0,
+imagine we dispatch and crawl `test.com` twice per day, and `gc_grace_seconds`
+is set to 5 days. We will delete and create segments (500 links by default)
+each time we crawl, and those deletion records will remain for 5 days. This
+means `500*2*5 = 5000` links will stay around on disk for `test.com` at a time.
 
 Regarding *selecting* segments: Cassandra will have to ignore 4500 of those
 5000 links due to tombstones, which is bearable.
@@ -63,8 +63,8 @@ Regarding *selecting* segments: Cassandra will have to ignore 4500 of those
 Regarding *disk*: Cassandra will be storing 10x more than is necessary in this
 case.
 
-In other words, you can set gc_grace_seconds to a non-zero number if you wish,
-but 0 works more optimally.
+In other words, you can set `gc_grace_seconds` to a non-zero number if you
+wish, but 0 works more optimally.
 
 #### Can I run Walker with Cassandra on (Mac OS X | Windows | etc.)?
 
