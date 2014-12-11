@@ -49,6 +49,12 @@
 <div style="width: 80%;" class="row">
 
     <script type="text/javascript">
+        function callPrevWithPrevList(a){
+          var f = document.getElementById("prevlist")
+          f.value = "1"
+          return callWithPrevList(a)
+        }
+        
         function callWithPrevList(a){
             var f = document.getElementById("prevlist")
             f.action = a.href
@@ -58,7 +64,7 @@
     </script>
 
     <a href="/list/{{.Prev}}" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" 
-               onclick="callWithPrevList(this)">
+               onclick="callPrevWithPrevList(this)">
           <i class="icon-white icon-backward"></i> Previous</a>
 
     <div class="col-xs-1"></div>
@@ -69,6 +75,7 @@
 </div>
 
 <form id="prevlist" action="#" class="hidden" method="POST">
-    <input type="hidden" name="prevlist" value="">
+    <input type="hidden" name="prevlist" value="{{.PrevList}}">
+    <input id="pushprev" type="hidden" name="pushprev" value="">
 </form>
 

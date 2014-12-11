@@ -57,47 +57,56 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-// func processPrevList(req *http.Request) (prevLink string, prevList string, err error) {
-// 	//Manage the prevlist
-// 	prevlistArr, prevlistOk := req.Form["prevlist"]
-// 	if prevlistOk && len(prevlistArr) > 0 {
-// 		prevList, err = decode32(prevlistArr[0])
-// 		if err != nil {
-// 			return
-// 		}
-// 	}
+// Given an input request
+func processPrevList(req *http.Request) (string, string, error) {
+	//Manage the prevlist
+	prevlistArr, prevlistOk := req.Form["prevlist"]
+	var prevList string
+	var err error
+	if prevlistOk && len(prevlistArr) > 0 {
+		log4go.Error("PETE: decoding")
+		prevList, err = decode32(prevlistArr[0])
+		if err != nil {
+			return "", "", nil
+		}
+	}
 
-// 	pushprev, pushprevOk := req.Form["pushprev"]
-// 	isPrev := false
-// 	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
-// 		isPrev = true
-// 	}
+	log4go.Error("PETE: prev list: %v", prevList)
 
-// 	index = strings.LastIndex(prevList, ";")
-// 	if index < 0 {
-// 		if isPrev {
-// 			prevLink = "/list"
-// 			prevList = ""
-// 		}
-// 	}
-// 	link := prevList[index+1:]
-// 	list := prevList[:index-1]
+	pushprev, pushprevOk := req.Form["pushprev"]
+	isPrev := false
+	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
+		log4go.Error("PETE: pushpreving")
+		isPrev = true
+	}
 
-// 		if index >= 0 {
-// 			prevLink = prevList[index+1:]
-// 			prevList = prevList[:index-1]
-// 		} else {
-// 			prevLink = "/list"
-// 			prevList = ""
-// 		}
-// 	} else {
+	theLink := ""
+	theList := strings.Split(prevList, ";")
+	end := len(theList) - 1
+	if isPrev {
+		switch len(theList) {
+		case 0, 1:
+			theLink = "/list"
+			theList = []string{}
+		case 2:
+			theLink = "/list"
+			theList = theList[:end-1]
+		default:
+			theLink = theList[end-2]
+			theList = theList[:end-1]
+		}
+	} else {
+		if len(theList) == 0 {
+			theLink = "/list"
+		} else {
+			theLink = theList[end]
+		}
+		theList = append(theList, req.RequestURI)
+	}
+	log4go.Error("PETE last look: %v : %v", theLink, theList)
 
-// 		prevList += ";"
-// 		prevList += req.RequestURI
-// 	}
-
-// 	prevList = encode32(prevList)
-// }
+	return theLink, encode32(strings.Join(theList, ";")), nil
+}
 
 func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
@@ -116,23 +125,11 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// //Manage the prevlist
-	// prevlistArr, prevlistOk := req.Form["prevlist"]
-	// prevlist := ""
-	// if prevlistOk && len(prevlistArr) > 0 {
-	// 	prevlist = prevlistArr[0]
-	// 	prevlist, err = decode32(prevlist)
-	// 	if err != nil {
-	// 		replyServerError(w, err)
-	// 		return
-	// 	}
-	// }
-
-	// pushprev, pushprevOk := req.Form["pushprev"]
-	// if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
-	// 	// We need to pop off the last element in prev list
-	// 	// ......
-	// }
+	prevLink, prevList, err := processPrevList(req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("processPrevList failed: %v", err))
+		return
+	}
 
 	query := cassandra.DQ{Limit: session.ListPageWindowLength()}
 	if seed == "" {
@@ -152,10 +149,10 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	nextDomain := ""
+	nextLink := ""
 	nextButtonClass := "disabled"
 	if len(dinfos) == query.Limit {
-		nextDomain = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
+		nextLink = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
 		nextButtonClass = ""
 	}
 
@@ -173,8 +170,9 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		"PrevButtonClass": prevButtonClass,
 		"NextButtonClass": nextButtonClass,
 		"Domains":         dinfos,
-		"Next":            nextDomain,
-		"Prev":            "",
+		"Next":            nextLink,
+		"Prev":            prevLink,
+		"PrevList":        prevList,
 		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "list", mp)
