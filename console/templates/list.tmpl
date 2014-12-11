@@ -1,4 +1,30 @@
 
+<script type="text/javascript">
+    function clickPrev(a){
+      var f = document.getElementById("pushprev")
+      f.value = "1"
+      return clickNext(a)
+    }
+    
+    function clickNext(a){
+        var f = document.getElementById("prevlist")
+        f.action = a.href
+        a.href = "#"
+        f.submit()
+        return false
+    }
+
+    function clickWindowResize(a){
+        var f = document.getElementById("prevlist")
+        f.action = document.URL
+        var x = document.getElementById("pageWindowLength")
+        x.value = a.text
+        console.log(x.value)
+        f.submit()
+        return false
+    }
+</script>
+
 <div class="row">
     <div class="col-xs-4">
         <h2>List of Domains</h2>
@@ -16,7 +42,7 @@
 
             <ul class="dropdown-menu">
                 {{range .PageLengthLinks}}
-                    <li><a href="{{.Link}}" style="text-align: center;">{{.Text}}</a></li>
+                    <li><a href="#" onclick="clickWindowResize(this)" style="text-align: center;">{{.Text}}</a></li>
                 {{end}}
             </ul>
         </div>
@@ -48,35 +74,22 @@
 
 <div style="width: 80%;" class="row">
 
-    <script type="text/javascript">
-        function callPrevWithPrevList(a){
-          var f = document.getElementById("pushprev")
-          f.value = "1"
-          return callWithPrevList(a)
-        }
-        
-        function callWithPrevList(a){
-            var f = document.getElementById("prevlist")
-            f.action = a.href
-            a.href = "#"
-            f.submit()
-            return false
-        }
-    </script>
+
 
     <a href="/list{{.Prev}}" class="col-xs-3 btn btn-info btn-large {{.PrevButtonClass}}" 
-               onclick="callPrevWithPrevList(this)">
+               onclick="clickPrev(this)">
           <i class="icon-white icon-backward"></i> Previous</a>
 
     <div class="col-xs-1"></div>
 
     <a href="/list/{{.Next}}" class="col-xs-3 btn btn-info btn-large {{.NextButtonClass}}"
-              onclick="callWithPrevList(this)">
+              onclick="clickNext(this)">
           <i class="icon-white icon-forward"></i> Next </a>
 </div>
 
 <form id="prevlist" action="#" class="hidden" method="POST">
     <input type="hidden" name="prevlist" value="{{.PrevList}}">
-    <input id="pushprev" type="hidden" name="pushprev" value="">
+    <input type="hidden" id="pushprev" name="pushprev" value="">
+    <input type="hidden" id="pageWindowLength" name="pageWindowLength" value="">
 </form>
 

@@ -58,52 +58,85 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 }
 
 // Given an input request
-func processPrevList(req *http.Request) (string, string, error) {
-	//Manage the prevlist
-	prevlistArr, prevlistOk := req.Form["prevlist"]
+func processPrevList(req *http.Request, sess *Session, isLinks bool) (string, string, error) {
+	// First grab prevlist
 	var prevList string
 	var err error
+	prevlistArr, prevlistOk := req.Form["prevlist"]
 	if prevlistOk && len(prevlistArr) > 0 {
-		log4go.Error("PETE: decoding")
 		prevList, err = decode32(prevlistArr[0])
 		if err != nil {
-			return "", "", nil
+			return "", "", err
 		}
 	}
 
-	log4go.Error("PETE: prev list: %v (%d)", prevList, len(prevList))
+	// Now see if user requested page resize
+	isWindowResize := false
+	pageWindowLengthArr, pageWindowLengthOk := req.Form["pageWindowLength"]
+	if pageWindowLengthOk && len(pageWindowLengthArr) > 0 && len(pageWindowLengthArr[0]) > 0 {
+		isWindowResize = true
+		length, err := strconv.Atoi(pageWindowLengthArr[0])
+		if err != nil {
+			return "", "", err
+		}
 
-	pushprev, pushprevOk := req.Form["pushprev"]
+		foundP := false
+		for _, p := range PageWindowLengthChoices {
+			if p == length {
+				foundP = true
+				break
+			}
+		}
+		if !foundP {
+			return "", "", fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices")
+		}
+
+		if isLinks {
+			sess.SetLinksPageWindowLength(length)
+		} else {
+			sess.SetListPageWindowLength(length)
+		}
+		sess.Save()
+
+		isWindowResize = true
+	}
+
 	isPrev := false
-	log4go.Error("PETE: pushprev: %v", pushprev)
+	pushprev, pushprevOk := req.Form["pushprev"]
 	if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
-		log4go.Error("PETE: pushpreving")
 		isPrev = true
 	}
 
-	theLink := ""
-	theList := []string{}
+	theLink := ""         // This variable will hold the link that should end up on the prev button
+	theList := []string{} // This variable holds the list of links already visited
 	if prevList != "" {
 		theList = strings.Split(prevList, ";")
 	}
-	if isPrev {
-		switch len(theList) {
-		case 0, 1:
+
+	end := len(theList) - 1
+	if isWindowResize {
+		if end >= 1 {
+			theLink = theList[end-1]
+		} else {
+			theLink = ""
+		}
+	} else if isPrev {
+		if end >= 1 {
+			if end == 1 {
+				theLink = ""
+			} else {
+				theLink = theList[end-2]
+			}
+			theList = theList[:end]
+		} else {
 			theLink = ""
 			theList = []string{}
-		case 2:
-			theLink = ""
-			theList = theList[:1]
-		default:
-			end := len(theList) - 1
-			theLink = theList[end-2]
-			theList = theList[:end]
 		}
 	} else {
-		if len(theList) == 0 {
-			theLink = ""
+		if end >= 0 {
+			theLink = theList[end]
 		} else {
-			theLink = theList[len(theList)-1]
+			theLink = ""
 		}
 		if !(len(theList) == 0 && req.RequestURI == "/list") {
 			theList = append(theList, strings.TrimPrefix(req.RequestURI, "/list"))
@@ -132,7 +165,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	prevLink, prevList, err := processPrevList(req)
+	prevLink, prevList, err := processPrevList(req, session, false)
 	if err != nil {
 		replyServerError(w, fmt.Errorf("processPrevList failed: %v", err))
 		return
@@ -165,10 +198,10 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 
 	// set up page length dropdown
 	pageLenDropdown := []dropdownElement{}
-	encodedReturnAddress := encode32(req.RequestURI)
+	// encodedReturnAddress := encode32(req.RequestURI)
 	for _, ln := range PageWindowLengthChoices {
 		pageLenDropdown = append(pageLenDropdown, dropdownElement{
-			Link: fmt.Sprintf("/setPageLength/list/%d/%s", ln, encodedReturnAddress),
+			Link: req.RequestURI,
 			Text: fmt.Sprintf("%d", ln),
 		})
 	}
