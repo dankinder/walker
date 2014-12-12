@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dropbox/godropbox/container/lrucache"
+	lru "github.com/hashicorp/golang-lru"
 )
 
 //TODO:
@@ -24,22 +24,26 @@ import (
 // also cache DNS failures.
 //
 // If the given wrappedDial is nil, net.Dial will be automatically used.
-func Dial(wrappedDial func(network, addr string) (net.Conn, error), maxEntries int) func(network, addr string) (net.Conn, error) {
+func Dial(wrappedDial func(network, addr string) (net.Conn, error), maxEntries int) (func(network, addr string) (net.Conn, error), error) {
 	if wrappedDial == nil {
 		wrappedDial = net.Dial
 	}
+	cache, err := lru.New(maxEntries)
+	if err != nil {
+		return nil, err
+	}
 	c := &dnsCache{
 		wrappedDial: wrappedDial,
-		cache:       lrucache.New(maxEntries),
+		cache:       cache,
 	}
-	return c.cachingDial
+	return c.cachingDial, nil
 }
 
 // dnsCache wraps a net.Dial-type function with it's own version that will
 // cache DNS entries in an LRU cache.
 type dnsCache struct {
 	wrappedDial func(network, address string) (net.Conn, error)
-	cache       *lrucache.LRUCache
+	cache       *lru.Cache
 	mu          sync.RWMutex
 }
 
@@ -86,7 +90,7 @@ func (c *dnsCache) cacheHost(network, addr string) (net.Conn, error) {
 	queryTime := time.Now()
 	c.mu.Lock()
 	if err != nil {
-		c.cache.Set(mapEntryName, hostrecord{
+		c.cache.Add(mapEntryName, hostrecord{
 			ipaddr:      "",
 			blacklisted: true,
 			err:         err,
@@ -96,7 +100,7 @@ func (c *dnsCache) cacheHost(network, addr string) (net.Conn, error) {
 		return nil, err
 	} else {
 		remoteipaddr := newConn.RemoteAddr().String()
-		c.cache.Set(mapEntryName, hostrecord{
+		c.cache.Add(mapEntryName, hostrecord{
 			ipaddr:      remoteipaddr,
 			blacklisted: false,
 			err:         nil,
