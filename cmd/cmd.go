@@ -31,9 +31,13 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"code.google.com/p/log4go"
 
 	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/cassandra"
@@ -77,6 +81,29 @@ var commander struct {
 	Dispatcher walker.Dispatcher
 }
 
+// config is potentially set by CLI below
+var config string
+
+// initCommand performs generic steps to prepare the environment before a
+// command, like reading the config file.
+func initCommand() {
+	if config != "" {
+		if err := walker.ReadConfigFile(config); err != nil {
+			panic(err.Error())
+		}
+	}
+
+	if os.Getenv("WALKER_PPROF") == "1" {
+		go func() {
+			log4go.Debug("pprof enabled, starting http listener")
+			err := http.ListenAndServe(":6060", nil)
+			if err != nil {
+				log4go.Error("Had problem listening for pprof handler: %v", err)
+			}
+		}()
+	}
+}
+
 func fatalf(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 	fmt.Println()
@@ -88,23 +115,15 @@ func init() {
 		Use: "walker",
 	}
 
-	var config string
 	walkerCommand.PersistentFlags().StringVarP(&config,
 		"config", "c", "", "path to a config file to load")
-	readConfig := func() {
-		if config != "" {
-			if err := walker.ReadConfigFile(config); err != nil {
-				panic(err.Error())
-			}
-		}
-	}
 
 	var noConsole bool = false
 	crawlCommand := &cobra.Command{
 		Use:   "crawl",
 		Short: "start an all-in-one crawler",
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 
 			if commander.Datastore == nil {
 				ds, err := cassandra.NewDatastore()
@@ -155,7 +174,7 @@ func init() {
 		Use:   "fetch",
 		Short: "start only a walker fetch manager",
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 
 			if commander.Datastore == nil {
 				ds, err := cassandra.NewDatastore()
@@ -189,7 +208,7 @@ func init() {
 		Use:   "dispatch",
 		Short: "start only a walker dispatcher",
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 
 			if commander.Dispatcher == nil {
 				commander.Dispatcher = &cassandra.Dispatcher{}
@@ -223,7 +242,7 @@ func init() {
 This command will insert the provided link and also add its domain to the
 crawl, regardless of the add_new_domains configuration setting.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 
 			orig := walker.Config.Cassandra.AddNewDomains
 			defer func() { walker.Config.Cassandra.AddNewDomains = orig }()
@@ -232,7 +251,7 @@ crawl, regardless of the add_new_domains configuration setting.`,
 			if seedURL == "" {
 				fatalf("Seed URL needed to execute; add on with --url/-u")
 			}
-			u, err := walker.ParseURL(seedURL)
+			u, err := walker.ParseAndNormalizeURL(seedURL)
 			if err != nil {
 				fatalf("Could not parse %v as a url: %v", seedURL, err)
 			}
@@ -264,7 +283,7 @@ Useful for something like:
     $ cqlsh -f schema.cql
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 			if outfile == "" {
 				fatalf("An output file is needed to execute; add with --out/-o")
 			}
@@ -286,7 +305,7 @@ Useful for something like:
 		Use:   "console",
 		Short: "Start up the walker console",
 		Run: func(cmd *cobra.Command, args []string) {
-			readConfig()
+			initCommand()
 			console.Run()
 		},
 	}

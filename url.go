@@ -46,7 +46,7 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 var parseURLPathStrip *regexp.Regexp
 var parseURLPurgeMap map[string]bool
 
-func setupParseURL() error {
+func setupNormalizeURL() error {
 	if len(Config.Fetcher.PurgeSidList) == 0 {
 		parseURLPathStrip = nil
 	} else {
@@ -85,31 +85,82 @@ func ParseURL(ref string) (*URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
+	return wurl, nil
+}
 
-	// Apply standard normalization filters to u. This call will
-	// modify u in place.
-	purell.NormalizeURL(u, purell.FlagsSafe|purell.FlagRemoveFragment)
+func ParseAndNormalizeURL(ref string) (*URL, error) {
+	u, err := ParseURL(ref)
+	if err != nil {
+		return u, err
+	}
+	u.Normalize()
+	return u, nil
+}
+
+// This method will normalize the URL according to the current set of normalizing rules.
+func (u *URL) Normalize() {
+	rawURL := u.URL
+
+	// Apply standard normalization filters to url. This call will
+	// modify the url in place.
+	purell.NormalizeURL(rawURL, purell.FlagsSafe|purell.FlagRemoveFragment)
 
 	// Filter the path to catch embedded session ids
 	if parseURLPathStrip != nil {
 		// Remove SID from path
-		u.Path = parseURLPathStrip.ReplaceAllString(u.Path, "")
+		u.Path = parseURLPathStrip.ReplaceAllString(rawURL.Path, "")
 	}
 
 	//Rewrite the query string to canonical order, removing SID's as needed.
-	if u.RawQuery != "" {
+	if rawURL.RawQuery != "" {
 		purge := parseURLPurgeMap
-		params := u.Query()
+		params := rawURL.Query()
 		for k := range params {
 			if purge[strings.ToLower(k)] {
 				delete(params, k)
 			}
 		}
-		u.RawQuery = params.Encode()
+		rawURL.RawQuery = params.Encode()
+	}
+}
+
+func (u *URL) Clone() *URL {
+	nurl := *u.URL
+
+	if nurl.User != nil {
+		userInfo := *nurl.User
+		nurl.User = &userInfo
 	}
 
-	wurl := &URL{URL: u, LastCrawled: NotYetCrawled}
-	return wurl, nil
+	return &URL{
+		URL:         &nurl,
+		LastCrawled: u.LastCrawled,
+	}
+}
+
+// Return nil if u is normalized. Otherwise, return the normalized version of u.
+func (u *URL) NormalizedForm() *URL {
+	// We compare the fields of url.URL below. A few notes:
+	//   (a) We do not compare the Opaque field, as it doesn't appear links we'll be looking at will use that field.
+	//   (b) We do not consider the User field (of type Userinfo). You can see where the User field comes into play by
+	//       looking at this (from url.URL)
+	//           scheme://[userinfo@]host/path[?query][#fragment]
+	//    the userinfo information should never be changed by normalization, so it appears there is no need to compare
+	//    it.
+	c := u.Clone()
+	c.Normalize()
+	normal := c.URL.Scheme == u.URL.Scheme &&
+		c.URL.Host == u.URL.Host &&
+		c.URL.Path == u.URL.Path &&
+		c.URL.RawQuery == u.URL.RawQuery &&
+		c.URL.Fragment == u.URL.Fragment
+
+	if normal {
+		return nil
+	} else {
+		return c
+	}
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
@@ -151,6 +202,26 @@ func (u *URL) TLDPlusOneAndSubdomain() (string, string, error) {
 		return "", "", err
 	}
 	return dom, subdom, nil
+}
+
+// Return the 5 tuple that is the primary key for this url in the links table. The return values
+// are (with cassandra keys in parens)
+// (a) Domain (dom)
+// (b) Subdomain (subdom)
+// (c) Path part of url (path)
+// (d) Schema of url (proto)
+// (e) last update time of link (time)
+// (f) any errors that occurred
+func (u *URL) PrimaryKey() (dom string, subdom string, path string, proto string, time time.Time, err error) {
+	// Grab new and old variables
+	dom, subdom, err = u.TLDPlusOneAndSubdomain()
+	if err != nil {
+		return
+	}
+	path = u.RequestURI()
+	proto = u.Scheme
+	time = u.LastCrawled
+	return
 }
 
 // MakeAbsolute uses URL.ResolveReference to make this URL object an absolute
