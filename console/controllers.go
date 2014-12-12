@@ -118,9 +118,9 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 	}
 
 	//
-	// Now set theLink and theList (see defn below) based on what kind of post this was. Not, upon exit
+	// Now set theLink and theList (see defn below) based on what kind of post this was. Note, upon exit
 	// theList should contain a list of links visited, with the end element the current page. Conceptually,
-	// then, theLink is always the second to the last element in the list. THe logic below is more complicated than
+	// then, theLink is always the second to the last element in the list. The logic below is more complicated than
 	// that to handle the case when theList has 0 or 1 elements.
 	//
 	theLink := ""         // This variable will hold the link that should end up on the prev buttons href
