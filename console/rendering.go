@@ -119,7 +119,7 @@ func encode32(s string) string {
 //
 const DefaultPageWindowLength = 15
 
-var PageWindowLengthChoices = []int{10, 25, 50, 100, 150, 250}
+var PageWindowLengthChoices = []int{10, 15, 25, 35, 50, 75, 100, 150, 250}
 var sessionManager = sessions.NewCookieStore([]byte("01234567890123456789012345678901"))
 
 type Session struct {
