@@ -171,7 +171,7 @@ func spoofDataLong() {
 			panic(err)
 		}
 
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 20; i++ {
 			page := fmt.Sprintf("/page%d.html", i)
 			err = db.Query(insertLink, domain, "link", page, "http", walker.NotYetCrawled, http.StatusOK, "", false).Exec()
 			if err != nil {

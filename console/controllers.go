@@ -63,6 +63,8 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 //   (a) the link that should be used for the Previous button href
 //   (b) the encoded previous list to be inserted in the hidden-form on server dispatch.
 //   (c) any errors that occur.
+// It's also worth noting that, if the pageWindowLength field of the form is set, this method will
+// update the session to reflect the new windowLength.
 func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, string, error) {
 	// First grab prevlist
 	var prevList string
@@ -75,10 +77,9 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 		}
 	}
 
-	// Now see if user requested page resize
+	// Now see if user requested page resize. If so save into session.
 	isWindowResize := false
 	pageWindowLengthArr, pageWindowLengthOk := req.Form["pageWindowLength"]
-	log4go.Error("PETE pageWin %v", pageWindowLengthArr)
 	if pageWindowLengthOk && len(pageWindowLengthArr) > 0 && len(pageWindowLengthArr[0]) > 0 {
 		isWindowResize = true
 		length, err := strconv.Atoi(pageWindowLengthArr[0])
@@ -97,15 +98,12 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 			return "", "", fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices")
 		}
 
-		log4go.Error("PETE: BEFORE SET %d", sess.LinksPageWindowLength())
 		if isLinks {
 			sess.SetLinksPageWindowLength(length)
 		} else {
 			sess.SetListPageWindowLength(length)
 		}
 		sess.Save()
-		log4go.Error("PETE: AFTER SET %d", sess.LinksPageWindowLength())
-
 		isWindowResize = true
 	}
 
@@ -120,7 +118,10 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 	}
 
 	//
-	// Now set theLink and theList (see defn below) based on what kind of post this was.
+	// Now set theLink and theList (see defn below) based on what kind of post this was. Not, upon exit
+	// theList should contain a list of links visited, with the end element the current page. Conceptually,
+	// then, theLink is always the second to the last element in the list. THe logic below is more complicated than
+	// that to handle the case when theList has 0 or 1 elements.
 	//
 	theLink := ""         // This variable will hold the link that should end up on the prev buttons href
 	theList := []string{} // This variable holds the list of links already visited
@@ -130,12 +131,14 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 
 	end := len(theList) - 1
 	if isWindowResize {
+		// The previous list stays constant
 		if end >= 1 {
 			theLink = theList[end-1]
 		} else {
 			theLink = ""
 		}
 	} else if isPrev {
+		// Pop the last element off the list, and set theLink to the (new) second to the last element
 		if end >= 1 {
 			if end == 1 {
 				theLink = ""
@@ -148,6 +151,7 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 			theList = []string{}
 		}
 	} else {
+		// Push current request onto the stack.
 		if end >= 0 {
 			theLink = theList[end]
 		} else {
@@ -163,8 +167,6 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 			theList = append(theList, strings.TrimPrefix(req.RequestURI, prefix))
 		}
 	}
-
-	log4go.Error("PETE hidden: %q, %q", theLink, strings.Join(theList, ";"))
 
 	return theLink, encode32(strings.Join(theList, ";")), nil
 }

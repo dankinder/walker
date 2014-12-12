@@ -475,6 +475,7 @@ func TestListLinksSecondPage(t *testing.T) {
 		t.Log(body)
 		t.FailNow()
 	}
+
 	nextButton := doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn") && strings.Contains(sel.Text(), "Next")
 	})
