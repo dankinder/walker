@@ -460,6 +460,23 @@ func TestListLinksWeb(t *testing.T) {
 			strings.TrimSpace(sub.Text()), "Exclude")
 	}
 
+	// Priority button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Priority")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Priority'] Failed to find Priority button")
+	}
+
+	// Page length button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Page Length")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Page Length'] Failed to find Priority button")
+	}
 }
 
 func TestListLinksSecondPage(t *testing.T) {
@@ -578,6 +595,15 @@ func TestListLinksSecondPage(t *testing.T) {
 
 		count++
 	})
+
+	// Page length button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Page Length")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Page Length'] Failed to find Priority button")
+	}
 }
 
 func TestListHistorical(t *testing.T) {
