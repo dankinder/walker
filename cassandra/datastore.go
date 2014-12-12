@@ -42,11 +42,22 @@ type Datastore struct {
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
 func NewDatastore() (*Datastore, error) {
+	defer func() {
+		if x := recover(); x != nil {
+			log4go.Error("NewDatastore throws")
+			panic(x)
+		}
+	}()
+
 	ds := &Datastore{
 		cf: GetConfig(),
 	}
+	fmt.Printf("PETE NewDataStore start %v\n", ds.cf)
+
 	var err error
 	ds.db, err = ds.cf.CreateSession()
+	fmt.Printf("PETE NewDataStore start 2\n")
+
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create cassandra datastore: %v", err)
 	}
@@ -63,7 +74,7 @@ func NewDatastore() (*Datastore, error) {
 		panic(err) // This won't happen b/c this duration is checked in Config
 	}
 	ds.activeFetchersTTL = int(durr / time.Second)
-
+	fmt.Printf("PETE NewDataStore end\n")
 	return ds, nil
 }
 
@@ -327,26 +338,32 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 }
 
 func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
+
+	fmt.Printf("PETE IS FINE!!\n")
 	if !u.IsAbs() {
 		log4go.Warn("Link should not have made it to StoreParsedURL: %v", u)
 		return
 	}
+	fmt.Printf("PETE IS BEFORE!!\n")
+
 	dom, subdom, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
 		log4go.Debug("StoreParsedURL not storing %v: %v", fr.URL, err)
 		return
 	}
+	fmt.Printf("PETE IS AFTER!!\n")
 
 	exists := ds.hasDomain(dom)
+	fmt.Printf("PETE StoreParsedURL exists %v\n", exists)
 
-	if !exists && walker.Config.Cassandra.AddNewDomains {
+	if !exists /*&& walker.Config.Cassandra.AddNewDomains*/ {
 		log4go.Debug("Adding new domain to system: %v", dom)
 		ds.addDomain(dom)
 		exists = true
 	}
 
 	if exists {
-		log4go.Fine("Inserting parsed URL: %v", u)
+		fmt.Printf("Inserting parsed URL: %v\n", u)
 		err = ds.db.Query(`INSERT INTO links (dom, subdom, path, proto, time)
 							VALUES (?, ?, ?, ?, ?)`,
 			dom, subdom, u.RequestURI(), u.Scheme, walker.NotYetCrawled).Exec()

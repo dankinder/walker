@@ -85,15 +85,15 @@ func (d *Dispatcher) StartDispatcher() error {
 	}
 	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
 
-	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
-		d.finishWG.Add(1)
-		go func() {
-			d.generateRoutine()
-			d.finishWG.Done()
-		}()
-	}
+	// for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
+	// 	d.finishWG.Add(1)
+	// 	go func() {
+	// 		d.generateRoutine()
+	// 		d.finishWG.Done()
+	// 	}()
+	// }
 
-	d.domainIterator()
+	// d.domainIterator()
 	return nil
 }
 
@@ -354,43 +354,49 @@ func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
 	return insert, colHeaders
 }
 
-// correctURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
+// CorrectURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
 // method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
 // link.
-func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
+func wr(format string, args ...interface{}) {
+	fmt.Printf("PETE ")
+	fmt.Printf(format, args...)
+	fmt.Printf("\n")
+}
+func (d *Dispatcher) CorrectURLNormalization(u *walker.URL) *walker.URL {
 	c := u.NormalizedForm()
 	if c == nil {
+		wr("DO NOTHING")
 		return u
 	}
 
-	log4go.Debug("correctURLNormalization correcting %v --> %v", u, c)
+	wr("CorrectURLNormalization correcting %v --> %v", u, c)
 
 	// Grab primary keys of old and new urls
 	dom, subdom, path, proto, _, err := u.PrimaryKey()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; can't get primary key for URL %v: %v", u.URL, err)
+		wr("CorrectURLNormalization error; can't get primary key for URL %v: %v", u.URL, err)
 		return u
 	}
 	newdom, newsubdom, newpath, newproto, _, err := c.PrimaryKey()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; can't get NEW primary key for URL %v: %v", u.URL, err)
+		wr("CorrectURLNormalization error; can't get NEW primary key for URL %v: %v", u.URL, err)
 		return u
 	}
 
 	// Create a new domain_info if needed. XXX: note that currently old domain_infos are left alone, since we
 	// can't tell easily if they're still being used.
 	if dom != newdom {
-		log4go.Debug("correctURLNormalization adding domain_info entry for %q (derived from %q)", newdom, dom)
+		wr("CorrectURLNormalization adding domain_info entry for %q (derived from %q)", newdom, dom)
 		// Grab all the data for the domain in question
 		mp := map[string]interface{}{}
 		itr := d.db.Query(`SELECT * FROM domain_info WHERE dom = ?`, dom).Iter()
 		if !itr.MapScan(mp) {
-			log4go.Error("correctURLNormalization error; Failed to select from domain_info for URL %v", u.URL)
+			wr("CorrectURLNormalization error; Failed to select from domain_info for URL %v", u.URL)
 			return u
 		}
 		err := itr.Close()
 		if err != nil {
-			log4go.Error("correctURLNormalization error; Failed to select from domain_info for URL %v: iter err %v",
+			wr("CorrectURLNormalization error; Failed to select from domain_info for URL %v: iter err %v",
 				u.URL, err)
 		}
 
@@ -403,7 +409,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		}
 		err = d.db.Query(insert, vals...).Exec()
 		if err != nil {
-			log4go.Error("correctURLNormalization error; Failed to insert into domain_info for URL %v: %v", u.URL, err)
+			wr("CorrectURLNormalization error; Failed to insert into domain_info for URL %v: %v", u.URL, err)
 			return u
 		}
 	}
@@ -411,7 +417,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	// Create read iterator
 	read := `SELECT * FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
 	itr := d.db.Query(read, dom, subdom, proto, path).Iter()
-
+	wr("WTF")
 	// Use the read iterator to fashion a generic insert statement to move all fields from one primary key
 	// to another.
 	insert, colHeaders := createInsertAllColumns("links", itr)
@@ -432,13 +438,13 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 		err := d.db.Query(insert, vals...).Exec()
 		if err != nil {
-			log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
+			wr("CorrectURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
 			return u
 		}
 	}
 	err = itr.Close()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; Failed to close insert iterator for URL %v: %v", u.URL, err)
+		wr("CorrectURLNormalization error; Failed to close insert iterator for URL %v: %v", u.URL, err)
 		return u
 	}
 
@@ -446,7 +452,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	del := `DELETE FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
 	err = d.db.Query(del, dom, subdom, proto, path).Exec()
 	if err != nil {
-		log4go.Error("correctURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
+		wr("CorrectURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
 		return u
 	}
 
@@ -487,7 +493,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		}
 
 		if walker.Config.Dispatcher.CorrectLinkNormalization {
-			u = d.correctURLNormalization(u)
+			u = d.CorrectURLNormalization(u)
 		}
 
 		if c.getnow {

@@ -311,5 +311,47 @@ Useful for something like:
 	}
 	walkerCommand.AddCommand(consoleCommand)
 
+	peteCommand := &cobra.Command{
+		Use:   "pete",
+		Short: "debug",
+		Run: func(cmd *cobra.Command, args []string) {
+			log4go.AddFilter("stdout", log4go.FINE, log4go.NewConsoleLogWriter())
+
+			log4go.Error("PETE STUPID BEFORE 1 %v\n", commander.Datastore == nil)
+
+			initCommand()
+
+			dis := &cassandra.Dispatcher{}
+			if commander.Datastore == nil {
+				fmt.Printf("PETE STUPID BEFORE 2\n")
+
+				ds, err := cassandra.NewDatastore()
+				fmt.Printf("PETE STUPID BEFORE 2.3\n")
+
+				if err != nil {
+					fmt.Printf("PETE STUPID BEFORE 2.5\n")
+
+					fatalf("Failed creating Cassandra datastore: %v", err)
+				}
+				fmt.Printf("PETE STUPID BEFORE 3\n")
+
+				commander.Datastore = ds
+				commander.Dispatcher = dis
+			}
+
+			targetUrl, err := walker.ParseURL("http://agencia.ipea.gov.br/index.php?option=com_alphacontent&section=26&Itemid=357&limitstart=100")
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("PETE STUPID BEFORE\n")
+			commander.Datastore.StoreParsedURL(targetUrl, nil)
+			dis.StartDispatcher()
+			dis.CorrectURLNormalization(targetUrl)
+			fmt.Printf("PETE STUPID AFTER\n")
+			log4go.Close()
+		},
+	}
+	walkerCommand.AddCommand(peteCommand)
+
 	commander.Command = walkerCommand
 }
