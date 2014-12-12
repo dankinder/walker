@@ -284,6 +284,10 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		inserts = append(inserts, dbfield{"mime", fr.MimeType})
 	}
 
+	if fr.Body != "" {
+		inserts = append(inserts, dbfield{"body", fr.Body})
+	}
+
 	// Put the values together and run the query
 	names := []string{}
 	values := []interface{}{}

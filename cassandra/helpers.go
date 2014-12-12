@@ -136,6 +136,9 @@ CREATE TABLE {{.Keyspace}}.links (
 	-- fnv fingerprint, a hash of the page contents for identity comparison
 	fnv bigint,
 
+	-- body stores the content for this link (if $datastore.store_response_body is true)
+	body text,
+
 	---- Items yet to be added to walker
 
 	-- structure fingerprint, a hash of the page structure only (defined as:
