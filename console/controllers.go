@@ -78,6 +78,7 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 	// Now see if user requested page resize
 	isWindowResize := false
 	pageWindowLengthArr, pageWindowLengthOk := req.Form["pageWindowLength"]
+	log4go.Error("PETE pageWin %v", pageWindowLengthArr)
 	if pageWindowLengthOk && len(pageWindowLengthArr) > 0 && len(pageWindowLengthArr[0]) > 0 {
 		isWindowResize = true
 		length, err := strconv.Atoi(pageWindowLengthArr[0])
@@ -96,12 +97,14 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 			return "", "", fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices")
 		}
 
+		log4go.Error("PETE: BEFORE SET %d", sess.LinksPageWindowLength())
 		if isLinks {
 			sess.SetLinksPageWindowLength(length)
 		} else {
 			sess.SetListPageWindowLength(length)
 		}
 		sess.Save()
+		log4go.Error("PETE: AFTER SET %d", sess.LinksPageWindowLength())
 
 		isWindowResize = true
 	}
@@ -150,10 +153,18 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 		} else {
 			theLink = ""
 		}
-		if !(len(theList) == 0 && req.RequestURI == "/list") {
-			theList = append(theList, strings.TrimPrefix(req.RequestURI, "/list"))
+
+		prefix := "/list"
+		if isLinks {
+			prefix = "/links"
+		}
+
+		if !(len(theList) == 0 && req.RequestURI == prefix) {
+			theList = append(theList, strings.TrimPrefix(req.RequestURI, prefix))
 		}
 	}
+
+	log4go.Error("PETE hidden: %q, %q", theLink, strings.Join(theList, ";"))
 
 	return theLink, encode32(strings.Join(theList, ";")), nil
 }
@@ -427,6 +438,18 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	err = req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	prevLink, prevList, err := processHiddenForm(req, session, true)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("processHiddenForm failed: %v", err))
+		return
+	}
+
 	query := cassandra.LQ{Limit: session.LinksPageWindowLength()}
 
 	seedURL := vars["seedURL"]
@@ -452,11 +475,6 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Get the filterRegex if there is one
 	//
-	err = req.ParseForm()
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
 	filterRegex := ""
 	filterURLSuffix := ""
 	filterRegexSuffix := ""
@@ -518,10 +536,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 
 	// set up page length dropdown
 	pageLenDropdown := []dropdownElement{}
-	encodedReturnAddress := encode32(req.RequestURI)
 	for _, ln := range PageWindowLengthChoices {
 		pageLenDropdown = append(pageLenDropdown, dropdownElement{
-			Link: fmt.Sprintf("/setPageLength/links/%d/%s", ln, encodedReturnAddress),
 			Text: fmt.Sprintf("%d", ln),
 		})
 	}
@@ -547,7 +563,10 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeColor": excludeColor,
 		"ExcludeLink":  excludeLink,
 
-		"PriorityLinks":   prio,
+		"PriorityLinks": prio,
+
+		"Prev":            prevLink,
+		"PrevList":        prevList,
 		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
