@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"code.google.com/p/log4go"
-	"github.com/dropbox/godropbox/container/lrucache"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+
+	lru "github.com/hashicorp/golang-lru"
 )
 
 // Datastore is the primary walker Datastore implementation, using Apache
@@ -30,7 +31,7 @@ type Datastore struct {
 
 	// A cache for domains we've already verified do or do not exist in domain_info
 	// Cache key is TopLevelDomain+1, value is a bool (true if the domain exists)
-	domainCache *lrucache.LRUCache
+	domainCache *lru.Cache
 
 	// This is a unique UUID for the entire crawler.
 	crawlerUUID gocql.UUID
@@ -50,7 +51,10 @@ func NewDatastore() (*Datastore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create cassandra datastore: %v", err)
 	}
-	ds.domainCache = lrucache.New(walker.Config.Cassandra.AddedDomainsCacheSize)
+	ds.domainCache, err = lru.New(walker.Config.Cassandra.AddedDomainsCacheSize)
+	if err != nil {
+		return nil, err
+	}
 
 	u, err := gocql.RandomUUID()
 	if err != nil {
@@ -380,7 +384,7 @@ func (ds *Datastore) hasDomain(dom string) bool {
 		return false // with error, assume we don't have it
 	}
 	existsDB := (count == 1)
-	ds.domainCache.Set(dom, existsDB)
+	ds.domainCache.Add(dom, existsDB)
 	return existsDB
 }
 
@@ -422,7 +426,7 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 		return err
 	}
 
-	ds.domainCache.Set(dom, true)
+	ds.domainCache.Add(dom, true)
 	return nil
 }
 

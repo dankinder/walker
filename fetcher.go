@@ -202,7 +202,13 @@ func (fm *FetchManager) Start() {
 	}
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
-		t.Dial = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
+		var err error
+		t.Dial, err = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
+		if err != nil {
+			// This should be a very rare panic
+			log4go.Error("Failed to construct dnscacheing Dialer: %v", err)
+			panic(err)
+		}
 	} else {
 		log4go.Info("Given an non-http transport, not using dns caching")
 	}
