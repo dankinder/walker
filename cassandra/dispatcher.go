@@ -435,6 +435,9 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 			log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
 			return u
 		}
+
+		// MapScan will choke if you don't clear this map before re-using it.
+		mp = map[string]interface{}{}
 	}
 	err = itr.Close()
 	if err != nil {
