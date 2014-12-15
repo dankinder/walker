@@ -136,6 +136,9 @@ CREATE TABLE {{.Keyspace}}.links (
 	-- fnv fingerprint, a hash of the page contents for identity comparison
 	fnv bigint,
 
+	-- body stores the content for this link (if $datastore.store_response_body is true)
+	body text,
+
 	---- Items yet to be added to walker
 
 	-- structure fingerprint, a hash of the page structure only (defined as:
@@ -236,7 +239,7 @@ CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);
 CREATE TABLE {{.Keyspace}}.active_fetchers (
 	tok uuid,
 	PRIMARY KEY (tok)
-)
+);
 `
 
 // initdb ensures we only try to create the cassandra schema once in testing

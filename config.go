@@ -83,6 +83,7 @@ type WalkerConfig struct {
 		MaxPreparedStmts      int      `yaml:"max_prepared_stmts"`
 		AddNewDomains         bool     `yaml:"add_new_domains"`
 		AddedDomainsCacheSize int      `yaml:"added_domains_cache_size"`
+		StoreResponseBody     bool     `yaml:"store_response_body"`
 		//TODO: Currently only exposing values needed for testing; should expose more?
 		//Consistency      Consistency
 		//Compressor       Compressor
@@ -151,6 +152,7 @@ func SetDefaultConfig() {
 	Config.Cassandra.MaxPreparedStmts = 1000
 	Config.Cassandra.AddNewDomains = false
 	Config.Cassandra.AddedDomainsCacheSize = 20000
+	Config.Cassandra.StoreResponseBody = false
 
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"

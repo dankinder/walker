@@ -48,6 +48,11 @@ type FetchResults struct {
 	// replacing Response.Body with an alternate reader.
 	Response *http.Response
 
+	// If the user has set cassandra.store_response_body to true in the config file,
+	// then the content of the link will be stored in Body (and consequently stored in the
+	// body column of the links table). Otherwise Body is the empty string.
+	Body string
+
 	// FetchError if the net/http request had an error (non-2XX HTTP response
 	// codes are not considered errors)
 	FetchError error
@@ -451,6 +456,9 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 
 	// Replace the response body so the handler can read it.
 	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
+	if Config.Cassandra.StoreResponseBody {
+		fr.Body = string(f.readBuffer.Bytes())
+	}
 
 	//
 	// Get the fingerprint
