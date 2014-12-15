@@ -239,7 +239,7 @@ CREATE INDEX ON {{.Keyspace}}.domain_info (dispatched);
 CREATE TABLE {{.Keyspace}}.active_fetchers (
 	tok uuid,
 	PRIMARY KEY (tok)
-)
+);
 `
 
 // initdb ensures we only try to create the cassandra schema once in testing

@@ -480,7 +480,9 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 
 	//TODO: Wrap the reader and check for read error here
 	log4go.Fine("Storing fetch results for %v", link)
+	log4go.Error("PETE body is %q", fr.Body)
 	f.fm.Datastore.StoreURLFetchResults(fr)
+	log4go.Error("PETE says WHAT THE F...")
 	return true, crawlDelayClockStart
 }
 
