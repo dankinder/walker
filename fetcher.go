@@ -402,7 +402,7 @@ func (f *fetcher) crawlNewHost() bool {
 func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time.Time) {
 	fr := &FetchResults{URL: link}
 
-	if !robots.Test(link.String()) {
+	if !robots.Test(link.RequestURI()) {
 		log4go.Debug("Not fetching due to robots rules: %v", link)
 		fr.ExcludedByRobots = true
 		f.fm.Datastore.StoreURLFetchResults(fr)

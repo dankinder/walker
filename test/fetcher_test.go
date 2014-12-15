@@ -497,8 +497,6 @@ func TestBasicRobots(t *testing.T) {
 }
 
 func TestBasicRobotsDisallow(t *testing.T) {
-	t.Skip("TODO: we don't properly exlude disallowed links; make this test pass")
-
 	tests := TestSpec{
 		hasParsedLinks: false,
 		hosts: []DomainSpec{
