@@ -961,8 +961,6 @@ func TestURLCorrection(t *testing.T) {
 	for dom := range expectedDomainsAdded {
 		t.Errorf("Expected to find %q added to domain_info, but didn't find that", dom)
 	}
-
-	t.Fail()
 }
 
 func TestDomainInfoStats(t *testing.T) {
