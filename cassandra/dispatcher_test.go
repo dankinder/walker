@@ -831,6 +831,7 @@ func TestURLCorrection(t *testing.T) {
 		tag    string
 		input  string
 		expect string
+		double bool
 	}{
 		{
 			tag:    "UpCase",
@@ -862,17 +863,25 @@ func TestURLCorrection(t *testing.T) {
 			input:  "http://a6.com/page1.com?PHPSESSID=436100313FAFBBB9B4DC8BA3C2EC267B",
 			expect: "http://a6.com/page1.com",
 		},
+
+		{
+			tag:    "BugFix for TRN-135",
+			input:  "http://A7.com/page1.com",
+			expect: "http://a7.com/page1.com",
+			double: true,
+		},
 	}
 
 	expected := map[string]int{}
+	got := map[string]int{}
 	for _, tst := range tests {
 		expected[tst.expect] = 1
+		got[tst.expect] = 0
 
 		u, err := walker.ParseURL(tst.input)
 		if err != nil {
 			t.Fatalf("Failed to parse url %v: %v", tst.input, err)
 		}
-
 		dom, subdom, err := u.TLDPlusOneAndSubdomain()
 		if err != nil {
 			t.Fatalf("Failed to find dom/subdom for %v: %v", tst.input, err)
@@ -883,6 +892,14 @@ func TestURLCorrection(t *testing.T) {
 			dom, subdom, path, proto, walker.NotYetCrawled).Exec()
 		if err != nil {
 			t.Fatalf("Failed to insert into links for %v: %v", tst.input, err)
+		}
+		if tst.double {
+			err = db.Query(`INSERT INTO links (dom, subdom, path, proto, time) VALUES (?, ?, ?, ?, ?)`,
+				dom, subdom, path, proto, time.Now()).Exec()
+			if err != nil {
+				t.Fatalf("Failed to insert into links (2nd time) for %v: %v", tst.input, err)
+			}
+			expected[tst.expect] = 2
 		}
 		err = db.Query(`INSERT INTO domain_info (dom) VALUES (?)`, dom).Exec()
 		if err != nil {
@@ -905,24 +922,27 @@ func TestURLCorrection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create url: %v", err)
 		}
-		count, found := expected[u.String()]
+		count, found := got[u.String()]
 		if !found {
-			t.Errorf("Failed to find link %v in post-dispatched links", u.String())
-			continue
-		} else if count > 1 {
-			t.Errorf("Double counted link %v in post-dispatched links", u.String())
+			t.Errorf("Unexpected link %v in post-dispatched links", u.String())
 			continue
 		}
-		expected[u.String()] = 2
+		got[u.String()] = count + 1
+
+		if got[u.String()] > expected[u.String()] {
+			t.Errorf("Multi counted link %v in post-dispatched links", u.String())
+			continue
+		}
 	}
 	err := itr.Close()
 	if err != nil {
 		t.Fatalf("Failed to iterate over links: %v", err)
 	}
 
-	for k, count := range expected {
-		if count != 2 {
-			t.Errorf("Expected to find link %v in post-dispatched links, but didn't", k)
+	for k := range expected {
+		if got[k] != expected[k] {
+			t.Errorf("Expected to find link %v in post-dispatched links with count %d, but found count %d",
+				k, expected[k], got[k])
 		}
 	}
 
@@ -941,6 +961,8 @@ func TestURLCorrection(t *testing.T) {
 	for dom := range expectedDomainsAdded {
 		t.Errorf("Expected to find %q added to domain_info, but didn't find that", dom)
 	}
+
+	t.Fail()
 }
 
 func TestDomainInfoStats(t *testing.T) {
