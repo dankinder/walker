@@ -435,12 +435,14 @@ func (d *Dispatcher) CorrectURLNormalization(u *walker.URL) *walker.URL {
 		for _, head := range colHeaders {
 			vals = append(vals, mp[head])
 		}
-
+		wr("--> Inserting %v", mp)
 		err := d.db.Query(insert, vals...).Exec()
 		if err != nil {
 			wr("CorrectURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
 			return u
 		}
+
+		mp = map[string]interface{}{}
 	}
 	err = itr.Close()
 	if err != nil {

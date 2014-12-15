@@ -36,6 +36,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"code.google.com/p/log4go"
 
@@ -343,8 +344,16 @@ Useful for something like:
 			if err != nil {
 				panic(err)
 			}
-			fmt.Printf("PETE STUPID BEFORE\n")
+			fmt.Printf("PETE STUPID BEFORE %v\n", time.Now())
 			commander.Datastore.StoreParsedURL(targetUrl, nil)
+			fr := &walker.FetchResults{
+				URL:            targetUrl,
+				MimeType:       "text/html",
+				Response:       &http.Response{StatusCode: 200},
+				FetchTime:      time.Now(),
+				FnvFingerprint: 8102965087460712519,
+			}
+			commander.Datastore.StoreURLFetchResults(fr)
 			dis.StartDispatcher()
 			dis.CorrectURLNormalization(targetUrl)
 			fmt.Printf("PETE STUPID AFTER\n")
