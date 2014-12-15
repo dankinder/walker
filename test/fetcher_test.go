@@ -496,6 +496,64 @@ func TestBasicRobots(t *testing.T) {
 	results.assertExpectations(t)
 }
 
+func TestBasicRobotsDisallow(t *testing.T) {
+	tests := TestSpec{
+		hasParsedLinks: false,
+		hosts: []DomainSpec{
+			DomainSpec{
+				domain: "robots.com",
+				links: []LinkSpec{
+
+					LinkSpec{
+						url: "http://robots.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nDisallow: /search\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://robots.com/search",
+					},
+					LinkSpec{
+						url: "http://robots.com/other",
+					},
+				},
+			},
+		},
+	}
+
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, defaultSleep, t)
+
+	//
+	// Make sure expected results are there
+	//
+	expected := map[string]bool{
+		"http://robots.com/other": true,
+	}
+
+	for _, fr := range results.handlerCalls() {
+		link := fr.URL.String()
+		if expected[link] {
+			delete(expected, link)
+		}
+		switch fr.URL.String() {
+		case "http://robots.com/other":
+		default:
+			t.Errorf("Got a Handler.HandleResponse call we didn't expect: %v", fr)
+		}
+	}
+
+	for link := range expected {
+		t.Errorf("Didn't find %q in handlerCalls, but should have", link)
+	}
+
+	results.assertExpectations(t)
+}
+
 func TestBasicMimeType(t *testing.T) {
 	orig := walker.Config.Fetcher.AcceptFormats
 	defer func() {
