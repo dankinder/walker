@@ -59,6 +59,12 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 // The links and list templates have a hidden form that is used to track the list of previous links
 // so that the previous button works correctly (see https://jira2.iparadigms.com/browse/TRN-134). The
 // same form is used to allow the user to reset the window-length (i.e. number of results per page).
+// The input arguments to the function are
+//   (a) The http request with the hidden form.
+//   (b) The Session pointer which holds client-side user data.
+//   (c) The isLinks toggle which controls which session variable to store the new page dimensions into. When
+//       isLinks is true the window is stored with Session.SetLinksPageWindowLength, otherwise it's stored with
+//       Session.SetListPageWindowLength
 // The return value of this function is
 //   (a) the link that should be used for the Previous button href
 //   (b) the encoded previous list to be inserted in the hidden-form on server dispatch.
