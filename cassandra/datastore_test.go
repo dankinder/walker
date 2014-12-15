@@ -247,6 +247,7 @@ type LinksExpectation struct {
 	Status           int
 	MimeType         string
 	FnvFingerprint   uint64
+	Body             string
 }
 
 var StoreURLExpectations []StoreURLExpectation
@@ -366,10 +367,38 @@ func init() {
 				FnvFingerprint: 6,
 			},
 		},
+
+		StoreURLExpectation{
+			Input: &walker.FetchResults{
+				URL:       helpers.Parse("https://sub.dom1.test.com/page5.html"),
+				FetchTime: time.Unix(0, 0),
+				Response: &http.Response{
+					StatusCode: 200,
+				},
+				FnvFingerprint: 6,
+				Body:           "The Body of the HTTP pull",
+			},
+			Expected: &LinksExpectation{
+				Domain:         "test.com",
+				Subdomain:      "sub.dom1",
+				Path:           "/page5.html",
+				Protocol:       "https",
+				CrawlTime:      time.Unix(0, 0),
+				Status:         200,
+				FnvFingerprint: 6,
+				Body:           "The Body of the HTTP pull",
+			},
+		},
 	}
 }
 
 func TestStoreURLFetchResults(t *testing.T) {
+	orig := walker.Config.Cassandra.StoreResponseBody
+	defer func() {
+		walker.Config.Cassandra.StoreResponseBody = orig
+	}()
+	walker.Config.Cassandra.StoreResponseBody = true
+
 	db := GetTestDB()
 	ds := getDS(t)
 
@@ -379,14 +408,15 @@ func TestStoreURLFetchResults(t *testing.T) {
 
 		actual := &LinksExpectation{}
 		err := db.Query(
-			`SELECT err, robot_ex, stat, mime, fnv FROM links
+			`SELECT err, robot_ex, stat, mime, fnv, body FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
 			exp.Domain,
 			exp.Subdomain,
 			exp.Path,
 			exp.Protocol,
 			//exp.CrawlTime,
-		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType, &actual.FnvFingerprint)
+		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType, &actual.FnvFingerprint,
+			&actual.Body)
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
@@ -409,6 +439,10 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if exp.FnvFingerprint != actual.FnvFingerprint {
 			t.Errorf("Expected FnvFingerprint: %v\nBut got: %v\nFor input: %+v",
 				exp.FnvFingerprint, actual.FnvFingerprint, tcase.Input)
+		}
+		if exp.Body != actual.Body {
+			t.Errorf("Expected Body: %v\nBut got: %v\nFor input: %+v",
+				exp.Body, actual.Body, tcase.Input)
 		}
 	}
 }

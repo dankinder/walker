@@ -1584,3 +1584,42 @@ func TestKeepAlive(t *testing.T) {
 		t.Errorf("Expected two calls to keep alive, found only %d calls", kacount)
 	}
 }
+
+func TestStoreBody(t *testing.T) {
+	orig := walker.Config.Cassandra.StoreResponseBody
+	defer func() {
+		walker.Config.Cassandra.StoreResponseBody = orig
+	}()
+	walker.Config.Cassandra.StoreResponseBody = true
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts: singleLinkDomainSpecArr("http://a.com/page1.com", &helpers.MockResponse{
+			Body: html,
+		}),
+	}
+
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, defaultSleep, t)
+
+	stores := results.dsStoreURLFetchResultsCalls()
+	if len(stores) != 1 {
+		t.Fatalf("Expected select for a.com to render a single result, instead got %d results", len(stores))
+	}
+	fr := stores[0]
+	if fr.Body != html {
+		t.Fatalf("Failed to match stored body: --expected--\n%q\n--got--:\n%q", html, fr.Body)
+	}
+}
