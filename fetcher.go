@@ -48,8 +48,9 @@ type FetchResults struct {
 	// replacing Response.Body with an alternate reader.
 	Response *http.Response
 
-	// If the content of a link should be stored along with the link, the content
-	// will be stored in Body. Otherwise Body is the empty string.
+	// If the user has set cassandra.store_response_body to true in the config file,
+	// then the content of the link will be stored in Body (and consequently stored in the
+	// body column of the links table). Otherwise Body is the empty string.
 	Body string
 
 	// FetchError if the net/http request had an error (non-2XX HTTP response
