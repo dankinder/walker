@@ -460,6 +460,23 @@ func TestListLinksWeb(t *testing.T) {
 			strings.TrimSpace(sub.Text()), "Exclude")
 	}
 
+	// Priority button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Priority")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Priority'] Failed to find Priority button")
+	}
+
+	// Page length button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Page Length")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Page Length'] Failed to find Priority button")
+	}
 }
 
 func TestListLinksSecondPage(t *testing.T) {
@@ -475,6 +492,7 @@ func TestListLinksSecondPage(t *testing.T) {
 		t.Log(body)
 		t.FailNow()
 	}
+
 	nextButton := doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn") && strings.Contains(sel.Text(), "Next")
 	})
@@ -577,6 +595,15 @@ func TestListLinksSecondPage(t *testing.T) {
 
 		count++
 	})
+
+	// Page length button
+	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
+		return strings.Contains(sel.Text(), "Set Page Length")
+	})
+
+	if sub.Size() != 1 {
+		t.Fatalf("[button with text 'Set Page Length'] Failed to find Priority button")
+	}
 }
 
 func TestListHistorical(t *testing.T) {
@@ -1137,4 +1164,82 @@ func TestChangePriority(t *testing.T) {
 	if prio != -4 {
 		t.Errorf("Expected modified priority to be -4, but found %d", prio)
 	}
+}
+
+func TestSetPageLength(t *testing.T) {
+	spoofData()
+
+	var doc *goquery.Document
+	// pageLen will return the number of results on the /links or /list pages
+	pageLen := func() int {
+		sub := doc.Find(".container .row .console-table tbody tr")
+		return sub.Size()
+	}
+
+	// encodeLen will return a url encoded string with ln set for pageWindowLength
+	encodeLen := func(ln int) string {
+		return fmt.Sprintf("prevlist=&pushprev=&pageWindowLength=%d", ln)
+	}
+
+	//
+	// Set /list length to 10
+	//
+	doc, body, status := callController("http://localhost:3000/list", encodeLen(10), "/list",
+		console.ListDomainsController)
+	if status != http.StatusOK {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
+		t.Log(body)
+		t.FailNow()
+	}
+
+	if pageLen() != 10 {
+		t.Fatalf("Failed to set /list page length to 10, found length %d", pageLen())
+	}
+
+	//
+	// Set /list length to 25
+	//
+	doc, body, status = callController("http://localhost:3000/list", encodeLen(25), "/list",
+		console.ListDomainsController)
+	if status != http.StatusOK {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
+		t.Log(body)
+		t.FailNow()
+	}
+
+	if pageLen() != 25 {
+		t.Fatalf("Failed to set /list page length to 25, found length %d", pageLen())
+	}
+
+	//
+	// Set /links length to 10
+	//
+	linksLink := "http://localhost:3000/links/t1.com/NB2HI4B2F4XWY2LONMXHIMJOMNXW2L3QMFTWKMJSFZUHI3LM"
+	doc, body, status = callController(linksLink, encodeLen(10), "/links/{domain}/{seedURL}",
+		console.LinksController)
+	if status != http.StatusOK {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
+		t.Log(body)
+		t.FailNow()
+	}
+
+	if pageLen() != 10 {
+		t.Fatalf("Failed to set /links page length to 10, but found length %d", pageLen())
+	}
+
+	//
+	// Set /links length > 10
+	//
+	doc, body, status = callController(linksLink, encodeLen(25), "/links/{domain}/{seedURL}",
+		console.LinksController)
+	if status != http.StatusOK {
+		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusOK)
+		t.Log(body)
+		t.FailNow()
+	}
+
+	if pageLen() <= 10 {
+		t.Fatalf("Failed to set /links page length greater than 10")
+	}
+
 }

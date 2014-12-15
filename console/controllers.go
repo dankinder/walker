@@ -24,6 +24,12 @@ type Route struct {
 	Controller func(w http.ResponseWriter, req *http.Request)
 }
 
+// Simple aggregate datatype that holds both the link, and text of the given priority
+type dropdownElement struct {
+	Link string
+	Text string
+}
+
 func Routes() []Route {
 	return []Route{
 		Route{Path: "/", Controller: HomeController},
@@ -50,12 +56,151 @@ func HomeController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// The links and list templates have a hidden form that is used to track the list of previous links
+// so that the previous button works correctly (see https://jira2.iparadigms.com/browse/TRN-134). The
+// same form is used to allow the user to reset the window-length (i.e. number of results per page).
+// The input arguments to the function are
+//   (a) The http request with the hidden form.
+//   (b) The Session pointer which holds client-side user data.
+//   (c) The isLinks toggle which controls which session variable to store the new page dimensions into. When
+//       isLinks is true the window is stored with Session.SetLinksPageWindowLength, otherwise it's stored with
+//       Session.SetListPageWindowLength
+// The return value of this function is
+//   (a) the link that should be used for the Previous button href
+//   (b) the encoded previous list to be inserted in the hidden-form on server dispatch.
+//   (c) any errors that occur.
+// It's also worth noting that, if the pageWindowLength field of the form is set, this method will
+// update the session to reflect the new windowLength.
+func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, string, error) {
+	// First grab prevlist
+	var prevList string
+	var err error
+	prevlistArr, prevlistOk := req.Form["prevlist"]
+	if prevlistOk && len(prevlistArr) > 0 {
+		prevList, err = decode32(prevlistArr[0])
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	// Now see if user requested page resize. If so save into session.
+	isWindowResize := false
+	pageWindowLengthArr, pageWindowLengthOk := req.Form["pageWindowLength"]
+	if pageWindowLengthOk && len(pageWindowLengthArr) > 0 && len(pageWindowLengthArr[0]) > 0 {
+		isWindowResize = true
+		length, err := strconv.Atoi(pageWindowLengthArr[0])
+		if err != nil {
+			return "", "", err
+		}
+
+		foundP := false
+		for _, p := range PageWindowLengthChoices {
+			if p == length {
+				foundP = true
+				break
+			}
+		}
+		if !foundP {
+			return "", "", fmt.Errorf("PageWindowLength not found in PageWindowLengthChoices")
+		}
+
+		if isLinks {
+			sess.SetLinksPageWindowLength(length)
+		} else {
+			sess.SetListPageWindowLength(length)
+		}
+		sess.Save()
+		isWindowResize = true
+	}
+
+	// Detect if the user pushed the Previous button. Notice it's impossible for isPrev and isWindowResize to
+	// be true at the same time.
+	isPrev := false
+	if !isWindowResize {
+		pushprev, pushprevOk := req.Form["pushprev"]
+		if pushprevOk && len(pushprev) > 0 && len(pushprev[0]) > 0 {
+			isPrev = true
+		}
+	}
+
+	//
+	// Now set theLink and theList (see defn below) based on what kind of post this was. Note, upon exit
+	// theList should contain a list of links visited, with the end element the current page. Conceptually,
+	// then, theLink is always the second to the last element in the list. The logic below is more complicated than
+	// that to handle the case when theList has 0 or 1 elements.
+	//
+	theLink := ""         // This variable will hold the link that should end up on the prev buttons href
+	theList := []string{} // This variable holds the list of links already visited
+	if prevList != "" {
+		theList = strings.Split(prevList, ";")
+	}
+
+	end := len(theList) - 1
+	if isWindowResize {
+		// The previous list stays constant
+		if end >= 1 {
+			theLink = theList[end-1]
+		} else {
+			theLink = ""
+		}
+	} else if isPrev {
+		// Pop the last element off the list, and set theLink to the (new) second to the last element
+		if end >= 1 {
+			if end == 1 {
+				theLink = ""
+			} else {
+				theLink = theList[end-2]
+			}
+			theList = theList[:end]
+		} else {
+			theLink = ""
+			theList = []string{}
+		}
+	} else {
+		// Push current request onto the stack.
+		if end >= 0 {
+			theLink = theList[end]
+		} else {
+			theLink = ""
+		}
+
+		prefix := "/list"
+		if isLinks {
+			prefix = "/links"
+		}
+
+		if !(len(theList) == 0 && req.RequestURI == prefix) {
+			theList = append(theList, strings.TrimPrefix(req.RequestURI, prefix))
+		}
+	}
+
+	return theLink, encode32(strings.Join(theList, ";")), nil
+}
+
 func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seed := vars["seed"]
 	prevButtonClass := ""
 
-	query := cassandra.DQ{Limit: PageWindowLength}
+	session, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
+		return
+	}
+
+	err = req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	prevLink, prevList, err := processHiddenForm(req, session, false)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("processHiddenForm failed: %v", err))
+		return
+	}
+
+	query := cassandra.DQ{Limit: session.ListPageWindowLength()}
 	if seed == "" {
 		prevButtonClass = "disabled"
 	} else {
@@ -73,18 +218,29 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	nextDomain := ""
+	nextLink := ""
 	nextButtonClass := "disabled"
-	if len(dinfos) == PageWindowLength {
-		nextDomain = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
+	if len(dinfos) == query.Limit {
+		nextLink = url.QueryEscape(dinfos[len(dinfos)-1].Domain)
 		nextButtonClass = ""
+	}
+
+	// set up page length dropdown
+	pageLenDropdown := []dropdownElement{}
+	for _, ln := range PageWindowLengthChoices {
+		pageLenDropdown = append(pageLenDropdown, dropdownElement{
+			Text: fmt.Sprintf("%d", ln),
+		})
 	}
 
 	mp := map[string]interface{}{
 		"PrevButtonClass": prevButtonClass,
 		"NextButtonClass": nextButtonClass,
 		"Domains":         dinfos,
-		"Next":            nextDomain,
+		"Next":            nextLink,
+		"Prev":            prevLink,
+		"PrevList":        prevList,
+		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "list", mp)
 }
@@ -257,12 +413,6 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-// Simple aggregate datatype that holds both the link, and text of the given priority
-type priorityDropdownElement struct {
-	Link string
-	Text string
-}
-
 //IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
 // seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
@@ -290,7 +440,25 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	query := cassandra.LQ{Limit: PageWindowLength}
+	session, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
+		return
+	}
+
+	err = req.ParseForm()
+	if err != nil {
+		replyServerError(w, err)
+		return
+	}
+
+	prevLink, prevList, err := processHiddenForm(req, session, true)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("processHiddenForm failed: %v", err))
+		return
+	}
+
+	query := cassandra.LQ{Limit: session.LinksPageWindowLength()}
 
 	seedURL := vars["seedURL"]
 	needHeader := false
@@ -315,11 +483,6 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	//
 	// Get the filterRegex if there is one
 	//
-	err = req.ParseForm()
-	if err != nil {
-		replyServerError(w, err)
-		return
-	}
 	filterRegex := ""
 	filterURLSuffix := ""
 	filterRegexSuffix := ""
@@ -371,11 +534,19 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// set up priority dropdown
-	prio := []priorityDropdownElement{}
+	prio := []dropdownElement{}
 	for _, p := range cassandra.AllowedPriorities {
-		prio = append(prio, priorityDropdownElement{
+		prio = append(prio, dropdownElement{
 			Link: fmt.Sprintf("/changePriority/%s/%d", domain, p),
 			Text: fmt.Sprintf("%d", p),
+		})
+	}
+
+	// set up page length dropdown
+	pageLenDropdown := []dropdownElement{}
+	for _, ln := range PageWindowLengthChoices {
+		pageLenDropdown = append(pageLenDropdown, dropdownElement{
+			Text: fmt.Sprintf("%d", ln),
 		})
 	}
 
@@ -401,6 +572,10 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeLink":  excludeLink,
 
 		"PriorityLinks": prio,
+
+		"Prev":            prevLink,
+		"PrevList":        prevList,
+		"PageLengthLinks": pageLenDropdown,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
