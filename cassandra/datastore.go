@@ -289,7 +289,6 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 	}
 
 	if fr.Body != "" {
-		log4go.Error("PETE jacking body in %q", fr.Body)
 		inserts = append(inserts, dbfield{"body", fr.Body})
 	}
 
