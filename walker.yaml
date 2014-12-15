@@ -152,7 +152,8 @@ cassandra:
     # them.
     added_domains_cache_size: 20000
 
-    # If this is set to true, walker will store the entire http response for each link
+    # If this is set to true, walker will store the body of the HTTP request along 
+    # with the link.
     store_response_body: false
 
 
