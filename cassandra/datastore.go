@@ -292,6 +292,10 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		inserts = append(inserts, dbfield{"body", fr.Body})
 	}
 
+	if fr.Headers != nil {
+		inserts = append(inserts, dbfield{"headers", fr.Headers})
+	}
+
 	// Put the values together and run the query
 	names := []string{}
 	values := []interface{}{}

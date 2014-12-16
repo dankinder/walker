@@ -1623,3 +1623,61 @@ func TestStoreBody(t *testing.T) {
 		t.Fatalf("Failed to match stored body: --expected--\n%q\n--got--:\n%q", html, fr.Body)
 	}
 }
+
+func TestStoreHeaders(t *testing.T) {
+	orig := walker.Config.Cassandra.StoreResponseHeaders
+	defer func() {
+		walker.Config.Cassandra.StoreResponseHeaders = orig
+	}()
+	walker.Config.Cassandra.StoreResponseHeaders = true
+	html := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	headers := http.Headers{
+		"foo": []string{"bar"},
+		"baz": []string{"click"},
+	}
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts: singleLinkDomainSpecArr("http://a.com/page1.com", &helpers.MockResponse{
+			Body:    html,
+			Headers: headers,
+		}),
+	}
+
+	//
+	// Run the fetcher
+	//
+	results := runFetcher(tests, defaultSleep, t)
+
+	stores := results.dsStoreURLFetchResultsCalls()
+	if len(stores) != 1 {
+		t.Fatalf("Expected select for a.com to render a single result, instead got %d results", len(stores))
+	}
+	fr := stores[0]
+	for k, got := range fr.Headers {
+		exp, expOk := headers[k]
+		if !expOk {
+			t.Errorf("Unexpected key %v in returned headers", k)
+			continue
+		}
+		if len(exp) != len(got) {
+			t.Errorf("Header size mismatch for key %v in returned headers: got %d, expected %d", len(got), len(exp))
+		}
+		for i := range exp {
+			if got[i] != exp[i] {
+				t.Errorf("Header content mismatch for key %v in returned headers: got %q, expected %q", got[i], exp[i])
+				break
+			}
+		}
+	}
+}
