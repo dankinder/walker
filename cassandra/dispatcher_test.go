@@ -1050,3 +1050,70 @@ func TestDomainInfoStats(t *testing.T) {
 	}
 
 }
+
+func TestExtremePrecent(t *testing.T) {
+	// This test the bug resolved in TRN-130
+	origMaxLinksPerSegment := walker.Config.Dispatcher.MaxLinksPerSegment
+	origRefreshPercentage := walker.Config.Dispatcher.RefreshPercentage
+	defer func() {
+		walker.Config.Dispatcher.MaxLinksPerSegment = origMaxLinksPerSegment
+		walker.Config.Dispatcher.RefreshPercentage = origRefreshPercentage
+	}()
+	walker.Config.Dispatcher.MaxLinksPerSegment = 9
+	walker.Config.Dispatcher.RefreshPercentage = 100
+
+	tests := []DispatcherTest{
+		DispatcherTest{
+			Tag: "MultipleLinksTest",
+
+			ExistingDomainInfos: []ExistingDomainInfo{
+				{Dom: "test.com"},
+			},
+
+			ExistingLinks: []ExistingLink{
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page1.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page2.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page3.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page4.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page5.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+				{URL: walker.URL{URL: helpers.UrlParse("http://u.com/page6.html"),
+					LastCrawled: walker.NotYetCrawled}, Status: -1},
+
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page1.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page2.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page3.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page4.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page5.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+				{URL: walker.URL{URL: helpers.UrlParse("http://c.com/page6.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)}, Status: http.StatusOK},
+			},
+
+			ExpectedSegmentLinks: []walker.URL{
+				// The two oldest already crawled links
+				{URL: helpers.UrlParse("http://c.com/page1.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+				{URL: helpers.UrlParse("http://c.com/page2.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+				{URL: helpers.UrlParse("http://c.com/page3.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+				{URL: helpers.UrlParse("http://c.com/page4.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+				{URL: helpers.UrlParse("http://c.com/page5.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+				{URL: helpers.UrlParse("http://c.com/page6.html"),
+					LastCrawled: time.Now().AddDate(0, 0, -1)},
+			},
+		},
+	}
+
+}
