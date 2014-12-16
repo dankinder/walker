@@ -578,13 +578,24 @@ func (d *Dispatcher) generateSegment(domain string) error {
 			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
 		}
 
-		for len(uncrawledLinks) > 0 && len(links) < limit {
-			links = append(links, uncrawledLinks[0])
-			uncrawledLinks = uncrawledLinks[1:]
+		extraUncrawled := func() {
+			for len(uncrawledLinks) > 0 && len(links) < limit {
+				links = append(links, uncrawledLinks[0])
+				uncrawledLinks = uncrawledLinks[1:]
+			}
+		}
+		extraCrawled := func() {
+			for crawledLinks.Len() > 0 && len(links) < limit {
+				links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
+			}
 		}
 
-		for crawledLinks.Len() > 0 && len(links) < limit {
-			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
+		if refreshDecimal >= 0.5 {
+			extraCrawled()
+			extraUncrawled()
+		} else {
+			extraUncrawled()
+			extraCrawled()
 		}
 	}
 
