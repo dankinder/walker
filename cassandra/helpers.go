@@ -140,7 +140,7 @@ CREATE TABLE {{.Keyspace}}.links (
 	body text,
 
 	-- headers stores the http headers for this link (if cassandra.store_response_headers is true)
-	headers map<text,text>
+	headers MAP<text,text>,
 
 	---- Items yet to be added to walker
 

@@ -248,6 +248,7 @@ type LinksExpectation struct {
 	MimeType         string
 	FnvFingerprint   uint64
 	Body             string
+	Headers          map[string]string
 }
 
 var StoreURLExpectations []StoreURLExpectation
@@ -377,6 +378,10 @@ func init() {
 				},
 				FnvFingerprint: 6,
 				Body:           "The Body of the HTTP pull",
+				Headers: map[string]string{
+					"foo": "bar",
+					"baz": "click",
+				},
 			},
 			Expected: &LinksExpectation{
 				Domain:         "test.com",
@@ -387,6 +392,10 @@ func init() {
 				Status:         200,
 				FnvFingerprint: 6,
 				Body:           "The Body of the HTTP pull",
+				Headers: map[string]string{
+					"foo": "bar",
+					"baz": "click",
+				},
 			},
 		},
 	}
@@ -408,7 +417,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 
 		actual := &LinksExpectation{}
 		err := db.Query(
-			`SELECT err, robot_ex, stat, mime, fnv, body FROM links
+			`SELECT err, robot_ex, stat, mime, fnv, body, headers FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
 			exp.Domain,
 			exp.Subdomain,
@@ -416,7 +425,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 			exp.Protocol,
 			//exp.CrawlTime,
 		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType, &actual.FnvFingerprint,
-			&actual.Body)
+			&actual.Body, &actual.Headers)
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
@@ -443,6 +452,33 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if exp.Body != actual.Body {
 			t.Errorf("Expected Body: %v\nBut got: %v\nFor input: %+v",
 				exp.Body, actual.Body, tcase.Input)
+		}
+
+		if exp.Headers != nil && actual.Headers == nil {
+			t.Fatalf("Oops big trouble with actual.Headers")
+		} else if exp.Headers == nil && actual.Headers != nil {
+			t.Errorf("Headers mismatch: expected no headers, found some")
+			continue
+		}
+
+		found := map[string]bool{}
+		for k, e := range exp.Headers {
+			g, gok := actual.Headers[k]
+			if !gok {
+				t.Errorf("Failed to find key %v in actual.Headers", k)
+				continue
+			}
+			found[k] = true
+			if g != e {
+				t.Errorf("Headers mismatch: got %q, expected %q", g, e)
+			}
+		}
+		if actual.Headers != nil {
+			for k := range actual.Headers {
+				if !found[k] {
+					t.Errorf("Headers mismatch: actual had key %v, but expected did not", k)
+				}
+			}
 		}
 	}
 }
