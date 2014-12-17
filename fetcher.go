@@ -467,7 +467,7 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 	if Config.Cassandra.StoreResponseHeaders {
 		h := map[string]string{}
 		for k, v := range fr.Response.Header {
-			h[k] = strings.Join(v, "\0")			
+			h[k] = strings.Join(v, "\000")
 		}
 		fr.Headers = h
 	}

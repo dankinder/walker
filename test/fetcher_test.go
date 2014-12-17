@@ -1641,9 +1641,15 @@ func TestStoreHeaders(t *testing.T) {
 </div>
 </html>`
 
-	headers := http.Headers{
+	headers := http.Header{
 		"foo": []string{"bar"},
 		"baz": []string{"click"},
+	}
+
+	skipKeys := map[string]bool{
+		"Content-Type":   true,
+		"Date":           true,
+		"Content-Length": true,
 	}
 
 	tests := TestSpec{
@@ -1665,19 +1671,19 @@ func TestStoreHeaders(t *testing.T) {
 	}
 	fr := stores[0]
 	for k, got := range fr.Headers {
+		if skipKeys[k] {
+			continue
+		}
 		exp, expOk := headers[k]
 		if !expOk {
 			t.Errorf("Unexpected key %v in returned headers", k)
 			continue
 		}
-		if len(exp) != len(got) {
-			t.Errorf("Header size mismatch for key %v in returned headers: got %d, expected %d", len(got), len(exp))
+
+		if got != exp[0] {
+			t.Errorf("Header content mismatch for key %v in returned headers: got %q, expected %q", got, exp[0])
+			break
 		}
-		for i := range exp {
-			if got[i] != exp[i] {
-				t.Errorf("Header content mismatch for key %v in returned headers: got %q, expected %q", got[i], exp[i])
-				break
-			}
-		}
+
 	}
 }
