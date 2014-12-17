@@ -495,7 +495,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 			replyServerError(w, fmt.Errorf("decode32 error: %v", err))
 			return
 		}
-		filterRegexSuffix = fmt.Sprintf("(filtered by /%s/)", filterRegex)
+		filterRegexSuffix = fmt.Sprintf("(filtered by /%s/)", query.FilterRegex)
 	}
 
 	//

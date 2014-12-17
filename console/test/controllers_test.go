@@ -1095,6 +1095,18 @@ func TestFilterLinks(t *testing.T) {
 	if loc[0] != expectedLoc {
 		t.Fatalf("TestFilterLinks redirect url got %q, but expected %q", loc[0], expectedLoc)
 	}
+
+	// Now test that regex is displayed correctly on links page
+	expected := "Links for domain t1.com (filtered by /.*/)"
+	doc, body, status = callController("http://localhost:3000/links/t1.com?filterRegex=FYVA====", "",
+		"/links/{domain}", console.LinksController)
+	sub = doc.Find(".container .row .col-xs-6 h2")
+	if sub.Size() != 1 {
+		t.Fatalf("[.container .row .col-xs-6 h2] Failed to find header message")
+	} else if !strings.Contains(sub.Text(), expected) {
+		t.Fatalf("[.container .row .col-xs-6 h2] Expected to find %q, but actually found %q", expected, sub.Text())
+	}
+
 }
 
 func TestChangePriority(t *testing.T) {
