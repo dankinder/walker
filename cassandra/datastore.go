@@ -675,7 +675,7 @@ func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*LinkInfo, er
 
 	extraSelect := ""
 	if collectContent {
-		extraSelect = ", body, headers"
+		extraSelect = ", body, headers "
 	}
 
 	itr := ds.db.Query(

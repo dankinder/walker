@@ -307,6 +307,7 @@ Useful for something like:
 		Short: "Start up the walker console",
 		Run: func(cmd *cobra.Command, args []string) {
 			initCommand()
+			console.SpoofData()
 			console.Run()
 		},
 	}
@@ -335,7 +336,9 @@ Useful for something like:
 			}
 
 			linfo, err := ds.FindLink(u, true)
-			if linfo == nil {
+			if err != nil {
+				fatalf("Failed FindLink: %v", err)
+			} else if linfo == nil {
 				fatalf("Failed to find link %v in datastore", readLinkLink)
 			}
 
