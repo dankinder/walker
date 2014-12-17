@@ -53,11 +53,6 @@ type FetchResults struct {
 	// body column of the links table). Otherwise Body is the empty string.
 	Body string
 
-	// If the user has set cassandra.store_response_headers to true in the config file,
-	// then the content of the link will be stored in Headers (and consequently stored in the
-	// headers column of the links table). Otherwise Headers is nil.
-	Headers map[string]string
-
 	// FetchError if the net/http request had an error (non-2XX HTTP response
 	// codes are not considered errors)
 	FetchError error
@@ -463,13 +458,6 @@ func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time
 	fr.Response.Body = ioutil.NopCloser(bytes.NewReader(f.readBuffer.Bytes()))
 	if Config.Cassandra.StoreResponseBody {
 		fr.Body = string(f.readBuffer.Bytes())
-	}
-	if Config.Cassandra.StoreResponseHeaders {
-		h := map[string]string{}
-		for k, v := range fr.Response.Header {
-			h[k] = strings.Join(v, "\000")
-		}
-		fr.Headers = h
 	}
 
 	//

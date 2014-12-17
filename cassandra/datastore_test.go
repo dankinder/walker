@@ -375,13 +375,13 @@ func init() {
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
+					Header: http.Header{
+						"foo": []string{"bar"},
+						"baz": []string{"click", "clack"},
+					},
 				},
 				FnvFingerprint: 6,
 				Body:           "The Body of the HTTP pull",
-				Headers: map[string]string{
-					"foo": "bar",
-					"baz": "click",
-				},
 			},
 			Expected: &LinksExpectation{
 				Domain:         "test.com",
@@ -394,7 +394,7 @@ func init() {
 				Body:           "The Body of the HTTP pull",
 				Headers: map[string]string{
 					"foo": "bar",
-					"baz": "click",
+					"baz": "click\000clack",
 				},
 			},
 		},
@@ -402,11 +402,14 @@ func init() {
 }
 
 func TestStoreURLFetchResults(t *testing.T) {
-	orig := walker.Config.Cassandra.StoreResponseBody
+	origBody := walker.Config.Cassandra.StoreResponseBody
+	origHeaders := walker.Config.Cassandra.StoreResponseHeaders
 	defer func() {
-		walker.Config.Cassandra.StoreResponseBody = orig
+		walker.Config.Cassandra.StoreResponseBody = origBody
+		walker.Config.Cassandra.StoreResponseHeaders = origHeaders
 	}()
 	walker.Config.Cassandra.StoreResponseBody = true
+	walker.Config.Cassandra.StoreResponseHeaders = true
 
 	db := GetTestDB()
 	ds := getDS(t)
@@ -416,6 +419,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 		exp := tcase.Expected
 
 		actual := &LinksExpectation{}
+
 		err := db.Query(
 			`SELECT err, robot_ex, stat, mime, fnv, body, headers FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
@@ -429,6 +433,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
+
 		if exp.FetchError != actual.FetchError {
 			t.Errorf("Expected err: %v\nBut got: %v\nFor input: %+v",
 				exp.FetchError, actual.FetchError, tcase.Input)
@@ -470,7 +475,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 			}
 			found[k] = true
 			if g != e {
-				t.Errorf("Headers mismatch: got %q, expected %q", g, e)
+				t.Errorf("Headers mismatch: got %q, expected %q", g[0], e)
 			}
 		}
 		if actual.Headers != nil {

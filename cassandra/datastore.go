@@ -292,8 +292,12 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		inserts = append(inserts, dbfield{"body", fr.Body})
 	}
 
-	if fr.Headers != nil {
-		inserts = append(inserts, dbfield{"headers", fr.Headers})
+	if walker.Config.Cassandra.StoreResponseHeaders && fr.Response != nil && fr.Response.Header != nil {
+		h := map[string]string{}
+		for k, v := range fr.Response.Header {
+			h[k] = strings.Join(v, "\000")
+		}
+		inserts = append(inserts, dbfield{"headers", h})
 	}
 
 	// Put the values together and run the query
