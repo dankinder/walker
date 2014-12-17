@@ -655,7 +655,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		linfo, err := DS.FindLink(u)
+		linfo, err := DS.FindLink(u, false)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("FindLinks error: %v", err))
 			continue

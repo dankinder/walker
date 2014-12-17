@@ -3,6 +3,7 @@ package cassandra
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -633,6 +634,12 @@ type LinkInfo struct {
 
 	// FNV hash of the contents
 	FnvFingerprint int64
+
+	// Body of request (if configured to be stored)
+	Body string
+
+	// Header of request (if configured to be stored)
+	Headers http.Header
 }
 
 // LQ is a link query struct used for gettings links from cassandra.
@@ -656,21 +663,31 @@ type rememberTimes struct {
 	ind int
 }
 
-// FindLink returns a LinkInfo matching the given URL
-func (ds *Datastore) FindLink(u *walker.URL) (*LinkInfo, error) {
+// FindLink returns a LinkInfo matching the given URL. Arguments to this function are
+// (a) u is the url to find
+// (b) collectContent, if true, indicates that Body and Headers field of LinkInfo will
+//     be populated.
+func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*LinkInfo, error) {
 	tld1, subtld1, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
 		return nil, err
 	}
 
-	itr := ds.db.Query(`SELECT dom, subdom, path, proto, time, stat, err, robot_ex 
-						FROM links 
-						WHERE dom = ? AND
-							  subdom = ? AND
-							  path = ? AND
-							  proto = ?`, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
+	extraSelect := ""
+	if collectContent {
+		extraSelect = ", body, headers"
+	}
+
+	itr := ds.db.Query(
+		`SELECT dom, subdom, path, proto, time, stat, err, robot_ex `+
+			extraSelect+
+			"FROM links "+
+			"WHERE dom = ? AND"+
+			"	  subdom = ? AND"+
+			"     path = ? AND"+
+			"     proto = ?", tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
 	rtimes := map[string]rememberTimes{}
-	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil)
+	linfos, err := ds.collectLinkInfos(nil, rtimes, itr, 1, nil, collectContent)
 	if err != nil {
 		itr.Close()
 		return nil, err
@@ -792,7 +809,7 @@ func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
 	var err error
 	for _, qt := range table {
 		itr := ds.db.Query(qt.query, qt.args...).Iter()
-		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, query.Limit, acceptLink)
+		linfos, err = ds.collectLinkInfos(linfos, rtimes, itr, query.Limit, acceptLink, false)
 		if err != nil {
 			return linfos, err
 		}
@@ -957,12 +974,21 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 // (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [
 //  This is used to implement filterRegex on ListLinks]
 func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
-	linkAccept func(string) bool) ([]*LinkInfo, error) {
+	linkAccept func(string) bool, collectContent bool) ([]*LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
 	var status int
-	for itr.Scan(&domain, &subdomain, &path, &protocol, &crawlTime, &status, &anerror, &robotsExcluded) {
+	var body string
+	var headers map[string]string
+	var httpHeaders http.Header
+
+	args := []interface{}{&domain, &subdomain, &path, &protocol, &crawlTime, &status, &anerror, &robotsExcluded}
+	if collectContent {
+		args = append(args, &body, &headers)
+	}
+
+	for itr.Scan(args...) {
 		u, err := walker.CreateURL(domain, subdomain, path, protocol, crawlTime)
 		if err != nil {
 			return linfos, err
@@ -979,12 +1005,26 @@ func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]reme
 			continue
 		}
 
+		if collectContent {
+			httpHeaders = nil
+			if headers != nil {
+				httpHeaders = http.Header{}
+				for k, v := range headers {
+					vs := strings.Split(v, "\000")
+					httpHeaders[k] = vs
+				}
+			}
+			headers = nil
+		}
+
 		linfo := &LinkInfo{
 			URL:            u,
 			Status:         status,
 			Error:          anerror,
 			RobotsExcluded: robotsExcluded,
 			CrawlTime:      crawlTime,
+			Body:           body,
+			Headers:        httpHeaders,
 		}
 
 		nindex := -1

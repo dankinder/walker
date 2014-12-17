@@ -35,6 +35,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"code.google.com/p/log4go"
@@ -310,6 +311,85 @@ Useful for something like:
 		},
 	}
 	walkerCommand.AddCommand(consoleCommand)
+
+	var readLinkLink string
+	var readLinkBodyOnly bool
+	var readLinkMetaOnly bool
+	readLinkCommand := &cobra.Command{
+		Use:   "readlink",
+		Short: "Print information about a link",
+		Run: func(cmd *cobra.Command, args []string) {
+			initCommand()
+			if readLinkLink == "" {
+				fatalf("Failed to specify link to read; add --url/-u to your call")
+			}
+
+			console.SpoofData() //PETE
+			ds, err := cassandra.NewDatastore()
+			if err != nil {
+				fatalf("Failed creating Cassandra datastore: %v", err)
+			}
+			u, err := walker.ParseURL(readLinkLink)
+			if err != nil {
+				fatalf("Failed to parse link %v: %v", readLinkLink, err)
+			}
+
+			linfo, err := ds.FindLink(u, true)
+			if linfo == nil {
+				fatalf("Failed to find link %v in datastore", readLinkLink)
+			}
+
+			if linfo.CrawlTime.Equal(walker.NotYetCrawled) {
+				fmt.Printf("Link %v is present, but has not yet been fetched\n", readLinkLink)
+				os.Exit(0)
+			}
+
+			if !readLinkBodyOnly {
+				estring := "<none>\n"
+				if linfo.Error != "" {
+					estring := "\n"
+					lines := strings.Split(linfo.Error, "\n")
+					for _, l := range lines {
+						estring += fmt.Sprintf("    %v\n", l)
+					}
+				}
+				fmt.Printf("Url:            %v\n", linfo.URL)
+				fmt.Printf("HttpStatus:     %v\n", linfo.Status)
+				fmt.Printf("CrawlTime:      %v\n", linfo.CrawlTime)
+				fmt.Printf("Error:          %v", estring)
+				fmt.Printf("RobotsExcluded: %v\n", linfo.RobotsExcluded)
+				fmt.Printf("RedirectedTo:   %v\n", linfo.RedirectedTo)
+				fmt.Printf("GetNow:         %v\n", linfo.GetNow)
+				fmt.Printf("Mime:           %v\n", linfo.Mime)
+				fmt.Printf("FnvFingerprint: %v\n", linfo.FnvFingerprint)
+				if linfo.Headers == nil {
+					fmt.Printf("HEADERS:        <none>\n")
+				} else {
+					fmt.Printf("HEADERS:\n")
+					for k, vs := range linfo.Headers {
+						for _, v := range vs {
+							fmt.Printf("    %v: %v\n", k, v)
+						}
+					}
+				}
+			}
+
+			if !readLinkMetaOnly {
+				if linfo.Body == "" {
+					fmt.Printf("BODY:           <none>\n")
+				} else {
+					fmt.Printf("BODY:\n%v\n", linfo.Body)
+				}
+			}
+			os.Exit(0)
+		},
+	}
+	readLinkCommand.Flags().StringVarP(&readLinkLink, "url", "u", "", "Url to lookup")
+	readLinkCommand.Flags().BoolVarP(&readLinkBodyOnly, "body-only", "b", false,
+		"Use this flag to get the http body only")
+	readLinkCommand.Flags().BoolVarP(&readLinkMetaOnly, "meta-only", "m", false,
+		"Use this flag to omit the body from printed results")
+	walkerCommand.AddCommand(readLinkCommand)
 
 	commander.Command = walkerCommand
 }
