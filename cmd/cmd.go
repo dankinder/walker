@@ -35,6 +35,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -90,8 +91,11 @@ var commander struct {
 // config is potentially set by CLI below
 var config string
 
-// initCommand performs generic steps to prepare the environment before a
-// command, like reading the config file.
+// Options to control the readlink command, need to be global in order to clear them in the test code
+var readLinkLink string
+var readLinkBodyOnly bool
+var readLinkMetaOnly bool
+
 func initCommand() {
 	if config != "" {
 		if err := walker.ReadConfigFile(config); err != nil {
@@ -108,9 +112,7 @@ func initCommand() {
 			}
 		}()
 	}
-}
 
-func setUpCommanderStreams() {
 	if commander.printf == nil {
 		commander.printf = func(format string, args ...interface{}) {
 			fmt.Printf(format, args...)
@@ -335,19 +337,15 @@ Useful for something like:
 	}
 	walkerCommand.AddCommand(consoleCommand)
 
-	var readLinkLink string
-	var readLinkBodyOnly bool
-	var readLinkMetaOnly bool
 	readLinkCommand := &cobra.Command{
 		Use:   "readlink",
 		Short: "Print information about a link",
 		Run: func(cmd *cobra.Command, args []string) {
-			setUpCommanderStreams()
+			initCommand()
 			printf := commander.printf
 			errorf := commander.errorf
 			exit := commander.exit
 
-			initCommand()
 			if readLinkLink == "" {
 				errorf("Failed to specify link to read; add --url/-u to your call\n")
 				exit(1)
@@ -424,9 +422,15 @@ Useful for something like:
 				if linfo.Headers == nil {
 					printf("HEADERS:        <none>\n")
 				} else {
+					keys := []string{}
+					for k := range linfo.Headers {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+
 					printf("HEADERS:\n")
-					for k, vs := range linfo.Headers {
-						for _, v := range vs {
+					for _, k := range keys {
+						for _, v := range linfo.Headers[k] {
 							printf("    %v: %v\n", k, v)
 						}
 					}

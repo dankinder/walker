@@ -353,6 +353,14 @@ func TestReadlinkCommand(t *testing.T) {
 		},
 
 		{
+			tag:    "badOptions",
+			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-mb"},
+			linfo:  nil,
+			stderr: "Can't specify both --body-only/-b AND --meta-only/-m",
+			estat:  1,
+		},
+
+		{
 			tag:   "standard",
 			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String()},
 			linfo: &goodLinfo,
@@ -367,11 +375,28 @@ GetNow:         true
 Mime:           text/html
 FnvFingerprint: 0
 HEADERS:
-    foo: bar
     baz: click
     baz: clack
+    foo: bar
 BODY:
 <!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+        Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`,
+		},
+
+		{
+			tag:   "bodyOnly",
+			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-b"},
+			linfo: &goodLinfo,
+			estat: 0,
+			stdout: `<!DOCTYPE html>
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
@@ -385,6 +410,11 @@ BODY:
 	}
 
 	for _, tst := range tests {
+		//OMG we have to modify the global readLink flag variables!!!!
+		readLinkLink = ""
+		readLinkBodyOnly = false
+		readLinkMetaOnly = false
+
 		datastore := &helpers.MockDatastore{}
 		datastore.On("FindLink", goodUrl, true).Return(tst.linfo, nil)
 		Datastore(datastore)
@@ -400,12 +430,14 @@ BODY:
 
 		ok, l, r := compareLongString(tst.stdout, stdout)
 		if !ok {
-			t.Errorf("Stdout mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag, l, r)
+			t.Errorf("Stdout mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+				l, r)
 		}
 
 		ok, l, r = compareLongString(tst.stderr, stderr)
 		if !ok {
-			t.Errorf("Stderr mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag, l, r)
+			t.Errorf("Stderr mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+				l, r)
 		}
 
 		os.Args = origArgs
