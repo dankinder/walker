@@ -178,7 +178,7 @@ var readLinkCommand = &cobra.Command{
 		// The reason Finder exists is that FindLink isn't in walker.Datastore, but I'd like to  use the mock datastore
 		// for this
 		type Finder interface {
-			FindLink(u *walker.URL, collectContent bool) (*cassandra.LinkInfo, error)
+			FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error)
 		}
 
 		var ds Finder

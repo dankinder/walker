@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/helpers"
 
 	"github.com/stretchr/testify/mock"
@@ -309,12 +308,12 @@ func TestReadlinkCommand(t *testing.T) {
 	}
 
 	// Define some link infos
-	notYetCrawledLinfo := cassandra.LinkInfo{
+	notYetCrawledLinfo := walker.LinkInfo{
 		URL:       goodUrl,
 		CrawlTime: walker.NotYetCrawled,
 	}
 
-	goodLinfo := cassandra.LinkInfo{
+	goodLinfo := walker.LinkInfo{
 		URL:            goodUrl,
 		Status:         200,
 		CrawlTime:      crawlTime,
@@ -331,7 +330,7 @@ func TestReadlinkCommand(t *testing.T) {
 	tests := []struct {
 		tag    string
 		call   []string
-		linfo  *cassandra.LinkInfo
+		linfo  *walker.LinkInfo
 		stdout string
 		stderr string
 		estat  int

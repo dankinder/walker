@@ -614,42 +614,6 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 // LinkInfo calls
 //
 
-// LinkInfo defines a row from the link or segment table
-type LinkInfo struct {
-	// URL of the link
-	URL *walker.URL
-
-	// Status of the fetch
-	Status int
-
-	// When did this link get crawled
-	CrawlTime time.Time
-
-	// Any error reported when attempting to fetch the URL
-	Error string
-
-	// Was this excluded by robots
-	RobotsExcluded bool
-
-	// URL this link redirected to if it was a redirect
-	RedirectedTo string
-
-	// Whether this link was flagged for immediate fetching
-	GetNow bool
-
-	// Mime type (or Content-Type) of the returned data
-	Mime string
-
-	// FNV hash of the contents
-	FnvFingerprint int64
-
-	// Body of request (if configured to be stored)
-	Body string
-
-	// Header of request (if configured to be stored)
-	Headers http.Header
-}
-
 // LQ is a link query struct used for gettings links from cassandra.
 // Zero-values mean use default behavior.
 type LQ struct {
@@ -671,11 +635,11 @@ type rememberTimes struct {
 	ind int
 }
 
-// FindLink returns a LinkInfo matching the given URL. Arguments to this function are
+// FindLink returns a walker.LinkInfo matching the given URL. Arguments to this function are
 // (a) u is the url to find
-// (b) collectContent, if true, indicates that Body and Headers field of LinkInfo will
+// (b) collectContent, if true, indicates that Body and Headers field of walker.LinkInfo will
 //     be populated.
-func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*LinkInfo, error) {
+func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error) {
 	tld1, subtld1, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
 		return nil, err
@@ -749,7 +713,7 @@ type queryEntry struct {
 
 // ListLinks fetches links for the given domain according to the given LQ (Link
 // Query)
-func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
+func (ds *Datastore) ListLinks(domain string, query LQ) ([]*walker.LinkInfo, error) {
 	if query.Limit <= 0 {
 		return nil, fmt.Errorf("Bad value for limit parameter %d", query.Limit)
 	}
@@ -765,7 +729,7 @@ func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
 		}
 	}
 
-	var linfos []*LinkInfo
+	var linfos []*walker.LinkInfo
 	rtimes := map[string]rememberTimes{}
 	var table []queryEntry
 
@@ -834,7 +798,7 @@ func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
 }
 
 // ListLinkHistorical gets the crawl history of a specific link
-func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
+func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*walker.LinkInfo, error) {
 	query := `SELECT dom, subdom, path, proto, time, stat,
 						err, robot_ex, redto_url, getnow, mime, fnv
               FROM links
@@ -846,7 +810,7 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 
 	itr := ds.db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
 
-	var linfos []*LinkInfo
+	var linfos []*walker.LinkInfo
 	var dom, sub, path, prot, getError, mime, redtoURL string
 	var crawlTime time.Time
 	var status int
@@ -861,7 +825,7 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 		//}
 
 		u, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
-		linfo := &LinkInfo{
+		linfo := &walker.LinkInfo{
 			URL:            u,
 			Status:         status,
 			Error:          getError,
@@ -974,15 +938,15 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 	return errList
 }
 
-//collectLinkInfos populates a []LinkInfo list given a cassandra iterator. Arguments are described as:
-// (a) linfos is the list of LinkInfo's to build on
+//collectwalker.LinkInfos populates a []walker.LinkInfo list given a cassandra iterator. Arguments are described as:
+// (a) linfos is the list of walker.LinkInfo's to build on
 // (b) rtimes is scratch space used to filter most recent link
 // (c) itr is a gocql.Iter instance to be read
 // (d) limit is the max length of linfos
 // (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [
 //  This is used to implement filterRegex on ListLinks]
-func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
-	linkAccept func(string) bool, collectContent bool) ([]*LinkInfo, error) {
+func (ds *Datastore) collectLinkInfos(linfos []*walker.LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
+	linkAccept func(string) bool, collectContent bool) ([]*walker.LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
@@ -1025,7 +989,7 @@ func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]reme
 			headers = nil
 		}
 
-		linfo := &LinkInfo{
+		linfo := &walker.LinkInfo{
 			URL:            u,
 			Status:         status,
 			Error:          anerror,
