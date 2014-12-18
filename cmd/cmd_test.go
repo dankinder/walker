@@ -212,7 +212,7 @@ type ExitCarrier struct {
 // The return values are
 //  (a) stdout string
 //  (b) stderr string
-//  (c) exit status integer (exit status is < 0 if exit was not called by the calling program)
+//  (c) exit status integer (exit status is < 0 if exit was not called by the called command)
 func executeInSandbox(t *testing.T) (out string, err string, status int) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -253,6 +253,11 @@ func executeInSandbox(t *testing.T) (out string, err string, status int) {
 	return
 }
 
+// compareLongString compares two strings in a way that makes it easier to see the difference between
+// the strings. The return values of the function are
+//     (a) boolean match which is true if the strings match
+//     (b) if match is false leftLine string is the first line in leftStr that doesn't match rightStr
+//     (c) if match is false rightLine string is the first line in rightStr that doesn't match leftStr
 func compareLongString(leftStr string, rightStr string) (match bool, leftLine string, rightLine string) {
 	left := strings.Split(leftStr, "\n")
 	right := strings.Split(rightStr, "\n")
@@ -263,10 +268,10 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 			return
 		} else if i >= len(left) {
 			leftLine = "<<<no data>>>"
-			rightLine = right[i]
+			rightLine = strings.TrimSpace(right[i])
 			return
 		} else if i >= len(right) {
-			leftLine = left[i]
+			leftLine = strings.TrimSpace(left[i])
 			rightLine = "<<<no data>>>"
 			return
 		}
@@ -443,13 +448,13 @@ HEADERS:
 
 		ok, l, r := compareLongString(tst.stdout, stdout)
 		if !ok {
-			t.Errorf("Stdout mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+			t.Errorf("Stdout mismatch for tag %v\nexpected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
 				l, r)
 		}
 
 		ok, l, r = compareLongString(tst.stderr, stderr)
 		if !ok {
-			t.Errorf("Stderr mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+			t.Errorf("Stderr mismatch for tag %v\nexpected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
 				l, r)
 		}
 

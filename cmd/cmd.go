@@ -69,8 +69,9 @@ func Dispatcher(d walker.Dispatcher) {
 
 // CommanderStreams holds the i/o functions that the test harness can spoof. This is useful since
 // (a) the test harness modifies the normal stdout/stderr streams, and this can cause strange behavior
-//     with tests.
-// (b) there is no good way to spoof os.Exit.
+//     with tests if we then try to modify stdout/stderr to capture.
+// (b) there is no good way to spoof os.Exit, short of doing what we're doing by putting a layer of indirection
+//     into the strack trace.
 type CommanderStreams struct {
 	Printf func(format string, args ...interface{})
 	Errorf func(format string, args ...interface{})
@@ -120,6 +121,7 @@ func initCommand() {
 		}()
 	}
 
+	// Set default streams
 	if commander.Streams.Printf == nil {
 		commander.Streams.Printf = func(format string, args ...interface{}) {
 			fmt.Printf(format, args...)
@@ -143,11 +145,12 @@ func fatalf(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-// Options to control the readlink command, need to be global in order to clear them in the test code
+// Options to control the readlink command
 var readLinkLink string
 var readLinkBodyOnly bool
 var readLinkMetaOnly bool
 
+// Allows tests to clear readLink options
 func ReadLinkClearOptions() {
 	readLinkLink = ""
 	readLinkBodyOnly = false
@@ -172,9 +175,8 @@ var readLinkCommand = &cobra.Command{
 			exit(1)
 		}
 
-		// The reason this is here is that
-		//     (a) FindLink isn't in walker.Datastore
-		//     (b) But we use a mock datastore for the testing
+		// The reason Finder exists is that FindLink isn't in walker.Datastore, but I'd like to  use the mock datastore
+		// for this
 		type Finder interface {
 			FindLink(u *walker.URL, collectContent bool) (*cassandra.LinkInfo, error)
 		}
@@ -188,7 +190,6 @@ var readLinkCommand = &cobra.Command{
 			}
 			ds = x
 		} else {
-			// we have to do this because FindLink isn't in walker.Datastore
 			var dsOk bool
 			ds, dsOk = commander.Datastore.(Finder)
 			if !dsOk {
@@ -239,6 +240,7 @@ var readLinkCommand = &cobra.Command{
 			if linfo.Headers == nil {
 				printf("HEADERS:        <none>\n")
 			} else {
+				// Gotta sort these keys so that printout is reproducible
 				keys := []string{}
 				for k := range linfo.Headers {
 					keys = append(keys, k)
