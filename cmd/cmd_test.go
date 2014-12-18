@@ -214,24 +214,22 @@ type ExitCarrier struct {
 //  (b) stderr string
 //  (c) exit status integer (exit status is < 0 if exit was not called by the calling program)
 func executeInSandbox(t *testing.T) (out string, err string, status int) {
-	origPf := commander.printf
-	origEf := commander.errorf
-	origEx := commander.exit
-
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	commander.printf = func(format string, args ...interface{}) {
+	printf := func(format string, args ...interface{}) {
 		stdout.WriteString(fmt.Sprintf(format, args...))
 	}
 
-	commander.errorf = func(format string, args ...interface{}) {
+	errorf := func(format string, args ...interface{}) {
 		stderr.WriteString(fmt.Sprintf(format, args...))
 	}
 
-	commander.exit = func(status int) {
+	exit := func(status int) {
 		panic(&ExitCarrier{stat: status})
 	}
+
+	origStreams := Streams(CommanderStreams{Printf: printf, Errorf: errorf, Exit: exit})
 
 	defer func() {
 		out = stdout.String()
@@ -248,9 +246,7 @@ func executeInSandbox(t *testing.T) (out string, err string, status int) {
 			status = ec.stat
 		}
 
-		commander.printf = origPf
-		commander.errorf = origEf
-		commander.exit = origEx
+		Streams(origStreams)
 	}()
 
 	Execute()
@@ -430,10 +426,7 @@ HEADERS:
 	}
 
 	for _, tst := range tests {
-		//OMG we have to modify the global readLink flag variables!!!!
-		readLinkLink = ""
-		readLinkBodyOnly = false
-		readLinkMetaOnly = false
+		ReadLinkClearOptions()
 
 		datastore := &helpers.MockDatastore{}
 		datastore.On("FindLink", goodUrl, true).Return(tst.linfo, nil)

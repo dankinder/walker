@@ -67,6 +67,22 @@ func Dispatcher(d walker.Dispatcher) {
 	commander.Dispatcher = d
 }
 
+// CommanderStreams holds the i/o functions that the test harness can spoof. This is useful since
+// (a) the test harness modifies the normal stdout/stderr streams, and this can cause strange behavior
+//     with tests.
+// (b) there is no good way to spoof os.Exit.
+type CommanderStreams struct {
+	Printf func(format string, args ...interface{})
+	Errorf func(format string, args ...interface{})
+	Exit   func(status int)
+}
+
+func Streams(cstream CommanderStreams) CommanderStreams {
+	old := commander.Streams
+	commander.Streams = cstream
+	return old
+}
+
 // Execute will run the command specified by the command line
 func Execute() {
 	commander.Execute()
@@ -81,20 +97,11 @@ var commander struct {
 	Handler    walker.Handler
 	Datastore  walker.Datastore
 	Dispatcher walker.Dispatcher
-
-	// Streams used in testing
-	printf func(format string, args ...interface{})
-	errorf func(format string, args ...interface{})
-	exit   func(status int)
+	Streams    CommanderStreams
 }
 
 // config is potentially set by CLI below
 var config string
-
-// Options to control the readlink command, need to be global in order to clear them in the test code
-var readLinkLink string
-var readLinkBodyOnly bool
-var readLinkMetaOnly bool
 
 func initCommand() {
 	if config != "" {
@@ -113,18 +120,18 @@ func initCommand() {
 		}()
 	}
 
-	if commander.printf == nil {
-		commander.printf = func(format string, args ...interface{}) {
+	if commander.Streams.Printf == nil {
+		commander.Streams.Printf = func(format string, args ...interface{}) {
 			fmt.Printf(format, args...)
 		}
 	}
-	if commander.errorf == nil {
-		commander.printf = func(format string, args ...interface{}) {
+	if commander.Streams.Errorf == nil {
+		commander.Streams.Errorf = func(format string, args ...interface{}) {
 			fmt.Fprintf(os.Stderr, format, args...)
 		}
 	}
-	if commander.exit == nil {
-		commander.exit = func(status int) {
+	if commander.Streams.Exit == nil {
+		commander.Streams.Exit = func(status int) {
 			os.Exit(status)
 		}
 	}
@@ -134,6 +141,132 @@ func fatalf(format string, args ...interface{}) {
 	fmt.Printf(format, args...)
 	fmt.Println()
 	os.Exit(1)
+}
+
+// Options to control the readlink command, need to be global in order to clear them in the test code
+var readLinkLink string
+var readLinkBodyOnly bool
+var readLinkMetaOnly bool
+
+func ReadLinkClearOptions() {
+	readLinkLink = ""
+	readLinkBodyOnly = false
+	readLinkMetaOnly = false
+}
+
+var readLinkCommand = &cobra.Command{
+	Use:   "readlink",
+	Short: "Print information about a link",
+	Run: func(cmd *cobra.Command, args []string) {
+		initCommand()
+		printf := commander.Streams.Printf
+		errorf := commander.Streams.Errorf
+		exit := commander.Streams.Exit
+
+		if readLinkLink == "" {
+			errorf("Failed to specify link to read; add --url/-u to your call\n")
+			exit(1)
+		}
+		if readLinkBodyOnly && readLinkMetaOnly {
+			errorf("Can't specify both --body-only/-b AND --meta-only/-m\n")
+			exit(1)
+		}
+
+		// The reason this is here is that
+		//     (a) FindLink isn't in walker.Datastore
+		//     (b) But we use a mock datastore for the testing
+		type Finder interface {
+			FindLink(u *walker.URL, collectContent bool) (*cassandra.LinkInfo, error)
+		}
+
+		var ds Finder
+		if commander.Datastore == nil {
+			x, err := cassandra.NewDatastore()
+			if err != nil {
+				errorf("Failed creating Cassandra datastore: %v\n", err)
+				exit(1)
+			}
+			ds = x
+		} else {
+			// we have to do this because FindLink isn't in walker.Datastore
+			var dsOk bool
+			ds, dsOk = commander.Datastore.(Finder)
+			if !dsOk {
+				errorf("Tried to use pre-configured datastore, but it wasn't a Finder\n")
+				exit(1)
+			}
+		}
+
+		u, err := walker.ParseURL(readLinkLink)
+		if err != nil {
+			errorf("Failed to parse link %v: %v\n", readLinkLink, err)
+			exit(1)
+		}
+
+		linfo, err := ds.FindLink(u, true)
+		if err != nil {
+			errorf("Failed FindLink: %v\n", err)
+			exit(1)
+		} else if linfo == nil {
+			errorf("Failed to find link %v in datastore\n", readLinkLink)
+			exit(1)
+		}
+
+		if linfo.CrawlTime.Equal(walker.NotYetCrawled) {
+			printf("Link %v is present, but has not yet been fetched\n", readLinkLink)
+			exit(0)
+		}
+
+		if !readLinkBodyOnly {
+			estring := "\n"
+			if linfo.Error != "" {
+				estring := "\n"
+				lines := strings.Split(linfo.Error, "\n")
+				for _, l := range lines {
+					estring += fmt.Sprintf("    %v\n", l)
+				}
+			}
+
+			printf("Url:            %v\n", linfo.URL)
+			printf("HttpStatus:     %v\n", linfo.Status)
+			printf("CrawlTime:      %v\n", linfo.CrawlTime)
+			printf("Error:          %v", estring)
+			printf("RobotsExcluded: %v\n", linfo.RobotsExcluded)
+			printf("RedirectedTo:   %v\n", linfo.RedirectedTo)
+			printf("GetNow:         %v\n", linfo.GetNow)
+			printf("Mime:           %v\n", linfo.Mime)
+			printf("FnvFingerprint: %v\n", linfo.FnvFingerprint)
+			if linfo.Headers == nil {
+				printf("HEADERS:        <none>\n")
+			} else {
+				keys := []string{}
+				for k := range linfo.Headers {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+
+				printf("HEADERS:\n")
+				for _, k := range keys {
+					for _, v := range linfo.Headers[k] {
+						printf("    %v: %v\n", k, v)
+					}
+				}
+			}
+		}
+
+		if !readLinkMetaOnly {
+			if !readLinkBodyOnly {
+				if linfo.Body == "" {
+					printf("BODY:           <none>\n")
+				} else {
+					printf("BODY:\n%v\n", linfo.Body)
+				}
+			} else {
+				printf("%v\n", linfo.Body)
+			}
+		}
+		exit(0)
+	},
 }
 
 func init() {
@@ -337,120 +470,6 @@ Useful for something like:
 	}
 	walkerCommand.AddCommand(consoleCommand)
 
-	readLinkCommand := &cobra.Command{
-		Use:   "readlink",
-		Short: "Print information about a link",
-		Run: func(cmd *cobra.Command, args []string) {
-			initCommand()
-			printf := commander.printf
-			errorf := commander.errorf
-			exit := commander.exit
-
-			if readLinkLink == "" {
-				errorf("Failed to specify link to read; add --url/-u to your call\n")
-				exit(1)
-			}
-			if readLinkBodyOnly && readLinkMetaOnly {
-				errorf("Can't specify both --body-only/-b AND --meta-only/-m\n")
-				exit(1)
-			}
-
-			// The reason this is here is that
-			//     (a) FindLink isn't in walker.Datastore
-			//     (b) But we use a mock datastore for the testing
-			type Finder interface {
-				FindLink(u *walker.URL, collectContent bool) (*cassandra.LinkInfo, error)
-			}
-
-			var ds Finder
-			if commander.Datastore == nil {
-				x, err := cassandra.NewDatastore()
-				if err != nil {
-					errorf("Failed creating Cassandra datastore: %v\n", err)
-					exit(1)
-				}
-				ds = x
-			} else {
-				// we have to do this because FindLink isn't in walker.Datastore
-				var dsOk bool
-				ds, dsOk = commander.Datastore.(Finder)
-				if !dsOk {
-					errorf("Tried to use pre-configured datastore, but it wasn't a Finder\n")
-					exit(1)
-				}
-			}
-
-			u, err := walker.ParseURL(readLinkLink)
-			if err != nil {
-				errorf("Failed to parse link %v: %v\n", readLinkLink, err)
-				exit(1)
-			}
-
-			linfo, err := ds.FindLink(u, true)
-			if err != nil {
-				errorf("Failed FindLink: %v\n", err)
-				exit(1)
-			} else if linfo == nil {
-				errorf("Failed to find link %v in datastore\n", readLinkLink)
-				exit(1)
-			}
-
-			if linfo.CrawlTime.Equal(walker.NotYetCrawled) {
-				printf("Link %v is present, but has not yet been fetched\n", readLinkLink)
-				exit(0)
-			}
-
-			if !readLinkBodyOnly {
-				estring := "\n"
-				if linfo.Error != "" {
-					estring := "\n"
-					lines := strings.Split(linfo.Error, "\n")
-					for _, l := range lines {
-						estring += fmt.Sprintf("    %v\n", l)
-					}
-				}
-
-				printf("Url:            %v\n", linfo.URL)
-				printf("HttpStatus:     %v\n", linfo.Status)
-				printf("CrawlTime:      %v\n", linfo.CrawlTime)
-				printf("Error:          %v", estring)
-				printf("RobotsExcluded: %v\n", linfo.RobotsExcluded)
-				printf("RedirectedTo:   %v\n", linfo.RedirectedTo)
-				printf("GetNow:         %v\n", linfo.GetNow)
-				printf("Mime:           %v\n", linfo.Mime)
-				printf("FnvFingerprint: %v\n", linfo.FnvFingerprint)
-				if linfo.Headers == nil {
-					printf("HEADERS:        <none>\n")
-				} else {
-					keys := []string{}
-					for k := range linfo.Headers {
-						keys = append(keys, k)
-					}
-					sort.Strings(keys)
-
-					printf("HEADERS:\n")
-					for _, k := range keys {
-						for _, v := range linfo.Headers[k] {
-							printf("    %v: %v\n", k, v)
-						}
-					}
-				}
-			}
-
-			if !readLinkMetaOnly {
-				if !readLinkBodyOnly {
-					if linfo.Body == "" {
-						printf("BODY:           <none>\n")
-					} else {
-						printf("BODY:\n%v\n", linfo.Body)
-					}
-				} else {
-					printf("%v\n", linfo.Body)
-				}
-			}
-			exit(0)
-		},
-	}
 	readLinkCommand.Flags().StringVarP(&readLinkLink, "url", "u", "", "Url to lookup")
 	readLinkCommand.Flags().BoolVarP(&readLinkBodyOnly, "body-only", "b", false,
 		"Use this flag to get the http body only")
