@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bytes"
+	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path"
 	"strings"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/helpers"
 
 	"github.com/stretchr/testify/mock"
@@ -198,4 +202,213 @@ func TestSchemaCommand(t *testing.T) {
 	if !strings.HasPrefix(string(f), "-- The schema file for walker") {
 		t.Fatalf("test.cql has unexpected contents: %v", f)
 	}
+}
+
+type ExitCarrier struct {
+	stat int
+}
+
+// executeInSandbox sets the commander up so that we can capture stdout, stderr, and exit status.
+// The return values are
+//  (a) stdout string
+//  (b) stderr string
+//  (c) exit status integer (exit status is < 0 if exit was not called by the calling program)
+func executeInSandbox(t *testing.T) (out string, err string, status int) {
+	origPf := commander.printf
+	origEf := commander.errorf
+	origEx := commander.exit
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	commander.printf = func(format string, args ...interface{}) {
+		stdout.WriteString(fmt.Sprintf(format, args...))
+	}
+
+	commander.errorf = func(format string, args ...interface{}) {
+		stderr.WriteString(fmt.Sprintf(format, args...))
+	}
+
+	commander.exit = func(status int) {
+		panic(&ExitCarrier{stat: status})
+	}
+
+	defer func() {
+		out = stdout.String()
+		err = stderr.String()
+		status = -1
+
+		thrown := recover()
+		if thrown != nil {
+			ec, ecOk := thrown.(*ExitCarrier)
+			if !ecOk {
+				// Forward any panics not ExitCarrier
+				panic(fmt.Sprintf("Unexpected exception in executeInSandbox:\n%v", thrown))
+			}
+			status = ec.stat
+		}
+
+		commander.printf = origPf
+		commander.errorf = origEf
+		commander.exit = origEx
+	}()
+
+	Execute()
+	return
+}
+
+func compareLongString(leftStr string, rightStr string) (match bool, leftLine string, rightLine string) {
+	left := strings.Split(leftStr, "\n")
+	right := strings.Split(rightStr, "\n")
+
+	for i := 0; ; i++ {
+		if i >= len(left) && i >= len(right) {
+			match = true
+			return
+		} else if i >= len(left) {
+			leftLine = "<<<no data>>>"
+			rightLine = right[i]
+			return
+		} else if i >= len(right) {
+			leftLine = left[i]
+			rightLine = "<<<no data>>>"
+			return
+		}
+
+		l := strings.TrimSpace(left[i])
+		r := strings.TrimSpace(right[i])
+		if l != r {
+			leftLine = left[i]
+			rightLine = right[i]
+			return
+		}
+	}
+
+	return
+}
+
+func TestReadlinkCommand(t *testing.T) {
+	// Define some useful constants
+	goodUrl, _ := walker.ParseURL("http://test.com/page1.com")
+	crawlTime, _ := time.Parse("Mon Jan 2 15:04:05 -0700 MST 2006", "Mon Jan 2 15:04:05 -0700 MST 2006")
+	body := `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+	Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`
+
+	headers := http.Header{
+		"foo": []string{"bar"},
+		"baz": []string{"click", "clack"},
+	}
+
+	// Define some link infos
+	notYetCrawledLinfo := cassandra.LinkInfo{
+		URL:       goodUrl,
+		CrawlTime: walker.NotYetCrawled,
+	}
+
+	goodLinfo := cassandra.LinkInfo{
+		URL:            goodUrl,
+		Status:         200,
+		CrawlTime:      crawlTime,
+		Error:          "A nice long\nError\nwith plenty of \nnewlines and such\n",
+		RobotsExcluded: false,
+		RedirectedTo:   "",
+		GetNow:         true,
+		Mime:           "text/html",
+		Body:           body,
+		Headers:        headers,
+	}
+
+	// Define test table
+	tests := []struct {
+		tag    string
+		call   []string
+		linfo  *cassandra.LinkInfo
+		stdout string
+		stderr string
+		estat  int
+	}{
+
+		{
+			tag:    "linkNotThere",
+			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			linfo:  nil,
+			stderr: "Failed to find link http://test.com/page1.com in datastore",
+			estat:  1,
+		},
+
+		{
+			tag:    "notYetCrawled",
+			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			linfo:  &notYetCrawledLinfo,
+			stdout: "Link http://test.com/page1.com is present, but has not yet been fetched",
+			estat:  0,
+		},
+
+		{
+			tag:   "standard",
+			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			linfo: &goodLinfo,
+			estat: 0,
+			stdout: `Url:            http://test.com/page1.com
+HttpStatus:     200
+CrawlTime:      2006-01-02 15:04:05 -0700 MST
+Error:          
+RobotsExcluded: false
+RedirectedTo:   
+GetNow:         true
+Mime:           text/html
+FnvFingerprint: 0
+HEADERS:
+    foo: bar
+    baz: click
+    baz: clack
+BODY:
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>No Links</title>
+</head>
+<div>
+        Roses are red, violets are blue, golang is the bomb, aint it so true!
+</div>
+</html>`,
+		},
+	}
+
+	for _, tst := range tests {
+		datastore := &helpers.MockDatastore{}
+		datastore.On("FindLink", goodUrl, true).Return(tst.linfo, nil)
+		Datastore(datastore)
+		origArgs := os.Args
+		os.Args = tst.call
+		stdout, stderr, estat := executeInSandbox(t)
+		stdout = strings.TrimSpace(stdout)
+		stderr = strings.TrimSpace(stderr)
+
+		if estat != tst.estat {
+			t.Errorf("Estat mismatch for tag %v expected %d, but got %d", tst.tag, tst.estat, estat)
+		}
+
+		ok, l, r := compareLongString(tst.stdout, stdout)
+		if !ok {
+			t.Errorf("Stdout mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag, l, r)
+		}
+
+		ok, l, r = compareLongString(tst.stderr, stderr)
+		if !ok {
+			t.Errorf("Stderr mismatch for tag %v expected difference line:\n%v\ngot difference line:\n%v\n", tst.tag, l, r)
+		}
+
+		os.Args = origArgs
+	}
+
 }

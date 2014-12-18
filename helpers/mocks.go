@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/cassandra"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -51,6 +52,11 @@ func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
 func (ds *MockDatastore) KeepAlive() error {
 	ds.Mock.Called()
 	return nil
+}
+
+func (ds *MockDatastore) FindLink(u *walker.URL, collectContent bool) (*cassandra.LinkInfo, error) {
+	args := ds.Mock.Called(u, collectContent)
+	return args.Get(0).(*cassandra.LinkInfo), args.Error(1)
 }
 
 type MockHandler struct {
