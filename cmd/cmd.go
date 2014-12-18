@@ -221,7 +221,6 @@ var readLinkCommand = &cobra.Command{
 		if !readLinkBodyOnly {
 			estring := "\n"
 			if linfo.Error != "" {
-				estring := "\n"
 				lines := strings.Split(linfo.Error, "\n")
 				for _, l := range lines {
 					estring += fmt.Sprintf("    %v\n", l)

@@ -318,7 +318,7 @@ func TestReadlinkCommand(t *testing.T) {
 		URL:            goodUrl,
 		Status:         200,
 		CrawlTime:      crawlTime,
-		Error:          "A nice long\nError\nwith plenty of \nnewlines and such\n",
+		Error:          "A nice long\nError\nwith plenty of \nnewlines and such",
 		RobotsExcluded: false,
 		RedirectedTo:   "",
 		GetNow:         true,
@@ -369,7 +369,11 @@ func TestReadlinkCommand(t *testing.T) {
 			stdout: `Url:            http://test.com/page1.com
 HttpStatus:     200
 CrawlTime:      2006-01-02 15:04:05 -0700 MST
-Error:          
+Error:
+    A nice long
+    Error
+    with plenty of
+    newlines and such           
 RobotsExcluded: false
 RedirectedTo:   
 GetNow:         true
@@ -400,7 +404,11 @@ BODY:
 			stdout: `Url:            http://test.com/page1.com
 HttpStatus:     200
 CrawlTime:      2006-01-02 15:04:05 -0700 MST
-Error:          
+Error: 
+    A nice long
+    Error
+    with plenty of
+    newlines and such         
 RobotsExcluded: false
 RedirectedTo:   
 GetNow:         true
@@ -448,17 +456,16 @@ HEADERS:
 
 		ok, l, r := compareLongString(tst.stdout, stdout)
 		if !ok {
-			t.Errorf("Stdout mismatch for tag %v\nexpected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+			t.Errorf("Stdout mismatch for tag %v\n--expected-- difference line:\n%v\n--got-- difference line:\n%v\n", tst.tag,
 				l, r)
 		}
 
 		ok, l, r = compareLongString(tst.stderr, stderr)
 		if !ok {
-			t.Errorf("Stderr mismatch for tag %v\nexpected difference line:\n%v\ngot difference line:\n%v\n", tst.tag,
+			t.Errorf("Stderr mismatch for tag %v\n--expected-- difference line:\n%v\n--got-- difference line:\n%v\n", tst.tag,
 				l, r)
 		}
 
 		os.Args = origArgs
 	}
-
 }
