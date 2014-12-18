@@ -392,6 +392,26 @@ BODY:
 		},
 
 		{
+			tag:   "metaOnly",
+			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-m"},
+			linfo: &goodLinfo,
+			estat: 0,
+			stdout: `Url:            http://test.com/page1.com
+HttpStatus:     200
+CrawlTime:      2006-01-02 15:04:05 -0700 MST
+Error:          
+RobotsExcluded: false
+RedirectedTo:   
+GetNow:         true
+Mime:           text/html
+FnvFingerprint: 0
+HEADERS:
+    baz: click
+    baz: clack
+    foo: bar`,
+		},
+
+		{
 			tag:   "bodyOnly",
 			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-b"},
 			linfo: &goodLinfo,
