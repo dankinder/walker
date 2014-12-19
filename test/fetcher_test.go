@@ -71,6 +71,9 @@ type TestSpec struct {
 	// is false, and transport is nil, the FetchManger uses helpers.GetFakeTransport()
 	transport http.RoundTripper
 
+	// Allows user to set the TransNoKeepAlive on fetch manager
+	transNoKeepAlive http.RoundTripper
+
 	// true means do not mock a remote server during this particular test
 	suppressMockServer bool
 }
@@ -265,6 +268,10 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		Datastore: ds,
 		Handler:   h,
 		Transport: transport,
+	}
+
+	if test.transNoKeepAlive != nil {
+		manager.TransNoKeepAlive = test.transNoKeepAlive
 	}
 
 	go manager.Start()
@@ -1621,6 +1628,103 @@ func TestStoreBody(t *testing.T) {
 	fr := stores[0]
 	if fr.Body != html {
 		t.Fatalf("Failed to match stored body: --expected--\n%q\n--got--:\n%q", html, fr.Body)
+	}
+}
+
+func TestKeepAliveThreshold(t *testing.T) {
+	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
+	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
+	origSimul := walker.Config.Fetcher.NumSimultaneousFetchers
+	defer func() {
+		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
+		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+		walker.Config.Fetcher.NumSimultaneousFetchers = origSimul
+	}()
+	walker.Config.Fetcher.HttpKeepAlive = "threshold"
+	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+	walker.Config.Fetcher.NumSimultaneousFetchers = 1
+
+	transport := helpers.GetRecordingTransport("transport")
+	transNoKeepAlive := helpers.GetRecordingTransport("transNoKeepAlive")
+
+	tests := TestSpec{
+		hasParsedLinks:   false,
+		transport:        transport,
+		transNoKeepAlive: transNoKeepAlive,
+		hosts: []DomainSpec{
+			DomainSpec{
+				domain: "a.com",
+				links: []LinkSpec{
+					LinkSpec{
+						url: "http://a.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 0\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://a.com/page1.html",
+					},
+
+					LinkSpec{
+						url: "http://a.com/page2.html",
+					},
+				},
+			},
+
+			DomainSpec{
+				domain: "b.com",
+				links: []LinkSpec{
+					LinkSpec{
+						url: "http://b.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 1\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://b.com/page1.html",
+					},
+				},
+			},
+		},
+	}
+
+	runFetcher(tests, 2*defaultSleep, t)
+
+	expectInTransport := map[string]bool{
+		"http://a.com/page1.html": true,
+		"http://a.com/page2.html": true,
+	}
+
+	expectInTransNoKeepAlive := map[string]bool{
+		"http://a.com/robots.txt": true,
+		"http://b.com/robots.txt": true,
+		"http://b.com/page1.html": true,
+	}
+
+	for _, v := range transport.Record {
+		if expectInTransport[v] {
+			delete(expectInTransport, v)
+		} else {
+			t.Errorf("Unknown link found in transport: %v", v)
+		}
+	}
+	for v := range expectInTransport {
+		t.Errorf("Expected to find link %v in transport, but didn't", v)
+	}
+
+	for _, v := range transNoKeepAlive.Record {
+		if expectInTransNoKeepAlive[v] {
+			delete(expectInTransNoKeepAlive, v)
+		} else {
+			t.Errorf("Unknown link found in transNoKeepAlive: %v", v)
+		}
+	}
+	for v := range expectInTransNoKeepAlive {
+		t.Errorf("Expected to find link %v in transNoKeepAlive, but didn't", v)
 	}
 }
 

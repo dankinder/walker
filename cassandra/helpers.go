@@ -30,6 +30,7 @@ func GetConfig() *gocql.ClusterConfig {
 	config.NumStreams = walker.Config.Cassandra.NumStreams
 	config.DiscoverHosts = walker.Config.Cassandra.DiscoverHosts
 	config.MaxPreparedStmts = walker.Config.Cassandra.MaxPreparedStmts
+	config.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: walker.Config.Cassandra.NumQueryRetries}
 	return config
 }
 
@@ -136,8 +137,11 @@ CREATE TABLE {{.Keyspace}}.links (
 	-- fnv fingerprint, a hash of the page contents for identity comparison
 	fnv bigint,
 
-	-- body stores the content for this link (if $datastore.store_response_body is true)
+	-- body stores the content for this link (if cassandra.store_response_body is true)
 	body text,
+
+	-- headers stores the http headers for this link (if cassandra.store_response_headers is true)
+	headers MAP<text,text>,
 
 	---- Items yet to be added to walker
 

@@ -95,6 +95,13 @@ type FetchManager struct {
 	// testing.
 	Transport http.RoundTripper
 
+	// TransNoKeepAlive stores a RoundTripper with Keep-Alive set to 0 IF
+	// http_keep_alive == "threshold". Otherwise it's nil.
+	TransNoKeepAlive http.RoundTripper
+
+	// Parsed duration of the string Config.Fetcher.HttpKeepAliveThreshold
+	KeepAliveThreshold time.Duration
+
 	fetchers  []*fetcher
 	fetchWait sync.WaitGroup
 	started   bool
@@ -182,11 +189,22 @@ func (fm *FetchManager) Start() {
 
 	fm.started = true
 
+	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
+	if err != nil {
+		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+		panic(err)
+	}
+
+	fm.KeepAliveThreshold, err = time.ParseDuration(Config.Fetcher.HttpKeepAliveThreshold)
+	if err != nil {
+		// Shouldn't happen since this variable is parsed in assertConfigInvariants
+		panic(err)
+	}
+
 	if fm.Transport == nil {
-		timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
-		if err != nil {
-			// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
-			panic(err)
+		keepAlive := 30 * time.Second
+		if strings.ToLower(Config.Fetcher.HttpKeepAlive) == "never" {
+			keepAlive = 0 * time.Second
 		}
 
 		// Set fm.Transport == http.DefaultTransport, but create a new one; we
@@ -196,22 +214,47 @@ func (fm *FetchManager) Start() {
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   timeout,
-				KeepAlive: 30 * time.Second,
+				KeepAlive: keepAlive,
 			}).Dial,
 			TLSHandshakeTimeout: 10 * time.Second,
 		}
 	}
+	if fm.TransNoKeepAlive == nil && strings.ToLower(Config.Fetcher.HttpKeepAlive) == "threshold" {
+		fm.TransNoKeepAlive = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial: (&net.Dialer{
+				Timeout:   timeout,
+				KeepAlive: 0 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
+	}
+
 	t, ok := fm.Transport.(*http.Transport)
 	if ok {
 		var err error
 		t.Dial, err = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
 		if err != nil {
 			// This should be a very rare panic
-			log4go.Error("Failed to construct dnscacheing Dialer: %v", err)
+			log4go.Error("Failed to construct dnscacheing Dialer for Transport: %v", err)
 			panic(err)
 		}
 	} else {
-		log4go.Info("Given an non-http transport, not using dns caching")
+		log4go.Info("Given an non-http Transport, not using dns caching")
+	}
+
+	if fm.TransNoKeepAlive != nil {
+		t, ok = fm.TransNoKeepAlive.(*http.Transport)
+		if ok {
+			t.Dial, err = dnscache.Dial(t.Dial, Config.Fetcher.MaxDNSCacheEntries)
+			if err != nil {
+				// This should be a very rare panic
+				log4go.Error("Failed to construct dnscacheing Dialer for TransNoKeepAlive: %v", err)
+				panic(err)
+			}
+		} else {
+			log4go.Info("Given a non-http TransNoKeepAlive, not using dns caching")
+		}
 	}
 
 	numFetchers := Config.Fetcher.NumSimultaneousFetchers
@@ -386,6 +429,7 @@ func (f *fetcher) crawlNewHost() bool {
 		}
 
 		robots := f.fetchRobots(link.Host)
+
 		shouldDelay, crawlDelayClockStart := f.fetchAndHandle(link, robots)
 		if shouldDelay {
 			// fetchTime is the last server GET (not counting robots.txt GET's). So
@@ -522,6 +566,22 @@ func (f *fetcher) stop() {
 	<-f.done
 }
 
+func (f *fetcher) resetTransport() {
+	if f.fm.TransNoKeepAlive != nil {
+		f.httpclient.Transport = f.fm.TransNoKeepAlive
+	}
+}
+
+func (f *fetcher) setTransportFromCrawlDelay(crawlDelay time.Duration) {
+	if f.fm.TransNoKeepAlive != nil {
+		if crawlDelay > f.fm.KeepAliveThreshold {
+			f.httpclient.Transport = f.fm.TransNoKeepAlive
+		} else {
+			f.httpclient.Transport = f.fm.Transport
+		}
+	}
+}
+
 // initializeRobotsMap inits the robotsMap system
 func (f *fetcher) initializeRobotsMap(host string) {
 
@@ -532,18 +592,22 @@ func (f *fetcher) initializeRobotsMap(host string) {
 
 	// try read $host/robots.txt. Failure to GET, will just returns
 	// f.defRobots before call
+	f.resetTransport()
 	f.robotsMap = map[string]*robotstxt.Group{}
 	f.defRobots = f.getRobots(host)
 	f.robotsMap[host] = f.defRobots
+	f.setTransportFromCrawlDelay(f.defRobots.CrawlDelay)
 }
 
 // fetchRobots is a caching version of getRobots
 func (f *fetcher) fetchRobots(host string) *robotstxt.Group {
 	rob, robOk := f.robotsMap[host]
 	if !robOk {
+		f.resetTransport()
 		rob = f.getRobots(host)
 		f.robotsMap[host] = rob
 	}
+	f.setTransportFromCrawlDelay(rob.CrawlDelay)
 	return rob
 }
 

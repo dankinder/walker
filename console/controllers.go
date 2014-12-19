@@ -636,7 +636,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	lines := strings.Split(text, "\n")
 	var info []string
 	var errs []string
-	var linfos []*cassandra.LinkInfo
+	var linfos []*walker.LinkInfo
 	for i := range lines {
 		link := strings.TrimSpace(lines[i])
 		if link == "" {
@@ -655,7 +655,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		linfo, err := DS.FindLink(u)
+		linfo, err := DS.FindLink(u, false)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("FindLinks error: %v", err))
 			continue

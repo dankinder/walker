@@ -26,9 +26,9 @@ import (
 var fooTime = time.Now().AddDate(0, 0, -1)
 var testTime = time.Now().AddDate(0, 0, -2)
 var bazUuid, _ = gocql.RandomUUID()
-var testComLinkOrder []LinkInfo
-var testComLinkHash = map[string]LinkInfo{
-	"http://test.com/page1.html": LinkInfo{
+var testComLinkOrder []walker.LinkInfo
+var testComLinkHash = map[string]walker.LinkInfo{
+	"http://test.com/page1.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://test.com/page1.html"),
 		Status:         200,
 		Error:          "",
@@ -36,7 +36,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page2.html": LinkInfo{
+	"http://test.com/page2.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://test.com/page2.html"),
 		Status:         200,
 		Error:          "",
@@ -44,7 +44,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page3.html": LinkInfo{
+	"http://test.com/page3.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://test.com/page3.html"),
 		Status:         404,
 		Error:          "",
@@ -52,7 +52,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page4.html": LinkInfo{
+	"http://test.com/page4.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://test.com/page4.html"),
 		Status:         200,
 		Error:          "An Error",
@@ -60,7 +60,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page5.html": LinkInfo{
+	"http://test.com/page5.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://test.com/page5.html"),
 		Status:         200,
 		Error:          "",
@@ -68,7 +68,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://sub.test.com/page6.html": LinkInfo{
+	"http://sub.test.com/page6.html": walker.LinkInfo{
 		URL:            helpers.Parse("http://sub.test.com/page6.html"),
 		Status:         200,
 		Error:          "",
@@ -76,7 +76,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page7.html": LinkInfo{
+	"https://sub.test.com/page7.html": walker.LinkInfo{
 		URL:            helpers.Parse("https://sub.test.com/page7.html"),
 		Status:         200,
 		Error:          "",
@@ -84,7 +84,7 @@ var testComLinkHash = map[string]LinkInfo{
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page8.html": LinkInfo{
+	"https://sub.test.com/page8.html": walker.LinkInfo{
 		URL:            helpers.Parse("https://sub.test.com/page8.html"),
 		Status:         200,
 		Error:          "",
@@ -93,35 +93,35 @@ var testComLinkHash = map[string]LinkInfo{
 	},
 }
 
-var bazLinkHistoryOrder []LinkInfo
+var bazLinkHistoryOrder []walker.LinkInfo
 
-var bazLinkHistoryInit = []LinkInfo{
-	LinkInfo{
+var bazLinkHistoryInit = []walker.LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: walker.NotYetCrawled,
 	},
-	LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -1),
 	},
-	LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -2),
 	},
-	LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -3),
 	},
-	LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -4),
 	},
-	LinkInfo{
+	walker.LinkInfo{
 		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -5),
@@ -154,7 +154,7 @@ type linkTest struct {
 	seedURL     *walker.URL
 	filterRegex string
 	limit       int
-	expected    []LinkInfo
+	expected    []walker.LinkInfo
 }
 
 const LIM = 50
@@ -661,8 +661,8 @@ func TestListLinks(t *testing.T) {
 			tag:    "foo pull",
 			domain: "foo.com",
 			limit:  LIM,
-			expected: []LinkInfo{
-				LinkInfo{
+			expected: []walker.LinkInfo{
+				walker.LinkInfo{
 					URL:            helpers.Parse("http://sub.foo.com/page1.html"),
 					Status:         200,
 					Error:          "",
@@ -670,7 +670,7 @@ func TestListLinks(t *testing.T) {
 					CrawlTime:      fooTime,
 				},
 
-				LinkInfo{
+				walker.LinkInfo{
 					URL:            helpers.Parse("http://sub.foo.com/page2.html"),
 					Status:         200,
 					Error:          "",
@@ -684,7 +684,7 @@ func TestListLinks(t *testing.T) {
 			tag:      "bar pull",
 			domain:   "bar.com",
 			limit:    LIM,
-			expected: []LinkInfo{},
+			expected: []walker.LinkInfo{},
 		},
 
 		linkTest{
@@ -979,7 +979,7 @@ func TestCloseToLimitBug(t *testing.T) {
 			domain:   "baz.com",
 			tag:      "bug exposed with limit 1",
 			limit:    1,
-			expected: []LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
+			expected: []walker.LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
 		},
 	}
 
@@ -1034,13 +1034,13 @@ func TestFilterRegex(t *testing.T) {
 	// This function composes LinkInfo array from the urls in filterURLs. The
 	// index argument corresponds to  which element of filterURLs to include
 	// in the LinkInfo list.
-	pickFiltered := func(index ...int) []LinkInfo {
-		var r []LinkInfo
+	pickFiltered := func(index ...int) []walker.LinkInfo {
+		var r []walker.LinkInfo
 		for _, i := range index {
 			if i >= len(filterURLs) || i < 0 {
 				panic("INTERNAL ERROR")
 			}
-			r = append(r, LinkInfo{
+			r = append(r, walker.LinkInfo{
 				URL: helpers.Parse(filterURLs[i]),
 			})
 		}
