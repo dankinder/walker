@@ -156,6 +156,10 @@ cassandra:
     # with the link.
     store_response_body: false
 
+    # If this is set to true, walker will store the HTTP headers of the request along 
+    # with the link.
+    store_response_headers: false
+
 
 # Console specific config
 console:
