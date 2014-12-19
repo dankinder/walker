@@ -71,6 +71,9 @@ type TestSpec struct {
 	// is false, and transport is nil, the FetchManger uses helpers.GetFakeTransport()
 	transport http.RoundTripper
 
+	// Allows user to set the TransNoKeepAlive on fetch manager
+	transNoKeepAlive http.RoundTripper
+
 	// true means do not mock a remote server during this particular test
 	suppressMockServer bool
 }
@@ -265,6 +268,10 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		Datastore: ds,
 		Handler:   h,
 		Transport: transport,
+	}
+
+	if test.transNoKeepAlive != nil {
+		manager.TransNoKeepAlive = test.transNoKeepAlive
 	}
 
 	go manager.Start()
@@ -1622,4 +1629,72 @@ func TestStoreBody(t *testing.T) {
 	if fr.Body != html {
 		t.Fatalf("Failed to match stored body: --expected--\n%q\n--got--:\n%q", html, fr.Body)
 	}
+}
+
+func TestKeepAliveThreshold(t *testing.T) {
+	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
+	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
+
+	defer func() {
+		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
+		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+	}()
+	walker.Config.Fetcher.HttpKeepAlive = "threshold"
+	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+
+	transport := helpers.GetFakeDialRecordingTransport("transport")
+	transNoKeepAlive := helpers.GetFakeDialRecordingTransport("transNoKeepAlive")
+
+	tests := TestSpec{
+		hasParsedLinks:   false,
+		transport:        transport,
+		transNoKeepAlive: transNoKeepAlive,
+
+		hosts: []DomainSpec{
+			DomainSpec{
+				domain: "a.com",
+				links: []LinkSpec{
+					LinkSpec{
+						url: "http://a.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 0\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://a.com/page1.html",
+					},
+				},
+			},
+
+			DomainSpec{
+				domain: "b.com",
+				links: []LinkSpec{
+					LinkSpec{
+						url: "http://b.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nCrawl-delay: 1\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://b.com/page1.html",
+					},
+				},
+			},
+		},
+	}
+
+	runFetcher(tests, 5*time.Second, t)
+
+	for _, v := range transport.Record {
+		t.Log("PETE transport " + v)
+	}
+	for _, v := range transNoKeepAlive.Record {
+		t.Log("PETE transNoKeepAlive " + v)
+	}
+
+	t.FailNow()
 }

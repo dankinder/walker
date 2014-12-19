@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"code.google.com/p/log4go"
 	"github.com/iParadigms/walker"
 )
 
@@ -52,6 +53,37 @@ func GetFakeTransport() http.RoundTripper {
 		Dial:                FakeDial,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
+}
+
+//
+// Count how many times the Dial routine is called
+//
+type DialRecordingTransport struct {
+	http.Transport
+	Name   string
+	Record []string
+}
+
+func (self *DialRecordingTransport) Dial(network, addr string) (net.Conn, error) {
+	before := self.Record
+	self.Record = append(self.Record, addr)
+	log4go.Error("PETE Dial %q --> %v :: %v", self.Name, before, self.Record)
+
+	return FakeDial(network, addr)
+}
+
+func GetFakeDialRecordingTransport(name string) *DialRecordingTransport {
+	r := &DialRecordingTransport{
+		Transport: http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+		Name: name,
+	}
+
+	r.Transport.Dial = r.Dial
+
+	return r
 }
 
 //
