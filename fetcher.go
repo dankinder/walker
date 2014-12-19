@@ -428,10 +428,7 @@ func (f *fetcher) crawlNewHost() bool {
 		default:
 		}
 
-		log4go.Error("PETE Pre fetch %v", f.httpclient.Transport)
 		robots := f.fetchRobots(link.Host)
-		log4go.Error("PETE POST fetch %v", f.httpclient.Transport)
-		log4go.Error("PETE setTrans for (host=%v) %v is %v", link.Host, link, f.httpclient.Transport)
 
 		// Set which dialer to use here based on robots.CrawlDelay
 		shouldDelay, crawlDelayClockStart := f.fetchAndHandle(link, robots)

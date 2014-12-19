@@ -67,7 +67,6 @@ type RecordingTransport struct {
 
 func (self *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	self.Record = append(self.Record, req.URL.String())
-	log4go.Error("PETE RoundTrip Recording %v for %v", self.Record, self.Name)
 	return self.Transport.RoundTrip(req)
 }
 

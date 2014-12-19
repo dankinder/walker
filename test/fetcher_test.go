@@ -243,7 +243,6 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 			}
 		}
 		if !test.hasNoLinks {
-			t.Logf("PETE LinksForHost %v : %v", host.domain, urls)
 			ds.On("LinksForHost", host.domain).Return(urls)
 		}
 		ds.On("UnclaimHost", host.domain).Return()
