@@ -169,6 +169,8 @@ cassandra:
     # with the link.
     store_response_headers: false
 
+    # How many times to retry a cassandra query before the query resolves in error
+    num_query_retries: 3
 
 # Console specific config
 console:

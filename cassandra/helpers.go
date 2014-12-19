@@ -30,6 +30,7 @@ func GetConfig() *gocql.ClusterConfig {
 	config.NumStreams = walker.Config.Cassandra.NumStreams
 	config.DiscoverHosts = walker.Config.Cassandra.DiscoverHosts
 	config.MaxPreparedStmts = walker.Config.Cassandra.MaxPreparedStmts
+	config.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: walker.Config.Cassandra.NumQueryRetries}
 	return config
 }
 
