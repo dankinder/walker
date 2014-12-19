@@ -100,9 +100,9 @@ fetcher:
     # connection alive if the target sites robots.Crawl-Delay is less than http_keep_alive_threshold)
     http_keep_alive: "always"
 
-    # If http_keep_alive is set to "threashold", sets the Keep-Alive policy (see above). Otherwise,
+    # If http_keep_alive is set to "threshold", sets the Keep-Alive policy (see above). Otherwise,
     # this variable is unused.
-    http_keep_alive_threashold: 15s
+    http_keep_alive_threshold: 15s
 
 # Dispatcher configuration
 dispatcher:

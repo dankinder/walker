@@ -59,7 +59,7 @@ type WalkerConfig struct {
 		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
 		HttpKeepAlive            string   `yaml:"http_keep_alive"`
-		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threashold"`
+		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {

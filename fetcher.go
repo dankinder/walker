@@ -96,7 +96,7 @@ type FetchManager struct {
 	Transport http.RoundTripper
 
 	// TransNoKeepAlive stores a RoundTripper with Keep-Alive set to 0 IF
-	// http_keep_alive == "threashold". Otherwise it's nil.
+	// http_keep_alive == "threshold". Otherwise it's nil.
 	TransNoKeepAlive http.RoundTripper
 
 	// Parsed duration of the string Config.Fetcher.HttpKeepAliveThreshold
