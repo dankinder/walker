@@ -53,6 +53,11 @@ func (ds *MockDatastore) KeepAlive() error {
 	return nil
 }
 
+func (ds *MockDatastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error) {
+	args := ds.Mock.Called(u, collectContent)
+	return args.Get(0).(*walker.LinkInfo), args.Error(1)
+}
+
 type MockHandler struct {
 	mock.Mock
 }

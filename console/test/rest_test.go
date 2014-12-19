@@ -89,7 +89,7 @@ func TestAdd(t *testing.T) {
 	}
 
 	for _, link := range links {
-		linfo, err := console.DS.FindLink(helpers.Parse(link))
+		linfo, err := console.DS.FindLink(helpers.Parse(link), false)
 		if err != nil {
 			t.Errorf("Expected to find link %q in datastore, but found an error %v instead", link, err)
 			continue
