@@ -243,6 +243,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 			}
 		}
 		if !test.hasNoLinks {
+			t.Logf("PETE LinksForHost %v : %v", host.domain, urls)
 			ds.On("LinksForHost", host.domain).Return(urls)
 		}
 		ds.On("UnclaimHost", host.domain).Return()
@@ -1634,16 +1635,18 @@ func TestStoreBody(t *testing.T) {
 func TestKeepAliveThreshold(t *testing.T) {
 	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
 	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
-
+	origSimul := walker.Config.Fetcher.NumSimultaneousFetchers
 	defer func() {
 		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
 		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+		walker.Config.Fetcher.NumSimultaneousFetchers = origSimul
 	}()
 	walker.Config.Fetcher.HttpKeepAlive = "threshold"
 	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+	walker.Config.Fetcher.NumSimultaneousFetchers = 1
 
-	transport := helpers.GetFakeDialRecordingTransport("transport")
-	transNoKeepAlive := helpers.GetFakeDialRecordingTransport("transNoKeepAlive")
+	transport := helpers.GetRecordingTransport("transport")
+	transNoKeepAlive := helpers.GetRecordingTransport("transNoKeepAlive")
 
 	tests := TestSpec{
 		hasParsedLinks:   false,
@@ -1664,6 +1667,10 @@ func TestKeepAliveThreshold(t *testing.T) {
 
 					LinkSpec{
 						url: "http://a.com/page1.html",
+					},
+
+					LinkSpec{
+						url: "http://a.com/page2.html",
 					},
 				},
 			},
@@ -1687,14 +1694,38 @@ func TestKeepAliveThreshold(t *testing.T) {
 		},
 	}
 
-	runFetcher(tests, 5*time.Second, t)
+	runFetcher(tests, 2*defaultSleep, t)
+
+	expectInTransport := map[string]bool{
+		"http://a.com/page1.html": true,
+		"http://a.com/page2.html": true,
+	}
+
+	expectInTransNoKeepAlive := map[string]bool{
+		"http://a.com/robots.txt": true,
+		"http://b.com/robots.txt": true,
+		"http://b.com/page1.html": true,
+	}
 
 	for _, v := range transport.Record {
-		t.Log("PETE transport " + v)
+		if expectInTransport[v] {
+			delete(expectInTransport, v)
+		} else {
+			t.Errorf("Unknown link found in transport: %v", v)
+		}
 	}
-	for _, v := range transNoKeepAlive.Record {
-		t.Log("PETE transNoKeepAlive " + v)
+	for v := range expectInTransport {
+		t.Errorf("Expected to find link %v in transport, but didn't", v)
 	}
 
-	t.FailNow()
+	for _, v := range transNoKeepAlive.Record {
+		if expectInTransNoKeepAlive[v] {
+			delete(expectInTransNoKeepAlive, v)
+		} else {
+			t.Errorf("Unknown link found in transNoKeepAlive: %v", v)
+		}
+	}
+	for v := range expectInTransNoKeepAlive {
+		t.Errorf("Expected to find link %v in transNoKeepAlive, but didn't", v)
+	}
 }

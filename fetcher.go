@@ -428,14 +428,10 @@ func (f *fetcher) crawlNewHost() bool {
 		default:
 		}
 
+		log4go.Error("PETE Pre fetch %v", f.httpclient.Transport)
 		robots := f.fetchRobots(link.Host)
-		if f.fm.TransNoKeepAlive != nil {
-			if robots.CrawlDelay > f.fm.KeepAliveThreshold {
-				f.httpclient.Transport = f.fm.TransNoKeepAlive
-			} else {
-				f.httpclient.Transport = f.fm.Transport
-			}
-		}
+		log4go.Error("PETE POST fetch %v", f.httpclient.Transport)
+		log4go.Error("PETE setTrans for (host=%v) %v is %v", link.Host, link, f.httpclient.Transport)
 
 		// Set which dialer to use here based on robots.CrawlDelay
 		shouldDelay, crawlDelayClockStart := f.fetchAndHandle(link, robots)
@@ -574,6 +570,22 @@ func (f *fetcher) stop() {
 	<-f.done
 }
 
+func (f *fetcher) resetTransport() {
+	if f.fm.TransNoKeepAlive != nil {
+		f.httpclient.Transport = f.fm.TransNoKeepAlive
+	}
+}
+
+func (f *fetcher) setTransportFromCrawlDelay(crawlDelay time.Duration) {
+	if f.fm.TransNoKeepAlive != nil {
+		if crawlDelay > f.fm.KeepAliveThreshold {
+			f.httpclient.Transport = f.fm.TransNoKeepAlive
+		} else {
+			f.httpclient.Transport = f.fm.Transport
+		}
+	}
+}
+
 // initializeRobotsMap inits the robotsMap system
 func (f *fetcher) initializeRobotsMap(host string) {
 
@@ -584,18 +596,22 @@ func (f *fetcher) initializeRobotsMap(host string) {
 
 	// try read $host/robots.txt. Failure to GET, will just returns
 	// f.defRobots before call
+	f.resetTransport()
 	f.robotsMap = map[string]*robotstxt.Group{}
 	f.defRobots = f.getRobots(host)
 	f.robotsMap[host] = f.defRobots
+	f.setTransportFromCrawlDelay(f.defRobots.CrawlDelay)
 }
 
 // fetchRobots is a caching version of getRobots
 func (f *fetcher) fetchRobots(host string) *robotstxt.Group {
 	rob, robOk := f.robotsMap[host]
 	if !robOk {
+		f.resetTransport()
 		rob = f.getRobots(host)
 		f.robotsMap[host] = rob
 	}
+	f.setTransportFromCrawlDelay(rob.CrawlDelay)
 	return rob
 }
 
