@@ -58,6 +58,8 @@ type WalkerConfig struct {
 		ActiveFetchersTTL        string   `yaml:"active_fetchers_ttl"`
 		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
+		HttpKeepAlive            string   `yaml:"http_keep_alive"`
+		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
@@ -133,6 +135,8 @@ func SetDefaultConfig() {
 	Config.Fetcher.ActiveFetchersTTL = "15m"
 	Config.Fetcher.ActiveFetchersCacheratio = 0.75
 	Config.Fetcher.ActiveFetchersKeepratio = 0.75
+	Config.Fetcher.HttpKeepAlive = "always"
+	Config.Fetcher.HttpKeepAliveThreshold = "15s"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -231,6 +235,16 @@ func assertConfigInvariants() error {
 	}
 	if def > max {
 		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
+	}
+
+	switch strings.ToLower(fet.HttpKeepAlive) {
+	case "always", "threshold", "never":
+	default:
+		errs = append(errs, "Fetcher.HttpKeepAlive not one of (always, threshold, never)")
+	}
+	_, err = time.ParseDuration(fet.HttpKeepAliveThreshold)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Fetcher.HttpKeepAliveThreshold failed to parse: %v", err))
 	}
 
 	_, err = time.ParseDuration(Config.Cassandra.Timeout)
