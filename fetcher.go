@@ -430,7 +430,6 @@ func (f *fetcher) crawlNewHost() bool {
 
 		robots := f.fetchRobots(link.Host)
 
-		// Set which dialer to use here based on robots.CrawlDelay
 		shouldDelay, crawlDelayClockStart := f.fetchAndHandle(link, robots)
 		if shouldDelay {
 			// fetchTime is the last server GET (not counting robots.txt GET's). So
