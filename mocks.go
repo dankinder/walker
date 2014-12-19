@@ -1,4 +1,4 @@
-package helpers
+package walker
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/iParadigms/walker"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -15,11 +14,11 @@ type MockDatastore struct {
 	mock.Mock
 }
 
-func (ds *MockDatastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
+func (ds *MockDatastore) StoreParsedURL(u *URL, fr *FetchResults) {
 	ds.Mock.Called(u, fr)
 }
 
-func (ds *MockDatastore) StoreURLFetchResults(fr *walker.FetchResults) {
+func (ds *MockDatastore) StoreURLFetchResults(fr *FetchResults) {
 	ds.Mock.Called(fr)
 }
 
@@ -37,10 +36,10 @@ func (ds *MockDatastore) UnclaimAll() error {
 	return args.Error(0)
 }
 
-func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
+func (ds *MockDatastore) LinksForHost(domain string) <-chan *URL {
 	args := ds.Mock.Called(domain)
-	urls := args.Get(0).([]*walker.URL)
-	ch := make(chan *walker.URL, len(urls))
+	urls := args.Get(0).([]*URL)
+	ch := make(chan *URL, len(urls))
 	for _, u := range urls {
 		ch <- u
 	}
@@ -53,16 +52,16 @@ func (ds *MockDatastore) KeepAlive() error {
 	return nil
 }
 
-func (ds *MockDatastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error) {
+func (ds *MockDatastore) FindLink(u *URL, collectContent bool) (*LinkInfo, error) {
 	args := ds.Mock.Called(u, collectContent)
-	return args.Get(0).(*walker.LinkInfo), args.Error(1)
+	return args.Get(0).(*LinkInfo), args.Error(1)
 }
 
 type MockHandler struct {
 	mock.Mock
 }
 
-func (h *MockHandler) HandleResponse(fr *walker.FetchResults) {
+func (h *MockHandler) HandleResponse(fr *FetchResults) {
 	// Copy response body so that the fetcher code can reuse readBuffer
 	var buffer bytes.Buffer
 	_, err := buffer.ReadFrom(fr.Response.Body)

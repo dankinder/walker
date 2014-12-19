@@ -1,4 +1,4 @@
-package helpers
+package walker
 
 import (
 	"fmt"
@@ -6,23 +6,20 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
 	"path"
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/iParadigms/walker"
 )
 
 // LoadTestConfig loads the given test config yaml file. The given path is
-// assumed to be relative to the `walker/helpers/` directory, the location of this
+// assumed to be relative to the `walker/test/` directory, the location of this
 // file. This will panic if it cannot read the requested config file. If you
-// expect an error or are testing walker.ReadConfigFile, use `GetTestFileDir()`
+// expect an error or are testing ReadConfigFile, use `GetTestFileDir()`
 // instead.
 func LoadTestConfig(filename string) {
 	testdir := GetTestFileDir()
-	err := walker.ReadConfigFile(path.Join(testdir, filename))
+	err := ReadConfigFile(path.Join(testdir, filename))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -36,7 +33,7 @@ func GetTestFileDir() string {
 	if !ok {
 		panic("Failed to get location of test source file")
 	}
-	return path.Dir(p)
+	return path.Join(path.Dir(p), "test")
 }
 
 // FakeDial makes connections to localhost, no matter what addr was given.
@@ -231,21 +228,14 @@ func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
 	return trans, dialer
 }
 
-// Parse is a helper to just get a walker.URL object from a string we know is a
-// safe url (ParseURL requires us to deal with potential errors)
-func Parse(ref string) *walker.URL {
-	u, err := walker.ParseURL(ref)
+// MustParse is a helper for calling ParseURL when we kow the string is
+// a safe URL. It will panic if it fails.
+func MustParse(ref string) *URL {
+	u, err := ParseURL(ref)
 	if err != nil {
-		panic("Failed to parse walker.URL: " + ref)
+		panic("Failed to parse URL: " + ref)
 	}
 	return u
-}
-
-// UrlParse is similar to `parse` but gives a Go builtin URL type (not a walker
-// URL)
-func UrlParse(ref string) *url.URL {
-	u := Parse(ref)
-	return u.URL
 }
 
 func Response404() *http.Response {

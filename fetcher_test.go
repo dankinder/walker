@@ -1,6 +1,6 @@
 // +build sudo
 
-package test
+package walker
 
 import (
 	"fmt"
@@ -11,15 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
 	"github.com/stretchr/testify/mock"
 )
 
 const defaultSleep time.Duration = time.Millisecond * 40
 
 func init() {
-	helpers.LoadTestConfig("test-walker.yaml")
+	LoadTestConfig("test-walker.yaml")
 }
 
 //
@@ -35,7 +33,7 @@ type LinkSpec struct {
 	lastCrawled time.Time
 
 	// The response the mock server should deliver for this url
-	response *helpers.MockResponse
+	response *MockResponse
 
 	// This should be true if this link is a robots.txt path
 	robots bool
@@ -68,7 +66,7 @@ type TestSpec struct {
 	suppressTransport bool
 
 	// An alternate transport to provide to FetchManager. If suppressTransport
-	// is false, and transport is nil, the FetchManger uses helpers.GetFakeTransport()
+	// is false, and transport is nil, the FetchManger uses GetFakeTransport()
 	transport http.RoundTripper
 
 	// Allows user to set the TransNoKeepAlive on fetch manager
@@ -84,24 +82,24 @@ type TestSpec struct {
 // TestResults represents the results of a runFetcher invocation
 type TestResults struct {
 	// mock server used for test
-	server *helpers.MockRemoteServer
+	server *MockRemoteServer
 
 	// mock datastore used for test
-	datastore *helpers.MockDatastore
+	datastore *MockDatastore
 
 	// mock handler used for test
-	handler *helpers.MockHandler
+	handler *MockHandler
 
 	// FetchManager used for test
-	manager *walker.FetchManager
+	manager *FetchManager
 }
 
 // handlerCalls will return a list of all FetchResults passed to
 // TestResults.handler during the test.
-func (self *TestResults) handlerCalls() []*walker.FetchResults {
-	var ret []*walker.FetchResults
+func (self *TestResults) handlerCalls() []*FetchResults {
+	var ret []*FetchResults
 	for _, call := range self.handler.Calls {
-		fr := call.Arguments.Get(0).(*walker.FetchResults)
+		fr := call.Arguments.Get(0).(*FetchResults)
 		ret = append(ret, fr)
 	}
 	return ret
@@ -110,13 +108,13 @@ func (self *TestResults) handlerCalls() []*walker.FetchResults {
 // dsStoreParsedURLCalls will return a list of URLs and their associated
 // FetchResults that are passed to TestResults.datastore.StoreParsedUrl
 // during the test.
-func (self *TestResults) dsStoreParsedURLCalls() ([]*walker.URL, []*walker.FetchResults) {
-	var r1 []*walker.URL
-	var r2 []*walker.FetchResults
+func (self *TestResults) dsStoreParsedURLCalls() ([]*URL, []*FetchResults) {
+	var r1 []*URL
+	var r2 []*FetchResults
 	for _, call := range self.datastore.Calls {
 		if call.Method == "StoreParsedURL" {
-			u := call.Arguments.Get(0).(*walker.URL)
-			fr := call.Arguments.Get(1).(*walker.FetchResults)
+			u := call.Arguments.Get(0).(*URL)
+			fr := call.Arguments.Get(1).(*FetchResults)
 			r1 = append(r1, u)
 			r2 = append(r2, fr)
 		}
@@ -126,11 +124,11 @@ func (self *TestResults) dsStoreParsedURLCalls() ([]*walker.URL, []*walker.Fetch
 
 // dsStoreURLFetchResultsCalls will return a list of FetchResults passed to
 // TestResults.datastore.StoreUrlFetchResults during test.
-func (self *TestResults) dsStoreURLFetchResultsCalls() []*walker.FetchResults {
-	var r1 []*walker.FetchResults
+func (self *TestResults) dsStoreURLFetchResultsCalls() []*FetchResults {
+	var r1 []*FetchResults
 	for _, call := range self.datastore.Calls {
 		if call.Method == "StoreURLFetchResults" {
-			fr := call.Arguments.Get(0).(*walker.FetchResults)
+			fr := call.Arguments.Get(0).(*FetchResults)
 			r1 = append(r1, fr)
 		}
 	}
@@ -160,8 +158,8 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 
 // singleLinkDomainSpec can be used to provide a DomainSpec for a single link.
 // This is just a convenience function.
-func singleLinkDomainSpec(link string, response *helpers.MockResponse) DomainSpec {
-	u := helpers.Parse(link)
+func singleLinkDomainSpec(link string, response *MockResponse) DomainSpec {
+	u := Parse(link)
 	domain, err := u.ToplevelDomainPlusOne()
 	if err != nil {
 		panic(err)
@@ -180,7 +178,7 @@ func singleLinkDomainSpec(link string, response *helpers.MockResponse) DomainSpe
 }
 
 // singleLinkDomainSpecArr is a convenience function that returns []DomainSpec{singlLinkDomainSpec(link, response)}
-func singleLinkDomainSpecArr(link string, response *helpers.MockResponse) []DomainSpec {
+func singleLinkDomainSpecArr(link string, response *MockResponse) []DomainSpec {
 	return []DomainSpec{
 		singleLinkDomainSpec(link, response),
 	}
@@ -195,17 +193,17 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	//
 	// Build mocks
 	//
-	h := &helpers.MockHandler{}
+	h := &MockHandler{}
 
-	var rs *helpers.MockRemoteServer
+	var rs *MockRemoteServer
 	var err error
 	if !test.suppressMockServer {
-		rs, err = helpers.NewMockRemoteServer()
+		rs, err = NewMockRemoteServer()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	ds := &helpers.MockDatastore{}
+	ds := &MockDatastore{}
 
 	//
 	// Configure mocks
@@ -213,12 +211,12 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	ds.On("KeepAlive").Return(nil)
 
 	if !test.hasNoLinks {
-		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
+		ds.On("StoreURLFetchResults", mock.AnythingOfType("*FetchResults")).Return()
 	}
 	if test.hasParsedLinks {
 		ds.On("StoreParsedURL",
-			mock.AnythingOfType("*walker.URL"),
-			mock.AnythingOfType("*walker.FetchResults")).Return()
+			mock.AnythingOfType("*URL"),
+			mock.AnythingOfType("*FetchResults")).Return()
 
 	}
 
@@ -227,10 +225,10 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	}
 	for _, host := range test.hosts {
 		ds.On("ClaimNewHost").Return(host.domain).Once()
-		var urls []*walker.URL
+		var urls []*URL
 		for _, link := range host.links {
 			if !link.robots {
-				u := helpers.Parse(link.url)
+				u := Parse(link.url)
 				zero := time.Time{}
 				if link.lastCrawled != zero {
 					u.LastCrawled = link.lastCrawled
@@ -260,11 +258,11 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		if test.transport != nil {
 			transport = test.transport
 		} else {
-			transport = helpers.GetFakeTransport()
+			transport = GetFakeTransport()
 		}
 	}
 
-	manager := &walker.FetchManager{
+	manager := &FetchManager{
 		Datastore: ds,
 		Handler:   h,
 		Transport: transport,
@@ -293,13 +291,13 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 }
 
 func TestUrlParsing(t *testing.T) {
-	orig := walker.Config.Fetcher.PurgeSidList
+	orig := Config.Fetcher.PurgeSidList
 	defer func() {
-		walker.Config.Fetcher.PurgeSidList = orig
-		walker.PostConfigHooks()
+		Config.Fetcher.PurgeSidList = orig
+		PostConfigHooks()
 	}()
-	walker.Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
-	walker.PostConfigHooks()
+	Config.Fetcher.PurgeSidList = []string{"jsessionid", "phpsessid"}
+	PostConfigHooks()
 
 	tests := []struct {
 		tag    string
@@ -344,7 +342,7 @@ func TestUrlParsing(t *testing.T) {
 	}
 
 	for _, tst := range tests {
-		u, err := walker.ParseAndNormalizeURL(tst.input)
+		u, err := ParseAndNormalizeURL(tst.input)
 		if err != nil {
 			t.Fatalf("For tag %q ParseURL failed %v", tst.tag, err)
 		}
@@ -377,12 +375,12 @@ func TestBasicNoRobots(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url:      "http://norobots.com/robots.txt",
-						response: &helpers.MockResponse{Status: 404},
+						response: &MockResponse{Status: 404},
 						robots:   true,
 					},
 					LinkSpec{
 						url:      "http://norobots.com/page1.html",
-						response: &helpers.MockResponse{Body: html_body},
+						response: &MockResponse{Body: html_body},
 					},
 					LinkSpec{
 						url: "http://norobots.com/page2.html",
@@ -453,7 +451,7 @@ func TestBasicRobots(t *testing.T) {
 
 					LinkSpec{
 						url: "http://robotsdelay1.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 1\n",
 						},
 						robots: true,
@@ -513,7 +511,7 @@ func TestBasicRobotsDisallow(t *testing.T) {
 
 					LinkSpec{
 						url: "http://robots.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nDisallow: /search\n",
 						},
 						robots: true,
@@ -562,11 +560,11 @@ func TestBasicRobotsDisallow(t *testing.T) {
 }
 
 func TestBasicMimeType(t *testing.T) {
-	orig := walker.Config.Fetcher.AcceptFormats
+	orig := Config.Fetcher.AcceptFormats
 	defer func() {
-		walker.Config.Fetcher.AcceptFormats = orig
+		Config.Fetcher.AcceptFormats = orig
 	}()
-	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
+	Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
 	const html_body_nolinks string = `<!DOCTYPE html>
 <html>
@@ -586,25 +584,25 @@ func TestBasicMimeType(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url:      "http://accept.com/robots.txt",
-						response: &helpers.MockResponse{Status: 404},
+						response: &MockResponse{Status: 404},
 						robots:   true,
 					},
 					LinkSpec{
 						url: "http://accept.com/accept_html.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							ContentType: "text/html; charset=ISO-8859-4",
 							Body:        html_body_nolinks,
 						},
 					},
 					LinkSpec{
 						url: "http://accept.com/accept_text.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							ContentType: "text/plain",
 						},
 					},
 					LinkSpec{
 						url: "http://accept.com/donthandle",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							ContentType: "foo/bar",
 						},
 					},
@@ -667,11 +665,11 @@ func TestBasicMimeType(t *testing.T) {
 }
 
 func TestBasicLinkTest(t *testing.T) {
-	orig := walker.Config.Fetcher.AcceptFormats
+	orig := Config.Fetcher.AcceptFormats
 	defer func() {
-		walker.Config.Fetcher.AcceptFormats = orig
+		Config.Fetcher.AcceptFormats = orig
 	}()
-	walker.Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
+	Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
 	const html_test_links string = `<!DOCTYPE html>
 <html>
@@ -696,7 +694,7 @@ func TestBasicLinkTest(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: singleLinkDomainSpecArr("http://linktests.com/links/test.html", &helpers.MockResponse{
+		hosts: singleLinkDomainSpecArr("http://linktests.com/links/test.html", &MockResponse{
 			Body: html_test_links,
 		}),
 	}
@@ -749,9 +747,9 @@ func TestBasicLinkTest(t *testing.T) {
 }
 
 func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
-	orig := walker.Config.Fetcher.BlacklistPrivateIPs
-	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
-	walker.Config.Fetcher.BlacklistPrivateIPs = true
+	orig := Config.Fetcher.BlacklistPrivateIPs
+	defer func() { Config.Fetcher.BlacklistPrivateIPs = orig }()
+	Config.Fetcher.BlacklistPrivateIPs = true
 
 	tests := TestSpec{
 		hasNoLinks: true,
@@ -772,14 +770,14 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 }
 
 func TestFetcherCreatesTransport(t *testing.T) {
-	orig := walker.Config.Fetcher.BlacklistPrivateIPs
-	defer func() { walker.Config.Fetcher.BlacklistPrivateIPs = orig }()
-	walker.Config.Fetcher.BlacklistPrivateIPs = false
+	orig := Config.Fetcher.BlacklistPrivateIPs
+	defer func() { Config.Fetcher.BlacklistPrivateIPs = orig }()
+	Config.Fetcher.BlacklistPrivateIPs = false
 
 	tests := TestSpec{
 		hasParsedLinks:    false,
 		suppressTransport: true,
-		hosts:             singleLinkDomainSpecArr("http://localhost.localdomain/", &helpers.MockResponse{Status: 404}),
+		hosts:             singleLinkDomainSpecArr("http://localhost.localdomain/", &MockResponse{Status: 404}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -803,11 +801,11 @@ func TestRedirects(t *testing.T) {
 		return fmt.Sprintf("http://sub.dom.com/page%d.html", index)
 	}
 
-	roundTriper := helpers.MapRoundTrip{
+	roundTriper := MapRoundTrip{
 		Responses: map[string]*http.Response{
-			link(1): helpers.Response307(link(2)),
-			link(2): helpers.Response307(link(3)),
-			link(3): helpers.Response200(),
+			link(1): Response307(link(2)),
+			link(2): Response307(link(3)),
+			link(3): Response200(),
 		},
 	}
 
@@ -863,7 +861,7 @@ func TestHrefWithSpace(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: singleLinkDomainSpecArr(testPage, &helpers.MockResponse{
+		hosts: singleLinkDomainSpecArr(testPage, &MockResponse{
 			ContentType: "text/html",
 			Body:        html_with_href_space,
 		}),
@@ -912,20 +910,20 @@ func TestHrefWithSpace(t *testing.T) {
 }
 
 func TestHttpTimeout(t *testing.T) {
-	origTimeout := walker.Config.Fetcher.HttpTimeout
+	origTimeout := Config.Fetcher.HttpTimeout
 	defer func() {
-		walker.Config.Fetcher.HttpTimeout = origTimeout
+		Config.Fetcher.HttpTimeout = origTimeout
 	}()
-	walker.Config.Fetcher.HttpTimeout = "200ms"
+	Config.Fetcher.HttpTimeout = "200ms"
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
-		var transport *helpers.CancelTrackingTransport
+		var transport *CancelTrackingTransport
 		var closer io.Closer
 		if timeoutType == "wontConnect" {
-			transport, closer = helpers.GetWontConnectTransport()
+			transport, closer = GetWontConnectTransport()
 		} else {
-			transport, closer = helpers.GetStallingReadTransport()
+			transport, closer = GetStallingReadTransport()
 		}
 
 		tests := TestSpec{
@@ -966,14 +964,14 @@ func TestHttpTimeout(t *testing.T) {
 }
 
 func TestMetaNos(t *testing.T) {
-	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
-	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
+	origHonorNoindex := Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
-		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
+		Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.Fetcher.HonorMetaNoindex = true
-	walker.Config.Fetcher.HonorMetaNofollow = true
+	Config.Fetcher.HonorMetaNoindex = true
+	Config.Fetcher.HonorMetaNofollow = true
 
 	const nofollowHtml string = `<!DOCTYPE html>
 <html>
@@ -1025,20 +1023,20 @@ func TestMetaNos(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://t1.com/nofollow.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: nofollowHtml,
 						},
 					},
 					LinkSpec{
 						url: "http://t1.com/noindex.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: noindexHtml,
 						},
 					},
 
 					LinkSpec{
 						url: "http://t1.com/both.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: bothHtml,
 						},
 					},
@@ -1083,18 +1081,18 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://test.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 1\n", // this is 120 seconds
 						},
 						robots: true,
 					},
 					LinkSpec{
 						url:      "http://test.com/page1.html",
-						response: &helpers.MockResponse{Status: 404},
+						response: &MockResponse{Status: 404},
 					},
 					LinkSpec{
 						url:      "http://test.com/page2.html",
-						response: &helpers.MockResponse{Status: 404},
+						response: &MockResponse{Status: 404},
 					},
 				},
 			},
@@ -1121,14 +1119,14 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 }
 
 func TestObjectEmbedIframeTags(t *testing.T) {
-	origHonorNoindex := walker.Config.Fetcher.HonorMetaNoindex
-	origHonorNofollow := walker.Config.Fetcher.HonorMetaNofollow
+	origHonorNoindex := Config.Fetcher.HonorMetaNoindex
+	origHonorNofollow := Config.Fetcher.HonorMetaNofollow
 	defer func() {
-		walker.Config.Fetcher.HonorMetaNoindex = origHonorNoindex
-		walker.Config.Fetcher.HonorMetaNofollow = origHonorNofollow
+		Config.Fetcher.HonorMetaNoindex = origHonorNoindex
+		Config.Fetcher.HonorMetaNofollow = origHonorNofollow
 	}()
-	walker.Config.Fetcher.HonorMetaNoindex = true
-	walker.Config.Fetcher.HonorMetaNofollow = true
+	Config.Fetcher.HonorMetaNoindex = true
+	Config.Fetcher.HonorMetaNofollow = true
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -1150,7 +1148,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	// are failing. But the version I have above does work (even though it's wonky)
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, 250*time.Millisecond, t)
@@ -1175,14 +1173,14 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 }
 
 func TestPathInclusion(t *testing.T) {
-	origHonorNoindex := walker.Config.Fetcher.ExcludeLinkPatterns
-	origHonorNofollow := walker.Config.Fetcher.IncludeLinkPatterns
+	origHonorNoindex := Config.Fetcher.ExcludeLinkPatterns
+	origHonorNofollow := Config.Fetcher.IncludeLinkPatterns
 	defer func() {
-		walker.Config.Fetcher.ExcludeLinkPatterns = origHonorNoindex
-		walker.Config.Fetcher.IncludeLinkPatterns = origHonorNofollow
+		Config.Fetcher.ExcludeLinkPatterns = origHonorNoindex
+		Config.Fetcher.IncludeLinkPatterns = origHonorNofollow
 	}()
-	walker.Config.Fetcher.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
-	walker.Config.Fetcher.IncludeLinkPatterns = []string{`\.keep$`}
+	Config.Fetcher.ExcludeLinkPatterns = []string{`\.mov$`, "janky", `\/foo\/bang`, `^\/root$`}
+	Config.Fetcher.IncludeLinkPatterns = []string{`\.keep$`}
 
 	const html string = `<!DOCTYPE html>
 <html>
@@ -1207,7 +1205,7 @@ func TestPathInclusion(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1239,14 +1237,14 @@ func TestMaxCrawlDelay(t *testing.T) {
 	// the host, and set a small MaxCrawlDelay in config. Then only allow the
 	// fetcher to run long enough to get all the links IF the fetcher is honoring
 	// the MaxCrawlDelay
-	origDefaultCrawlDelay := walker.Config.Fetcher.DefaultCrawlDelay
-	origMaxCrawlDelay := walker.Config.Fetcher.MaxCrawlDelay
+	origDefaultCrawlDelay := Config.Fetcher.DefaultCrawlDelay
+	origMaxCrawlDelay := Config.Fetcher.MaxCrawlDelay
 	defer func() {
-		walker.Config.Fetcher.DefaultCrawlDelay = origDefaultCrawlDelay
-		walker.Config.Fetcher.MaxCrawlDelay = origMaxCrawlDelay
+		Config.Fetcher.DefaultCrawlDelay = origDefaultCrawlDelay
+		Config.Fetcher.MaxCrawlDelay = origMaxCrawlDelay
 	}()
-	walker.Config.Fetcher.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
-	walker.Config.Fetcher.DefaultCrawlDelay = "0s"
+	Config.Fetcher.MaxCrawlDelay = "100ms" //compare this with the Crawl-delay below
+	Config.Fetcher.DefaultCrawlDelay = "0s"
 
 	tests := TestSpec{
 		hasParsedLinks: true,
@@ -1256,7 +1254,7 @@ func TestMaxCrawlDelay(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://a.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 120\n", // this is 120 seconds, compare to MaxCrawlDelay above
 						},
 						robots: true,
@@ -1318,7 +1316,7 @@ func TestFnvFingerprint(t *testing.T) {
 </html>`
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &helpers.MockResponse{Body: html}),
+		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, defaultSleep, t)
@@ -1362,7 +1360,7 @@ func TestIfModifiedSince(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url:         "http://a.com/page1.html",
-						response:    &helpers.MockResponse{Status: 304},
+						response:    &MockResponse{Status: 304},
 						lastCrawled: lastCrawled,
 					},
 				},
@@ -1430,7 +1428,7 @@ func TestNestedRobots(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://dom.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\n",
 						},
 						robots: true,
@@ -1443,7 +1441,7 @@ func TestNestedRobots(t *testing.T) {
 
 					LinkSpec{
 						url: "http://blocked.dom.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nDisallow: /\n",
 						},
 						robots: true,
@@ -1496,11 +1494,11 @@ func TestNestedRobots(t *testing.T) {
 }
 
 func TestMaxContentSize(t *testing.T) {
-	orig := walker.Config.Fetcher.MaxHTTPContentSizeBytes
+	orig := Config.Fetcher.MaxHTTPContentSizeBytes
 	defer func() {
-		walker.Config.Fetcher.MaxHTTPContentSizeBytes = orig
+		Config.Fetcher.MaxHTTPContentSizeBytes = orig
 	}()
-	walker.Config.Fetcher.MaxHTTPContentSizeBytes = 10
+	Config.Fetcher.MaxHTTPContentSizeBytes = 10
 
 	html := `<!DOCTYPE html>
 <html>
@@ -1521,14 +1519,14 @@ func TestMaxContentSize(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://a.com/page1.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: html,
 						},
 					},
 
 					LinkSpec{
 						url: "http://a.com/page2.html",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body:          "0123456789 ",
 							ContentType:   "text/html",
 							ContentLength: 11,
@@ -1574,11 +1572,11 @@ func TestMaxContentSize(t *testing.T) {
 }
 
 func TestKeepAlive(t *testing.T) {
-	orig := walker.Config.Fetcher.ActiveFetchersTTL
+	orig := Config.Fetcher.ActiveFetchersTTL
 	defer func() {
-		walker.Config.Fetcher.ActiveFetchersTTL = orig
+		Config.Fetcher.ActiveFetchersTTL = orig
 	}()
-	walker.Config.Fetcher.ActiveFetchersTTL = "1s"
+	Config.Fetcher.ActiveFetchersTTL = "1s"
 
 	tests := TestSpec{
 		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),
@@ -1593,11 +1591,11 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestStoreBody(t *testing.T) {
-	orig := walker.Config.Cassandra.StoreResponseBody
+	orig := Config.Cassandra.StoreResponseBody
 	defer func() {
-		walker.Config.Cassandra.StoreResponseBody = orig
+		Config.Cassandra.StoreResponseBody = orig
 	}()
-	walker.Config.Cassandra.StoreResponseBody = true
+	Config.Cassandra.StoreResponseBody = true
 	html := `<!DOCTYPE html>
 <html>
 <head>
@@ -1611,7 +1609,7 @@ func TestStoreBody(t *testing.T) {
 
 	tests := TestSpec{
 		hasParsedLinks: true,
-		hosts: singleLinkDomainSpecArr("http://a.com/page1.com", &helpers.MockResponse{
+		hosts: singleLinkDomainSpecArr("http://a.com/page1.com", &MockResponse{
 			Body: html,
 		}),
 	}
@@ -1632,20 +1630,20 @@ func TestStoreBody(t *testing.T) {
 }
 
 func TestKeepAliveThreshold(t *testing.T) {
-	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
-	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
-	origSimul := walker.Config.Fetcher.NumSimultaneousFetchers
+	origKeepAlive := Config.Fetcher.HttpKeepAlive
+	origThreshold := Config.Fetcher.HttpKeepAliveThreshold
+	origSimul := Config.Fetcher.NumSimultaneousFetchers
 	defer func() {
-		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
-		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
-		walker.Config.Fetcher.NumSimultaneousFetchers = origSimul
+		Config.Fetcher.HttpKeepAlive = origKeepAlive
+		Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+		Config.Fetcher.NumSimultaneousFetchers = origSimul
 	}()
-	walker.Config.Fetcher.HttpKeepAlive = "threshold"
-	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
-	walker.Config.Fetcher.NumSimultaneousFetchers = 1
+	Config.Fetcher.HttpKeepAlive = "threshold"
+	Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+	Config.Fetcher.NumSimultaneousFetchers = 1
 
-	transport := helpers.GetRecordingTransport("transport")
-	transNoKeepAlive := helpers.GetRecordingTransport("transNoKeepAlive")
+	transport := GetRecordingTransport("transport")
+	transNoKeepAlive := GetRecordingTransport("transNoKeepAlive")
 
 	tests := TestSpec{
 		hasParsedLinks:   false,
@@ -1658,7 +1656,7 @@ func TestKeepAliveThreshold(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://a.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 0\n",
 						},
 						robots: true,
@@ -1679,7 +1677,7 @@ func TestKeepAliveThreshold(t *testing.T) {
 				links: []LinkSpec{
 					LinkSpec{
 						url: "http://b.com/robots.txt",
-						response: &helpers.MockResponse{
+						response: &MockResponse{
 							Body: "User-agent: *\nCrawl-delay: 1\n",
 						},
 						robots: true,
