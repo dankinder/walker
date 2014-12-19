@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"code.google.com/p/log4go"
-
 	"github.com/iParadigms/walker"
 )
 
