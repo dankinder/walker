@@ -95,6 +95,15 @@ fetcher:
     # The keep-alive period is active_fetchers_ttl * active_fetchers_keepratio.
     active_fetchers_keepratio: 0.75
 
+    # Controls the http Keep-Alive setting when fetching pages. Can be "always" (to always
+    # keep a connection alive), "never" (to never keep connection alive), and threshold (keep
+    # connection alive if the target sites robots.Crawl-Delay is less than http_keep_alive_threshold)
+    http_keep_alive: "always"
+
+    # If http_keep_alive is set to "threshold", sets the Keep-Alive policy (see above). Otherwise,
+    # this variable is unused.
+    http_keep_alive_threshold: 15s
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)
@@ -155,6 +164,10 @@ cassandra:
     # If this is set to true, walker will store the body of the HTTP request along 
     # with the link.
     store_response_body: false
+
+    # If this is set to true, walker will store the HTTP headers of the request along 
+    # with the link.
+    store_response_headers: false
 
     # How many times to retry a cassandra query before the query resolves in error
     num_query_retries: 3

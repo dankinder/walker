@@ -55,6 +55,37 @@ func GetFakeTransport() http.RoundTripper {
 }
 
 //
+// Count how many times the Dial routine is called
+//
+type RecordingTransport struct {
+	http.Transport
+	Name   string
+	Record []string
+}
+
+func (self *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	self.Record = append(self.Record, req.URL.String())
+	return self.Transport.RoundTrip(req)
+}
+
+func (self *RecordingTransport) String() string {
+	return fmt.Sprintf("RecordingTransport named %v: %v", self.Name, self.Record)
+}
+
+func GetRecordingTransport(name string) *RecordingTransport {
+	r := &RecordingTransport{
+		Transport: http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			TLSHandshakeTimeout: 10 * time.Second,
+			Dial:                FakeDial,
+		},
+		Name: name,
+	}
+
+	return r
+}
+
+//
 // http.Transport that tracks which requests where canceled.
 //
 type CancelTrackingTransport struct {

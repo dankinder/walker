@@ -94,6 +94,9 @@ type MockResponse struct {
 	// Body defaults to nil (no response body)
 	Body string
 
+	// Headers of response
+	Headers http.Header
+
 	//ContentType defaults to "text/html"
 	ContentType string
 
