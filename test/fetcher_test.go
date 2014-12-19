@@ -1623,3 +1623,57 @@ func TestStoreBody(t *testing.T) {
 		t.Fatalf("Failed to match stored body: --expected--\n%q\n--got--:\n%q", html, fr.Body)
 	}
 }
+
+func TestBugTrn210(t *testing.T) {
+	tests := TestSpec{
+		hasParsedLinks: false,
+		hosts: []DomainSpec{
+			DomainSpec{
+				domain: "a.com",
+				links: []LinkSpec{
+
+					LinkSpec{
+						url: "http://a.com/robots.txt",
+						response: &helpers.MockResponse{
+							Body: "User-agent: *\nDisallow: /\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://a.com/",
+					},
+
+					LinkSpec{
+						url: "http://a.com/page1.html",
+					},
+				},
+			},
+		},
+	}
+
+	results := runFetcher(tests, defaultSleep, t)
+	stores := results.dsStoreURLFetchResultsCalls()
+
+	expected := map[string]bool{
+		"http://a.com/":           true,
+		"http://a.com/page1.html": true,
+	}
+
+	for _, fr := range stores {
+		if expected[fr.URL.String()] {
+			delete(expected, fr.URL.String())
+		} else {
+			t.Errorf("Unexpected link found: %v", fr.URL.String())
+		}
+		if fr.FetchTime != walker.NotYetCrawled {
+			t.Errorf("Bad FetchTime for %v", fr.URL.String())
+		}
+		if !fr.ExcludedByRobots {
+			t.Errorf("Bad ExcludedByRobots for %v", fr.URL.String())
+		}
+	}
+	for link := range expected {
+		t.Errorf("Failed to find link %v", link)
+	}
+}

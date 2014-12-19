@@ -405,7 +405,7 @@ func (f *fetcher) crawlNewHost() bool {
 // successful), indicating that crawl-delay should be observed. Returns, also,
 // the time we start the clock for a return visit to the server.
 func (f *fetcher) fetchAndHandle(link *URL, robots *robotstxt.Group) (bool, time.Time) {
-	fr := &FetchResults{URL: link}
+	fr := &FetchResults{URL: link, FetchTime: NotYetCrawled}
 
 	if !robots.Test(link.RequestURI()) {
 		log4go.Debug("Not fetching due to robots rules: %v", link)
