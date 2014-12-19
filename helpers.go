@@ -36,17 +36,17 @@ func GetTestFileDir() string {
 	return path.Join(path.Dir(p), "test")
 }
 
-// FakeDial makes connections to localhost, no matter what addr was given.
-func FakeDial(network, addr string) (net.Conn, error) {
+// fakeDial makes connections to localhost, no matter what addr was given.
+func fakeDial(network, addr string) (net.Conn, error) {
 	_, port, _ := net.SplitHostPort(addr)
 	return net.Dial(network, net.JoinHostPort("localhost", port))
 }
 
-// GetFakeTransport gets a http.RoundTripper that uses FakeDial
-func GetFakeTransport() http.RoundTripper {
+// getFakeTransport gets a http.RoundTripper that uses fakeDial
+func getFakeTransport() http.RoundTripper {
 	return &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
-		Dial:                FakeDial,
+		Dial:                fakeDial,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
 }
@@ -54,27 +54,27 @@ func GetFakeTransport() http.RoundTripper {
 //
 // Count how many times the Dial routine is called
 //
-type RecordingTransport struct {
+type recordingTransport struct {
 	http.Transport
 	Name   string
 	Record []string
 }
 
-func (self *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (self *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	self.Record = append(self.Record, req.URL.String())
 	return self.Transport.RoundTrip(req)
 }
 
-func (self *RecordingTransport) String() string {
-	return fmt.Sprintf("RecordingTransport named %v: %v", self.Name, self.Record)
+func (self *recordingTransport) String() string {
+	return fmt.Sprintf("recordingTransport named %v: %v", self.Name, self.Record)
 }
 
-func GetRecordingTransport(name string) *RecordingTransport {
-	r := &RecordingTransport{
+func getRecordingTransport(name string) *recordingTransport {
+	r := &recordingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			TLSHandshakeTimeout: 10 * time.Second,
-			Dial:                FakeDial,
+			Dial:                fakeDial,
 		},
 		Name: name,
 	}
@@ -85,19 +85,19 @@ func GetRecordingTransport(name string) *RecordingTransport {
 //
 // http.Transport that tracks which requests where canceled.
 //
-type CancelTrackingTransport struct {
+type cancelTrackingTransport struct {
 	http.Transport
 	Canceled map[string]int
 }
 
-func (self *CancelTrackingTransport) CancelRequest(req *http.Request) {
+func (self *cancelTrackingTransport) cancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
 	if c, cok := self.Canceled[key]; cok {
 		count = c
 	}
 	self.Canceled[key] = count + 1
-	self.Transport.CancelRequest(req)
+	self.Transport.cancelRequest(req)
 }
 
 //
@@ -117,9 +117,9 @@ func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
+func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
-	trans := &CancelTrackingTransport{
+	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
@@ -215,9 +215,9 @@ func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
 	return self.newConn(), nil
 }
 
-func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
+func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
-	trans := &CancelTrackingTransport{
+	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
@@ -238,7 +238,7 @@ func MustParse(ref string) *URL {
 	return u
 }
 
-func Response404() *http.Response {
+func response404() *http.Response {
 	return &http.Response{
 		Status:        "404",
 		StatusCode:    404,
@@ -251,7 +251,7 @@ func Response404() *http.Response {
 	}
 }
 
-func Response307(link string) *http.Response {
+func response307(link string) *http.Response {
 	return &http.Response{
 		Status:        "307",
 		StatusCode:    307,
@@ -264,7 +264,7 @@ func Response307(link string) *http.Response {
 	}
 }
 
-func Response200() *http.Response {
+func response200() *http.Response {
 	return &http.Response{
 		Status:     "200 OK",
 		StatusCode: 200,
@@ -286,20 +286,20 @@ func Response200() *http.Response {
 	}
 }
 
-// MapRoundTrip maps input links --> http.Response. See TestRedirects for example.
-type MapRoundTrip struct {
+// mapRoundTrip maps input links --> http.Response. See TestRedirects for example.
+type mapRoundTrip struct {
 	Responses map[string]*http.Response
 }
 
-func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
+func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 	res, resOk := mrt.Responses[req.URL.String()]
 	if !resOk {
-		return Response404(), nil
+		return response404(), nil
 	}
 	return res, nil
 }
 
-// This allows the MapRoundTrip to be canceled. Which is needed to prevent
+// This allows the mapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (self *MapRoundTrip) CancelRequest(req *http.Request) {
+func (self *mapRoundTrip) cancelRequest(req *http.Request) {
 }

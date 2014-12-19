@@ -66,7 +66,7 @@ type TestSpec struct {
 	suppressTransport bool
 
 	// An alternate transport to provide to FetchManager. If suppressTransport
-	// is false, and transport is nil, the FetchManger uses GetFakeTransport()
+	// is false, and transport is nil, the FetchManger uses getFakeTransport()
 	transport http.RoundTripper
 
 	// Allows user to set the TransNoKeepAlive on fetch manager
@@ -258,7 +258,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		if test.transport != nil {
 			transport = test.transport
 		} else {
-			transport = GetFakeTransport()
+			transport = getFakeTransport()
 		}
 	}
 
@@ -801,11 +801,11 @@ func TestRedirects(t *testing.T) {
 		return fmt.Sprintf("http://sub.dom.com/page%d.html", index)
 	}
 
-	roundTriper := MapRoundTrip{
+	roundTriper := mapRoundTrip{
 		Responses: map[string]*http.Response{
-			link(1): Response307(link(2)),
-			link(2): Response307(link(3)),
-			link(3): Response200(),
+			link(1): response307(link(2)),
+			link(2): response307(link(3)),
+			link(3): response200(),
 		},
 	}
 
@@ -918,12 +918,12 @@ func TestHttpTimeout(t *testing.T) {
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
-		var transport *CancelTrackingTransport
+		var transport *cancelTrackingTransport
 		var closer io.Closer
 		if timeoutType == "wontConnect" {
-			transport, closer = GetWontConnectTransport()
+			transport, closer = getWontConnectTransport()
 		} else {
-			transport, closer = GetStallingReadTransport()
+			transport, closer = getStallingReadTransport()
 		}
 
 		tests := TestSpec{
@@ -1642,8 +1642,8 @@ func TestKeepAliveThreshold(t *testing.T) {
 	Config.Fetcher.HttpKeepAliveThreshold = "500ms"
 	Config.Fetcher.NumSimultaneousFetchers = 1
 
-	transport := GetRecordingTransport("transport")
-	transNoKeepAlive := GetRecordingTransport("transNoKeepAlive")
+	transport := getRecordingTransport("transport")
+	transNoKeepAlive := getRecordingTransport("transNoKeepAlive")
 
 	tests := TestSpec{
 		hasParsedLinks:   false,
