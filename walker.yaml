@@ -104,6 +104,11 @@ fetcher:
     # this variable is unused.
     http_keep_alive_threshold: 15s
 
+    # The maximum path length that is considered a good url. URL's with paths longer than this will not be crawled. This
+    # variable helps users prevent cycles (where a web-page refers to itself, only with a slightly longer, and hence 
+    # distinct, URI). Set this variable <= 0 to ignore URI path length.
+    max_path_length: 2048
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)
