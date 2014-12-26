@@ -85,7 +85,8 @@ func (ds *Datastore) Close() {
 var limitPerClaimCycle int = 50
 
 // The allowed values of the priority in the domain_info table
-var AllowedPriorities = []int{5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5} //order matters here
+var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
+var MaxPriority = AllowedPriorities[0]
 
 func (ds *Datastore) ClaimNewHost() string {
 	ds.mu.Lock()
@@ -413,7 +414,7 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 	// Try insert with excluded set to avoid dispatcher picking this domain up before the
 	// excluded reason can be set.
 	query := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority, excluded) 
-					 VALUES (?, ?, false, 0, true) IF NOT EXISTS`
+					 VALUES (?, ?, false, 1, true) IF NOT EXISTS`
 	err := ds.db.Query(query, dom, gocql.UUID{}).Exec()
 	if err != nil {
 		return err

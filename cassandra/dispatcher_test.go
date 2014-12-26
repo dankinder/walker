@@ -482,7 +482,7 @@ func TestDispatcherBasic(t *testing.T) {
 func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 	db := GetTestDB()
 	q := db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
-					VALUES (?, ?, ?, ?)`, "test.com", gocql.UUID{}, 0, false)
+					VALUES (?, ?, ?, ?)`, "test.com", gocql.UUID{}, 1, false)
 	if err := q.Exec(); err != nil {
 		t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 	}

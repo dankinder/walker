@@ -102,8 +102,8 @@ func TestDatastoreBasic(t *testing.T) {
 						VALUES (?, ?, ?, ?, ?)`
 
 	queries := []*gocql.Query{
-		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 1, true),
-		db.Query(insertDomainInfo, "test2.com", gocql.UUID{}, 0, true),
+		db.Query(insertDomainInfo, "test.com", gocql.UUID{}, 2, true),
+		db.Query(insertDomainInfo, "test2.com", gocql.UUID{}, 1, true),
 		db.Query(insertSegment, "test.com", "", "page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "page2.html", "http"),
 		db.Query(insertLink, "test.com", "", "page1.html", "http", walker.NotYetCrawled),
@@ -213,7 +213,7 @@ func TestNewDomainAdditions(t *testing.T) {
 						WHERE dom = 'test.com'
 						AND claim_tok = 00000000-0000-0000-0000-000000000000
 						AND dispatched = false
-						AND priority = 0 ALLOW FILTERING`).Scan(&count)
+						AND priority = 1 ALLOW FILTERING`).Scan(&count)
 	if err != nil {
 		t.Fatalf("Failed to query for test.com in domain_info: %v", err)
 	}
@@ -625,7 +625,7 @@ func TestUnclaimAll(t *testing.T) {
 						VALUES (?, ?, ?, ?)`
 
 	queries := []*gocql.Query{
-		db.Query(insertDomainInfo, "test.com", gocql.TimeUUID(), 0, true),
+		db.Query(insertDomainInfo, "test.com", gocql.TimeUUID(), 1, true),
 		db.Query(insertSegment, "test.com", "", "page1.html", "http"),
 		db.Query(insertSegment, "test.com", "", "page2.html", "http"),
 	}
@@ -661,7 +661,7 @@ func TestClaimHostConcurrency(t *testing.T) {
 	numDomain := 1000
 
 	db := GetTestDB()
-	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, 00000000-0000-0000-0000-000000000000, true, 0)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_tok, dispatched, priority) VALUES (?, 00000000-0000-0000-0000-000000000000, true, 1)`
 	for i := 0; i < numDomain; i++ {
 		err := db.Query(insertDomainInfo, fmt.Sprintf("d%d.com", i)).Exec()
 		if err != nil {
@@ -826,7 +826,7 @@ func TestUpdateDomain(t *testing.T) {
 	// Check variables
 	excluded := false
 	excludeReason := ""
-	priority := 0
+	priority := 1
 
 	// Other variables
 	domain := "foo.com"
@@ -884,7 +884,7 @@ func TestUpdateDomain(t *testing.T) {
 	ds.UpdateDomain(domain, &DomainInfo{Priority: priority}, DomainInfoUpdateConfig{Priority: true})
 	check("Priority")
 
-	priority = 0
+	priority = 1
 	ds.UpdateDomain(domain, &DomainInfo{Priority: priority}, DomainInfoUpdateConfig{Priority: true})
 	check("clear 2")
 

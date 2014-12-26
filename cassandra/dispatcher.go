@@ -191,6 +191,37 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 	return true
 }
 
+// return true if this domain should be used
+func (d *Dispatcher) manageDomainCount(dom string) bool {
+
+	var cnt int
+	itr := d.db.Query(`SELECT cnt FROM domain_counters WHERE dom = ?`, dom).Iter()
+	scanOk := itr.Scan(&cnt)
+	err := itr.Close()
+	if err != nil {
+		log4go.Error("manageDomainCount failed to scan cnt: %v", err)
+		return false
+	}
+
+	log4go.Error("PETE cnt %d", cnt+1)
+
+	if scanOk && cnt+1 >= MaxPriority {
+		err = d.db.Query(fmt.Sprintf("UPDATE domain_counters SET cnt = cnt-%d WHERE dom = ?", MaxPriority-1), dom).Exec()
+		if err != nil {
+			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
+			return false
+		}
+
+		return true
+	} else {
+		err = d.db.Query("UPDATE domain_counters SET cnt = cnt+1 WHERE dom = ?", dom).Exec()
+		if err != nil {
+			log4go.Error("manageDomainCount failed to increment/establish counter: %v", err)
+		}
+		return false
+	}
+}
+
 func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
@@ -207,7 +238,9 @@ func (d *Dispatcher) domainIterator() {
 			}
 
 			if !dispatched && !excluded {
-				d.domains <- domain
+				if d.manageDomainCount(domain) {
+					d.domains <- domain
+				}
 			} else if !d.fetcherIsAlive(claimTok) {
 				go d.cleanStrandedClaims(claimTok)
 			}

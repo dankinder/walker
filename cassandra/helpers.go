@@ -244,6 +244,13 @@ CREATE TABLE {{.Keyspace}}.active_fetchers (
 	tok uuid,
 	PRIMARY KEY (tok)
 );
+
+CREATE TABLE {{.Keyspace}}.domain_counters (
+	dom text,
+	cnt counter,
+	PRIMARY KEY (dom)
+);
+
 `
 
 // initdb ensures we only try to create the cassandra schema once in testing
