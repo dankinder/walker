@@ -203,7 +203,7 @@ func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
 		return false
 	}
 
-	log4go.Error("PETE cnt %d for %q -- %d", cnt+domPriority, dom, MaxPriority)
+	log4go.Error("PETE cnt %d (%d) for %q -- %d", cnt+domPriority, domPriority, dom, MaxPriority)
 
 	if cnt+domPriority >= MaxPriority {
 		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-1, dom).Exec()
