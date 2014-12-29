@@ -192,29 +192,29 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 }
 
 // return true if this domain should be used
-func (d *Dispatcher) manageDomainCount(dom string) bool {
+func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
 
-	var cnt int
 	itr := d.db.Query(`SELECT cnt FROM domain_counters WHERE dom = ?`, dom).Iter()
-	scanOk := itr.Scan(&cnt)
+	cnt := 0
+	itr.Scan(&cnt)
 	err := itr.Close()
 	if err != nil {
 		log4go.Error("manageDomainCount failed to scan cnt: %v", err)
 		return false
 	}
 
-	log4go.Error("PETE cnt %d", cnt+1)
+	log4go.Error("PETE cnt %d for %q -- %d", cnt+domPriority, dom, MaxPriority)
 
-	if scanOk && cnt+1 >= MaxPriority {
-		err = d.db.Query(fmt.Sprintf("UPDATE domain_counters SET cnt = cnt-%d WHERE dom = ?", MaxPriority-1), dom).Exec()
+	if cnt+domPriority >= MaxPriority {
+		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-1, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
 			return false
 		}
-
+		log4go.Error("PETE returning true ...")
 		return true
 	} else {
-		err = d.db.Query("UPDATE domain_counters SET cnt = cnt+1 WHERE dom = ?", dom).Exec()
+		err = d.db.Query("UPDATE domain_counters SET cnt = cnt+? WHERE dom = ?", domPriority, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to increment/establish counter: %v", err)
 		}
@@ -225,20 +225,22 @@ func (d *Dispatcher) manageDomainCount(dom string) bool {
 func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded, priority FROM domain_info`).Iter()
 
 		var domain string
 		var dispatched bool
 		var claimTok gocql.UUID
 		var excluded bool
-		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
+		var priority int
+		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded, &priority) {
 			if d.quitSignaled() {
 				close(d.domains)
 				return
 			}
 
 			if !dispatched && !excluded {
-				if d.manageDomainCount(domain) {
+				if d.manageDomainCount(domain, priority) {
+					log4go.Error("PETE: adding domain %q", domain)
 					d.domains <- domain
 				}
 			} else if !d.fetcherIsAlive(claimTok) {

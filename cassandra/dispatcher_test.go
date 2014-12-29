@@ -399,14 +399,18 @@ func TestDispatcherBasic(t *testing.T) {
 	walker.Config.Dispatcher.RefreshPercentage = 33
 
 	var q *gocql.Query
-
 	for _, dt := range DispatcherTests {
 		db := GetTestDB() // runs between tests to reset the db
 
 		for _, edi := range dt.ExistingDomainInfos {
+			priority := edi.Priority
+			if priority == 0 {
+				priority = MaxPriority
+			}
+
 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
 							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
