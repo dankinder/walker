@@ -203,15 +203,12 @@ func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
 		return false
 	}
 
-	log4go.Error("PETE cnt %d (%d) for %q -- %d", cnt+domPriority, domPriority, dom, MaxPriority)
-
 	if cnt+domPriority >= MaxPriority {
 		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-1, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
 			return false
 		}
-		log4go.Error("PETE returning true ...")
 		return true
 	} else {
 		err = d.db.Query("UPDATE domain_counters SET cnt = cnt+? WHERE dom = ?", domPriority, dom).Exec()
@@ -240,7 +237,6 @@ func (d *Dispatcher) domainIterator() {
 
 			if !dispatched && !excluded {
 				if d.manageDomainCount(domain, priority) {
-					log4go.Error("PETE: adding domain %q", domain)
 					d.domains <- domain
 				}
 			} else if !d.fetcherIsAlive(claimTok) {
