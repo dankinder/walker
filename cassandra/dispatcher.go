@@ -54,6 +54,13 @@ type Dispatcher struct {
 
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
+
+	// User hooks
+	Hooks DispatcherHooks
+}
+
+type DispatcherHooks struct {
+	AfterGenerateSegments func(domain string, err error)
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -193,7 +200,6 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 
 // return true if this domain should be used
 func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
-
 	itr := d.db.Query(`SELECT cnt FROM domain_counters WHERE dom = ?`, dom).Iter()
 	cnt := 0
 	itr.Scan(&cnt)
@@ -204,7 +210,7 @@ func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
 	}
 
 	if cnt+domPriority >= MaxPriority {
-		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-1, dom).Exec()
+		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-domPriority, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
 			return false
@@ -283,8 +289,12 @@ func (d *Dispatcher) quitSignaled() bool {
 func (d *Dispatcher) generateRoutine() {
 	for domain := range d.domains {
 		d.generatingWG.Add(1)
-		if err := d.generateSegment(domain); err != nil {
+		err := d.generateSegment(domain)
+		if err != nil {
 			log4go.Error("error generating segment for %v: %v", domain, err)
+		}
+		if d.Hooks.AfterGenerateSegments != nil {
+			d.Hooks.AfterGenerateSegments(domain, err)
 		}
 		d.generatingWG.Done()
 	}
