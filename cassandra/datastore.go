@@ -112,7 +112,7 @@ func (ds *Datastore) ClaimNewHost() string {
 	return domain
 }
 
-// domainPriorityReady will return true if the domain, dom, is eligible to be claimed.
+// domainPriorityTry will return true if the domain, dom, is eligible to be claimed.
 // The second argument, domPriority, is the domain priority of dom.
 func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()

@@ -721,10 +721,14 @@ func TestClaimHostConcurrency(t *testing.T) {
 }
 
 func TestDomainPriority(t *testing.T) {
+	// This is a simple priority test. It's set up so all of the yes.com domains should be served by ClaimNewHost,
+	// and all the NO.com's should NOT be served.
 	rand.Seed(12345)
 
+	// I can't pull in cassandra.MaxPriority because it becomes cyclic dependency.
 	maxPriority := 10
 	numElements := 50
+
 	db := GetTestDB()
 	ds := getDS(t)
 
@@ -764,45 +768,93 @@ func TestDomainPriority(t *testing.T) {
 	}
 }
 
-// 	db.Close()
-// 	ds := getDS(t)
-// 	retryLimit := 30
-// 	count := 0
-// 	var allHosts []string
-// 	for {
-// 		host := ds.ClaimNewHost()
-// 		if host == "" {
-// 			if count >= retryLimit {
-// 				break
-// 			} else {
-// 				count++
-// 				continue
-// 			}
-// 		}
-// 		allHosts = append(allHosts, host)
-// 	}
-// 	ds.Close()
+func TestDomainPriorityRatio(t *testing.T) {
+	// This test checks the ratio of fetched domains. The deal is we have two domains, d1 and d2, with priorities, p1
+	// and p2. The number of fetches of d1 (d2) is f1 (f2): that is the number of times d1 is claimed (by ClaimNewHost)
+	// is f1. In this case if the priority system is working correctly it should be that p1/p2 is approximately equal
+	// to f1/f2
+	rand.Seed(12345)
+	db := GetTestDB()
+	ds := getDS(t)
+	// I can't pull in cassandra.MaxPriority because it becomes cyclic dependency.
+	maxPriority := 10
 
-// 	expectedAllHostsLength := len(AllowedPriorities) * numPrios
-// 	if len(allHosts) != expectedAllHostsLength {
-// 		t.Fatalf("allHosts length mismatch: got %d, expected %d", len(allHosts), expectedAllHostsLength)
-// 	}
+	type Dom struct {
+		name     string
+		priority int
+	}
+	doms := []Dom{
+		Dom{"dom1.com", maxPriority / 2},
+		Dom{"dom2.com", maxPriority},
+	}
 
-// 	highestPriority := AllowedPriorities[0] + 1
-// 	for _, host := range allHosts {
-// 		var prio, index int
-// 		n, err := fmt.Sscanf(host, "d%dLL%d.com", &index, &prio)
-// 		if n != 2 || err != nil {
-// 			t.Fatalf("Sscanf failed unexpectedly: %d, %v", n, err)
-// 		}
+	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
+	for _, d := range doms {
+		err := db.Query(insertDomainInfo, d.name, d.priority).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert domain yes.com: %v", err)
+		}
+	}
 
-// 		if prio > highestPriority {
-// 			t.Fatalf("Found domain %q out of order: prio = %d, highestPriority = %d", host, prio, highestPriority)
-// 		}
+	numRuns := 1000
+	hosts := 0
+	got := map[string]int{}
+	for i := 0; i < numRuns; i++ {
+		host := ds.ClaimNewHost()
+		if host == "" {
+			continue
+		}
+		hosts++
+		cnt, cntOk := got[host]
+		if !cntOk {
+			cnt = 0
+		}
+		got[host] = cnt + 1
 
-// 		highestPriority = prio
-// 	}
-// }
+		ds.UnclaimHost(host)
+		update := `UPDATE domain_info 
+				   SET 
+				   	claim_tok = 00000000-0000-0000-0000-000000000000, 
+				   	dispatched = true
+				   WHERE 
+				   	dom = ?`
+
+		err := db.Query(update, host).Exec()
+		if err != nil {
+			t.Fatalf("Failed to update domain_info: %v", err)
+		}
+	}
+
+	prio1 := doms[0].priority
+	prio2 := doms[1].priority
+	expRatio := float64(prio1) / float64(prio2)
+
+	count1, count1Ok := got[doms[0].name]
+	if !count1Ok {
+		t.Fatalf("Failed to find domain %q", doms[0].name)
+	} else {
+		delete(got, doms[0].name)
+	}
+
+	count2, count2Ok := got[doms[1].name]
+	if !count2Ok {
+		t.Fatalf("Failed to find domain %q", doms[1].name)
+	} else {
+		delete(got, doms[1].name)
+	}
+
+	gotRatio := float64(count1) / float64(count2)
+
+	tol := 0.01
+	if gotRatio < expRatio-tol || gotRatio > expRatio+tol {
+		t.Fatalf("Bad ratio: expected %f, but got %f: for a difference of %f using tol %f", expRatio, gotRatio,
+			expRatio-gotRatio, tol)
+	}
+
+	for k := range got {
+		t.Errorf("Unexpected domain %q found", k)
+	}
+}
 
 func TestKeepAlive(t *testing.T) {
 	orig := walker.Config.Fetcher.ActiveFetchersTTL
