@@ -4,9 +4,11 @@ package cassandra
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -718,26 +720,50 @@ func TestClaimHostConcurrency(t *testing.T) {
 	}
 }
 
-// func TestDomainPriority(t *testing.T) {
-// 	// Implementation note: each domain that is added in the first part of this
-// 	// test is added with a priority selected from AllowedPriorities. And that
-// 	// priority is encoded into the domain name. Then in the second part of
-// 	// this test, domains are pulled out in ClaimNewHost order, and the
-// 	// priority of each domain is parsed out of the domain name. Because the
-// 	// priority is embedded in the domain name, it's easy to test that the
-// 	// domains come out in priority order.
+func TestDomainPriority(t *testing.T) {
+	rand.Seed(12345)
 
-// 	numPrios := 25
-// 	db := GetTestDB()
-// 	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
-// 	for i := 0; i < numPrios; i++ {
-// 		for _, priority := range AllowedPriorities {
-// 			err := db.Query(insertDomainInfo, fmt.Sprintf("d%dLL%d.com", i, priority), priority).Exec()
-// 			if err != nil {
-// 				t.Fatalf("Failed to insert domain d%d.com", i)
-// 			}
-// 		}
-// 	}
+	maxPriority := 10
+	numElements := 50
+	db := GetTestDB()
+	ds := getDS(t)
+
+	insertDomainInfo := `INSERT INTO domain_info (dom, priority, claim_tok, dispatched) VALUES (?, ?, 00000000-0000-0000-0000-000000000000, true)`
+	count := 0
+	for i := 0; i < numElements; i++ {
+		if rand.Float32() < 0.5 {
+			count++
+			host := fmt.Sprintf("yes%d.com", i)
+			err := db.Query(insertDomainInfo, host, maxPriority).Exec()
+			if err != nil {
+				t.Fatalf("Failed to insert domain yes.com: %v", err)
+			}
+		} else {
+			host := fmt.Sprintf("NO%d.com", i)
+			err := db.Query(insertDomainInfo, host, 0).Exec() // This isn't legal in normal use, but it'll be fine here
+			if err != nil {
+				t.Fatalf("Failed to insert domain NO.com: %v", err)
+			}
+		}
+	}
+
+	ncount := 0
+	for {
+		host := ds.ClaimNewHost()
+		if host == "" {
+			break
+		}
+		ncount++
+		if !strings.HasPrefix(host, "yes") {
+			t.Errorf("Bad domain found: %q", host)
+		}
+	}
+
+	if ncount != count {
+		t.Fatalf("Count mismatch: got %d, expected %d", ncount, count)
+	}
+}
+
 // 	db.Close()
 // 	ds := getDS(t)
 // 	retryLimit := 30
