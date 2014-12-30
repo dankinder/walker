@@ -54,17 +54,6 @@ type Dispatcher struct {
 
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
-
-	// User hooks to be called after key dispatcher phases
-	Hooks DispatcherHooks
-}
-
-type DispatcherHooks struct {
-	// This method will be called after the dispatcher generates new links for
-	// a domain. The name of the domain, and any error that occurred during processing
-	// of that domain are arguments to this function. Note, if err != nil, than domain was NOT
-	// added to the work queue.
-	AfterGenerateLinks func(domain string, err error)
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -202,54 +191,23 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 	return true
 }
 
-// manageDomainCount will return true if the domain, dom, is eligible to have new links added to the segments table.
-// The second argument, domPriority, is the domain priority of dom.
-func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
-	itr := d.db.Query(`SELECT next_crawl FROM domain_counters WHERE dom = ?`, dom).Iter()
-	cnt := 0
-	itr.Scan(&cnt)
-	err := itr.Close()
-	if err != nil {
-		log4go.Error("manageDomainCount failed to scan next_crawl: %v", err)
-		return false
-	}
-
-	if cnt+domPriority >= MaxPriority {
-		err = d.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority-domPriority, dom).Exec()
-		if err != nil {
-			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
-			return false
-		}
-		return true
-	} else {
-		err = d.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()
-		if err != nil {
-			log4go.Error("manageDomainCount failed to increment/establish counter: %v", err)
-		}
-		return false
-	}
-}
-
 func (d *Dispatcher) domainIterator() {
 	for {
 		log4go.Debug("Starting new domain iteration")
-		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded, priority FROM domain_info`).Iter()
+		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
 
 		var domain string
 		var dispatched bool
 		var claimTok gocql.UUID
 		var excluded bool
-		var priority int
-		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded, &priority) {
+		for domainiter.Scan(&domain, &dispatched, &claimTok, &excluded) {
 			if d.quitSignaled() {
 				close(d.domains)
 				return
 			}
 
 			if !dispatched && !excluded {
-				if d.manageDomainCount(domain, priority) {
-					d.domains <- domain
-				}
+				d.domains <- domain
 			} else if !d.fetcherIsAlive(claimTok) {
 				go d.cleanStrandedClaims(claimTok)
 			}
@@ -294,12 +252,8 @@ func (d *Dispatcher) quitSignaled() bool {
 func (d *Dispatcher) generateRoutine() {
 	for domain := range d.domains {
 		d.generatingWG.Add(1)
-		err := d.generateSegment(domain)
-		if err != nil {
+		if err := d.generateSegment(domain); err != nil {
 			log4go.Error("error generating segment for %v: %v", domain, err)
-		}
-		if d.Hooks.AfterGenerateLinks != nil {
-			d.Hooks.AfterGenerateLinks(domain, err)
 		}
 		d.generatingWG.Done()
 	}
