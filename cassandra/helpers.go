@@ -247,7 +247,7 @@ CREATE TABLE {{.Keyspace}}.active_fetchers (
 
 CREATE TABLE {{.Keyspace}}.domain_counters (
 	dom text,
-	cnt counter,
+	next_crawl counter,
 	PRIMARY KEY (dom)
 );
 

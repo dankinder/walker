@@ -205,24 +205,24 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 // manageDomainCount will return true if the domain, dom, is eligible to have new links added to the segments table.
 // The second argument, domPriority, is the domain priority of dom.
 func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
-	itr := d.db.Query(`SELECT cnt FROM domain_counters WHERE dom = ?`, dom).Iter()
+	itr := d.db.Query(`SELECT next_crawl FROM domain_counters WHERE dom = ?`, dom).Iter()
 	cnt := 0
 	itr.Scan(&cnt)
 	err := itr.Close()
 	if err != nil {
-		log4go.Error("manageDomainCount failed to scan cnt: %v", err)
+		log4go.Error("manageDomainCount failed to scan next_crawl: %v", err)
 		return false
 	}
 
 	if cnt+domPriority >= MaxPriority {
-		err = d.db.Query("UPDATE domain_counters SET cnt = cnt-? WHERE dom = ?", MaxPriority-domPriority, dom).Exec()
+		err = d.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority-domPriority, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to clear domain_counters: %v", err)
 			return false
 		}
 		return true
 	} else {
-		err = d.db.Query("UPDATE domain_counters SET cnt = cnt+? WHERE dom = ?", domPriority, dom).Exec()
+		err = d.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()
 		if err != nil {
 			log4go.Error("manageDomainCount failed to increment/establish counter: %v", err)
 		}
