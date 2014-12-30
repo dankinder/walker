@@ -93,19 +93,11 @@ func (ds *Datastore) ClaimNewHost() string {
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
-		for _, priority := range AllowedPriorities {
-			var domainsPerPrio []string
-			retryLimit := 5
-			for i := 0; i < retryLimit; i++ {
-				log4go.Fine("ClaimNewHost pulling priority = %d", priority)
-				var retry bool
-				domainsPerPrio, retry = ds.tryClaimHosts(priority, limitPerClaimCycle-len(ds.domains))
-				if !retry {
-					break
-				}
-			}
+		retryLimit := 5
+		for i := 0; i < retryLimit; i++ {
+			domainsPerPrio, retry := ds.tryClaimHosts(limitPerClaimCycle - len(ds.domains))
 			ds.domains = append(ds.domains, domainsPerPrio...)
-			if len(ds.domains) >= limitPerClaimCycle {
+			if !retry {
 				break
 			}
 		}
@@ -120,15 +112,49 @@ func (ds *Datastore) ClaimNewHost() string {
 	return domain
 }
 
+// domainPriorityReady will return true if the domain, dom, is eligible to be claimed.
+// The second argument, domPriority, is the domain priority of dom.
+func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
+	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()
+	if err != nil {
+		log4go.Error("domainPriorityQuery failed to increment/establish counter: %v", err)
+		return false
+	}
+
+	itr := ds.db.Query(`SELECT next_crawl FROM domain_counters WHERE dom = ?`, dom).Iter()
+	cnt := 0
+	itr.Scan(&cnt)
+	err = itr.Close()
+	if err != nil {
+		log4go.Error("domainPriorityQuery failed to scan cnt: %v", err)
+		return false
+	}
+
+	if cnt >= MaxPriority {
+		return true
+	}
+
+	return false
+}
+
+func (ds *Datastore) domainPriorityClaim(dom string) bool {
+	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority, dom).Exec()
+	if err != nil {
+		log4go.Error("domainPrioritySet failed to clear domain_counters: %v", err)
+		return false
+	}
+
+	return true
+}
+
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
 // if the caller should re-call the method.
-func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, retry bool) {
-	loopQuery := fmt.Sprintf(`SELECT dom 
+func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
+	loopQuery := fmt.Sprintf(`SELECT dom, priority 
 									FROM domain_info
 									WHERE 
 										claim_tok = 00000000-0000-0000-0000-000000000000 AND
 								 		dispatched = true AND
-								 		priority = ?
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
 
@@ -147,12 +173,16 @@ func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, r
 	// another datastore before any can be claimed by this datastore.
 	// Under current expected use, it seems like we wouldn't need to retry
 	// more than 5-ish times (hence the retryLimit setting).
-
 	var domain string
+	var domPriority int
 	start := time.Now()
 	trumpedClaim := 0
-	domain_iter := ds.db.Query(loopQuery, priority).Iter()
-	for domain_iter.Scan(&domain) {
+	domain_iter := ds.db.Query(loopQuery).Iter()
+	for domain_iter.Scan(&domain, &domPriority) {
+		if !ds.domainPriorityTry(domain, domPriority) {
+			continue
+		}
+
 		// The query below is a compare-and-set type query. It will only update the claim_tok, claim_time
 		// if the claim_tok remains 00000000-0000-0000-0000-000000000000 at the time of update.
 		casMap := map[string]interface{}{}
@@ -164,7 +194,9 @@ func (ds *Datastore) tryClaimHosts(priority int, limit int) (domains []string, r
 			log4go.Fine("Domain %v was claimed by another crawler before resolution", domain)
 		} else {
 			domains = append(domains, domain)
-			log4go.Fine("Claimed segment %v with token %v in %v", domain, ds.crawlerUUID, time.Since(start))
+			if ds.domainPriorityClaim(domain) {
+				log4go.Fine("Claimed segment %v with token %v in %v", domain, ds.crawlerUUID, time.Since(start))
+			}
 			start = time.Now()
 		}
 	}
