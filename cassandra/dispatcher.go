@@ -55,12 +55,16 @@ type Dispatcher struct {
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
 
-	// User hooks
+	// User hooks to be called after key dispatcher phases
 	Hooks DispatcherHooks
 }
 
 type DispatcherHooks struct {
-	AfterGenerateSegments func(domain string, err error)
+	// This method will be called after the dispatcher generates new links for
+	// a domain. The name of the domain, and any error that occurred during processing
+	// of that domain are arguments to this function. Note, if err != nil, than domain was NOT
+	// added to the work queue.
+	AfterGenerateLinks func(domain string, err error)
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -198,7 +202,8 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 	return true
 }
 
-// return true if this domain should be used
+// manageDomainCount will return true if the domain, dom, is eligible to have new links added to the segments table.
+// The second argument, domPriority, is the domain priority of dom.
 func (d *Dispatcher) manageDomainCount(dom string, domPriority int) bool {
 	itr := d.db.Query(`SELECT cnt FROM domain_counters WHERE dom = ?`, dom).Iter()
 	cnt := 0
@@ -293,8 +298,8 @@ func (d *Dispatcher) generateRoutine() {
 		if err != nil {
 			log4go.Error("error generating segment for %v: %v", domain, err)
 		}
-		if d.Hooks.AfterGenerateSegments != nil {
-			d.Hooks.AfterGenerateSegments(domain, err)
+		if d.Hooks.AfterGenerateLinks != nil {
+			d.Hooks.AfterGenerateLinks(domain, err)
 		}
 		d.generatingWG.Done()
 	}

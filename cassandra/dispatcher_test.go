@@ -1147,7 +1147,7 @@ func TestDispatchPriority(t *testing.T) {
 	}
 
 	d := &Dispatcher{
-		Hooks: DispatcherHooks{AfterGenerateSegments: monitor},
+		Hooks: DispatcherHooks{AfterGenerateLinks: monitor},
 	}
 	go d.StartDispatcher()
 	// Yes this is a long Sleep. Making it smaller runs the risk of creating too small a sample: and end
@@ -1176,8 +1176,9 @@ func TestDispatchPriority(t *testing.T) {
 		t.Fatalf("Failed to find a2.com count")
 
 	}
-	ratioA1 := float32(a1cnt) / float32(a2cnt)
-	if ratioA1 < 0.4 || ratioA1 > 0.6 {
+	tol := 0.05
+	ratioA1 := float64(a1cnt) / float64(a2cnt)
+	if ratioA1 < 0.5-tol || ratioA1 > 0.5+tol {
 		t.Fatalf("Bad ratio of A1/A2: found %f.2%% [%d, %d]", ratioA1, a1cnt, a2cnt)
 	}
 }
