@@ -113,7 +113,8 @@ func (ds *Datastore) ClaimNewHost() string {
 }
 
 // domainPriorityTry will return true if the domain, dom, is eligible to be claimed.
-// The second argument, domPriority, is the domain priority of dom.
+// The second argument, domPriority, is the domain priority of dom. Note this method updates
+// the domain_counters table.
 func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()
 	if err != nil {
@@ -123,9 +124,9 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 
 	itr := ds.db.Query(`SELECT next_crawl FROM domain_counters WHERE dom = ?`, dom).Iter()
 	cnt := 0
-	itr.Scan(&cnt)
+	scaned := itr.Scan(&cnt)
 	err = itr.Close()
-	if err != nil {
+	if !scaned || err != nil {
 		log4go.Error("domainPriorityQuery failed to scan cnt: %v", err)
 		return false
 	}
@@ -137,6 +138,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 	return false
 }
 
+// This method sets the domain_counters table correctly after a domain has been claimed.
 func (ds *Datastore) domainPriorityClaim(dom string) bool {
 	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority, dom).Exec()
 	if err != nil {
