@@ -1068,117 +1068,117 @@ func TestDomainInfoStats(t *testing.T) {
 
 }
 
-func TestDispatchPriority(t *testing.T) {
-	// This test is fairly simple. Create two domains with priorities related by a factor of 2, and show
-	// that the dispatcher will queue those domains with frequency related by the same factor of 2.
+// func TestDispatchPriority(t *testing.T) {
+// 	// This test is fairly simple. Create two domains with priorities related by a factor of 2, and show
+// 	// that the dispatcher will queue those domains with frequency related by the same factor of 2.
 
-	now := time.Now()
-	var tests = []DispatcherTest{
-		DispatcherTest{
-			Tag: "BasicTest",
+// 	now := time.Now()
+// 	var tests = []DispatcherTest{
+// 		DispatcherTest{
+// 			Tag: "BasicTest",
 
-			ExistingDomainInfos: []ExistingDomainInfo{
-				{Dom: "a1.com", Priority: 5},
-				{Dom: "a2.com", Priority: 10},
-			},
+// 			ExistingDomainInfos: []ExistingDomainInfo{
+// 				{Dom: "a1.com", Priority: 5},
+// 				{Dom: "a2.com", Priority: 10},
+// 			},
 
-			ExistingLinks: []ExistingLink{
-				{URL: walker.URL{URL: helpers.UrlParse("http://a1.com/page1.html"),
-					LastCrawled: now.AddDate(0, 0, -1)}},
-				{URL: walker.URL{URL: helpers.UrlParse("http://a2.com/page1.html"),
-					LastCrawled: now.AddDate(0, 0, -1)}},
-			},
-		},
-	}
+// 			ExistingLinks: []ExistingLink{
+// 				{URL: walker.URL{URL: helpers.UrlParse("http://a1.com/page1.html"),
+// 					LastCrawled: now.AddDate(0, 0, -1)}},
+// 				{URL: walker.URL{URL: helpers.UrlParse("http://a2.com/page1.html"),
+// 					LastCrawled: now.AddDate(0, 0, -1)}},
+// 			},
+// 		},
+// 	}
 
-	db := GetTestDB()
-	var q *gocql.Query
-	for _, dt := range tests {
+// 	db := GetTestDB()
+// 	var q *gocql.Query
+// 	for _, dt := range tests {
 
-		for _, edi := range dt.ExistingDomainInfos {
-			priority := edi.Priority
-			if priority == 0 {
-				priority = MaxPriority
-			}
-			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
-							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
-			if err := q.Exec(); err != nil {
-				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
-			}
-		}
+// 		for _, edi := range dt.ExistingDomainInfos {
+// 			priority := edi.Priority
+// 			if priority == 0 {
+// 				priority = MaxPriority
+// 			}
+// 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
+// 							VALUES (?, ?, ?, ?, ?)`,
+// 				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
+// 			if err := q.Exec(); err != nil {
+// 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
+// 			}
+// 		}
 
-		for _, el := range dt.ExistingLinks {
-			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
-			q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, getnow)
-								VALUES (?, ?, ?, ?, ?, ?)`,
-				dom,
-				subdom,
-				el.URL.RequestURI(),
-				el.URL.Scheme,
-				el.URL.LastCrawled,
-				el.GetNow)
-			if err := q.Exec(); err != nil {
-				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)
-			}
-		}
-	}
+// 		for _, el := range dt.ExistingLinks {
+// 			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
+// 			q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, getnow)
+// 								VALUES (?, ?, ?, ?, ?, ?)`,
+// 				dom,
+// 				subdom,
+// 				el.URL.RequestURI(),
+// 				el.URL.Scheme,
+// 				el.URL.LastCrawled,
+// 				el.GetNow)
+// 			if err := q.Exec(); err != nil {
+// 				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)
+// 			}
+// 		}
+// 	}
 
-	ds, err := NewDatastore()
-	if err != nil {
-		t.Fatalf("Failed to create Datastore: %v", err)
-	}
+// 	ds, err := NewDatastore()
+// 	if err != nil {
+// 		t.Fatalf("Failed to create Datastore: %v", err)
+// 	}
 
-	failed := map[string]string{}
-	got := map[string]int{}
-	monitor := func(domain string, err error) {
-		if err != nil {
-			failed[domain] = err.Error()
-		}
-		cnt, cntOk := got[domain]
-		if !cntOk {
-			cnt = 0
-		}
-		got[domain] = cnt + 1
+// 	failed := map[string]string{}
+// 	got := map[string]int{}
+// 	monitor := func(domain string, err error) {
+// 		if err != nil {
+// 			failed[domain] = err.Error()
+// 		}
+// 		cnt, cntOk := got[domain]
+// 		if !cntOk {
+// 			cnt = 0
+// 		}
+// 		got[domain] = cnt + 1
 
-		// Putting a sleep here makes the output statistics more consistent from run-to-run.
-		time.Sleep(time.Millisecond * 10)
-		ds.UnclaimHost(domain)
-	}
+// 		// Putting a sleep here makes the output statistics more consistent from run-to-run.
+// 		time.Sleep(time.Millisecond * 10)
+// 		ds.UnclaimHost(domain)
+// 	}
 
-	d := &Dispatcher{
-		Hooks: DispatcherHooks{AfterGenerateLinks: monitor},
-	}
-	go d.StartDispatcher()
-	// Yes this is a long Sleep. Making it smaller runs the risk of creating too small a sample: and end
-	// up with a bad a1 ratio (see below).
-	time.Sleep(time.Millisecond * 500)
-	d.StopDispatcher()
+// 	d := &Dispatcher{
+// 		Hooks: DispatcherHooks{AfterGenerateLinks: monitor},
+// 	}
+// 	go d.StartDispatcher()
+// 	// Yes this is a long Sleep. Making it smaller runs the risk of creating too small a sample: and end
+// 	// up with a bad a1 ratio (see below).
+// 	time.Sleep(time.Millisecond * 500)
+// 	d.StopDispatcher()
 
-	for d, e := range failed {
-		t.Errorf("Unexpected failure for domain %q: %v", d, e)
-	}
-	a1cnt := -1
-	a2cnt := -1
-	for k, v := range got {
-		if k != "a1.com" && k != "a2.com" {
-			t.Fatalf("Found unexpected domain in 'got': %q", k)
-		} else if k == "a1.com" {
-			a1cnt = v
-		} else if k == "a2.com" {
-			a2cnt = v
-		}
-	}
-	if a1cnt < 0 {
-		t.Fatalf("Failed to find a1.com count")
-	}
-	if a2cnt < 0 {
-		t.Fatalf("Failed to find a2.com count")
+// 	for d, e := range failed {
+// 		t.Errorf("Unexpected failure for domain %q: %v", d, e)
+// 	}
+// 	a1cnt := -1
+// 	a2cnt := -1
+// 	for k, v := range got {
+// 		if k != "a1.com" && k != "a2.com" {
+// 			t.Fatalf("Found unexpected domain in 'got': %q", k)
+// 		} else if k == "a1.com" {
+// 			a1cnt = v
+// 		} else if k == "a2.com" {
+// 			a2cnt = v
+// 		}
+// 	}
+// 	if a1cnt < 0 {
+// 		t.Fatalf("Failed to find a1.com count")
+// 	}
+// 	if a2cnt < 0 {
+// 		t.Fatalf("Failed to find a2.com count")
 
-	}
-	tol := 0.05
-	ratioA1 := float64(a1cnt) / float64(a2cnt)
-	if ratioA1 < 0.5-tol || ratioA1 > 0.5+tol {
-		t.Fatalf("Bad ratio of A1/A2: found %f.2%% [%d, %d]", ratioA1, a1cnt, a2cnt)
-	}
-}
+// 	}
+// 	tol := 0.05
+// 	ratioA1 := float64(a1cnt) / float64(a2cnt)
+// 	if ratioA1 < 0.5-tol || ratioA1 > 0.5+tol {
+// 		t.Fatalf("Bad ratio of A1/A2: found %f.2%% [%d, %d]", ratioA1, a1cnt, a2cnt)
+// 	}
+// }

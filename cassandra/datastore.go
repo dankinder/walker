@@ -154,7 +154,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 									FROM domain_info
 									WHERE 
 										claim_tok = 00000000-0000-0000-0000-000000000000 AND
-								 		dispatched = true AND
+								 		dispatched = true
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
 
@@ -179,6 +179,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	trumpedClaim := 0
 	domain_iter := ds.db.Query(loopQuery).Iter()
 	for domain_iter.Scan(&domain, &domPriority) {
+		// log4go.Error("PETE domain to try %q", domain)
 		if !ds.domainPriorityTry(domain, domPriority) {
 			continue
 		}
