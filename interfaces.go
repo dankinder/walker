@@ -25,8 +25,10 @@ type Datastore interface {
 	// ClaimNewHost returns a hostname that is now claimed for this crawler to
 	// crawl. A segment of links for this host is assumed to be available.
 	// Returns the domain of the segment it claimed, or "" if there are none
-	// available.
-	ClaimNewHost() string
+	// available. seedDomain may be nil, or point to a string. If seedDomain
+	// is non-nil, the string pointed to will be read and written too, and a
+	// pointer to the same string should be passed to each call to ClaimNewHost.
+	ClaimNewHost(seedDomain *string) string
 
 	// UnclaimHost indicates that all links from `LinksForHost` have been
 	// processed, so other work may be done with this host. For example the

@@ -88,14 +88,18 @@ var limitPerClaimCycle int = 50
 var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
 var MaxPriority = AllowedPriorities[0]
 
-func (ds *Datastore) ClaimNewHost() string {
+// The argument seedDomain seeds the search for the next host. seedDomain may be nil, or may
+// point at a string. If seedDomain is nil, or *seedDomain == "" then the search will start at
+// the beginning of the table, otherwise the search will start . If seedDomain != nil, the next seed domain will be saved into
+// the string point to by seedDomain.
+func (ds *Datastore) ClaimNewHost(seedDomain *string) string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
 		retryLimit := 5
 		for i := 0; i < retryLimit; i++ {
-			domainsPerPrio, retry := ds.tryClaimHosts(limitPerClaimCycle - len(ds.domains))
+			domainsPerPrio, retry := ds.tryClaimHosts(limitPerClaimCycle-len(ds.domains), seedDomain)
 			ds.domains = append(ds.domains, domainsPerPrio...)
 			if !retry {
 				break
@@ -150,15 +154,30 @@ func (ds *Datastore) domainPriorityClaim(dom string) bool {
 }
 
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
-// if the caller should re-call the method.
-func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
-	loopQuery := fmt.Sprintf(`SELECT dom, priority 
+// if the caller should re-call the method. The seedDomain pointer is the domain
+// to start the iteration with (or nil)
+func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []string, retry bool) {
+	var domain_iter *gocql.Iter
+	if seedDomain == nil || *seedDomain == "" {
+		loopQuery := fmt.Sprintf(`SELECT dom, priority 
 									FROM domain_info
 									WHERE 
 										claim_tok = 00000000-0000-0000-0000-000000000000 AND
 								 		dispatched = true
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
+		domain_iter = ds.db.Query(loopQuery).Iter()
+	} else {
+		loopQuery := fmt.Sprintf(`SELECT dom, priority 
+									FROM domain_info
+									WHERE 
+										claim_tok = 00000000-0000-0000-0000-000000000000 AND
+								 		dispatched = true AND
+								 		TOKEN(dom) > TOKEN(?)
+								 	LIMIT %d 
+								 	ALLOW FILTERING`, limit)
+		domain_iter = ds.db.Query(loopQuery, *seedDomain).Iter()
+	}
 
 	casQuery := `UPDATE domain_info 
 						SET 
@@ -179,9 +198,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	var domPriority int
 	start := time.Now()
 	trumpedClaim := 0
-	domain_iter := ds.db.Query(loopQuery).Iter()
 	for domain_iter.Scan(&domain, &domPriority) {
-		// log4go.Error("PETE domain to try %q", domain)
 		if !ds.domainPriorityTry(domain, domPriority) {
 			continue
 		}
@@ -209,6 +226,10 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	if err != nil {
 		log4go.Error("Domain iteration query failed: %v", err)
 		return
+	}
+
+	if seedDomain != nil {
+		*seedDomain = domain
 	}
 
 	if trumpedClaim >= limit {
