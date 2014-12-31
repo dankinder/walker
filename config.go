@@ -63,12 +63,13 @@ type WalkerConfig struct {
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
-		MaxLinksPerSegment       int     `yaml:"num_links_per_segment"`
-		RefreshPercentage        float64 `yaml:"refresh_percentage"`
-		NumConcurrentDomains     int     `yaml:"num_concurrent_domains"`
-		MinLinkRefreshTime       string  `yaml:"min_link_refresh_time"`
-		DispatchInterval         string  `yaml:"dispatch_interval"`
-		CorrectLinkNormalization bool    `yaml:"correct_link_normalization"`
+		MaxLinksPerSegment          int     `yaml:"num_links_per_segment"`
+		RefreshPercentage           float64 `yaml:"refresh_percentage"`
+		NumConcurrentDomains        int     `yaml:"num_concurrent_domains"`
+		MinLinkRefreshTime          string  `yaml:"min_link_refresh_time"`
+		DispatchInterval            string  `yaml:"dispatch_interval"`
+		CorrectLinkNormalization    bool    `yaml:"correct_link_normalization"`
+		SmallestMaxPriorityInterval string  `yaml:"smallest_max_priority_interval"`
 	} `yaml:"dispatcher"`
 
 	Cassandra struct {
@@ -146,6 +147,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
 	Config.Dispatcher.DispatchInterval = "10s"
 	Config.Dispatcher.CorrectLinkNormalization = false
+	Config.Dispatcher.SmallestMaxPriorityInterval = "60s"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
@@ -207,6 +209,10 @@ func assertConfigInvariants() error {
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.DispatchInterval failed to parse: %v", err))
 	}
+	_, err = time.ParseDuration(dis.SmallestMaxPriorityInterval)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.SmallestMaxPriorityInterval failed to parse: %v", err))
+	}
 
 	fet := &Config.Fetcher
 	_, err = time.ParseDuration(fet.HttpTimeout)
@@ -251,9 +257,13 @@ func assertConfigInvariants() error {
 		errs = append(errs, fmt.Sprintf("Fetcher.HttpKeepAliveThreshold failed to parse: %v", err))
 	}
 
-	_, err = time.ParseDuration(Config.Cassandra.Timeout)
+	cas := &Config.Cassandra
+	_, err = time.ParseDuration(cas.Timeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
+	}
+	if cas.DefaultDomainPriority < 1 {
+		errs = append(errs, fmt.Sprintf("Cassandra.DefaultDomainPriority must be >= 1"))
 	}
 
 	keeprat := Config.Fetcher.ActiveFetchersKeepratio
