@@ -106,9 +106,6 @@ func (ds *Datastore) Close() {
 // Datastore.domains per population.
 var limitPerClaimCycle int = 50
 
-// The allowed values of the priority in the domain_info table
-var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
-
 // The argument seedDomain seeds the search for the next host. seedDomain may be nil, or may
 // point at a string. If seedDomain is nil, or *seedDomain == "" then the search will start at
 // the beginning of the table, otherwise the search will start . If seedDomain != nil, the next seed domain will be saved into
