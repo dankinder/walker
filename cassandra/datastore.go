@@ -156,7 +156,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 		return false
 	}
 
-	if cnt >= ds.maxPriority() {
+	if cnt >= ds.MaxPriority() {
 		return true
 	}
 
@@ -165,7 +165,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 
 // This method sets the domain_counters table correctly after a domain has been claimed.
 func (ds *Datastore) domainPriorityClaim(dom string) bool {
-	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", ds.maxPriority(), dom).Exec()
+	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", ds.MaxPriority(), dom).Exec()
 	if err != nil {
 		log4go.Error("domainPrioritySet failed to clear domain_counters: %v", err)
 		return false
@@ -517,16 +517,16 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 	return nil
 }
 
-func (ds *Datastore) maxPriority() int {
+func (ds *Datastore) MaxPriority() int {
 	if time.Now().After(ds.maxPrioNeedFetch) {
 		var prio int
 		err := ds.db.Query("SELECT val FROM walker_globals WHERE key = ?", "max_priority").Scan(&prio)
 		if err != nil {
-			log4go.Error("maxPriority failed to read max_priority: %v", err)
+			log4go.Error("MaxPriority failed to read max_priority: %v", err)
 		} else {
 			ds.maxPrio = prio
-			ds.maxPrioNeedFetch = time.Now().Add(MaxPriorityPeriod)
 		}
+		ds.maxPrioNeedFetch = time.Now().Add(MaxPriorityPeriod)
 	}
 	return ds.maxPrio
 }

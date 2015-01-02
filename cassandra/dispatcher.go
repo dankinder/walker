@@ -126,17 +126,8 @@ func (d *Dispatcher) pollMaxPriority() {
 		loopPeriod = dispatch_interval
 	}
 
-	// Should we quit the function
-	quit := func() bool {
-		select {
-		case <-d.quit:
-			return true
-		default:
-			return false
-		}
-	}
-
 	// Loop forever
+	timer := time.NewTimer(loopPeriod)
 	max_priority := "max_priority"
 	for {
 		var err error
@@ -151,8 +142,12 @@ func (d *Dispatcher) pollMaxPriority() {
 				max = prio
 			}
 			count++
-			if (count%scansPerQuit) == 0 && quit() {
-				goto LOOP
+			if (count % scansPerQuit) == 0 {
+				select {
+				case <-d.quit:
+					goto LOOP
+				default:
+				}
 			}
 		}
 		err = iter.Close()
@@ -171,10 +166,12 @@ func (d *Dispatcher) pollMaxPriority() {
 		}
 
 	LOOP:
-		if quit() {
+		timer.Reset(loopPeriod - time.Since(start))
+		select {
+		case <-d.quit:
 			return
+		case <-timer.C:
 		}
-		time.Sleep(loopPeriod - time.Since(start))
 	}
 }
 

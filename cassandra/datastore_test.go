@@ -34,6 +34,10 @@ func getDS(t *testing.T) *Datastore {
 	if err != nil {
 		t.Fatalf("Failed to create Datastore: %v", err)
 	}
+	err = ds.db.Query("INSERT INTO walker_globals (key, val) VALUES (?, ?)", "max_priority", 10).Exec()
+	if err != nil {
+		t.Fatalf("Failed to insert max_priority: %v", err)
+	}
 	return ds
 }
 
@@ -776,8 +780,7 @@ func TestDomainPriorityRatio(t *testing.T) {
 	rand.Seed(12345)
 	db := GetTestDB()
 	ds := getDS(t)
-	// I can't pull in cassandra.MaxPriority because it becomes cyclic dependency.
-	maxPriority := 10
+	maxPriority := ds.MaxPriority()
 
 	type Dom struct {
 		name     string
