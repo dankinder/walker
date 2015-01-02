@@ -42,10 +42,10 @@ type Datastore struct {
 	activeFetchersTTL int
 
 	// The time stamp, after which, max_priority should be re-read
-	lastMaxPrioNeedFetch time.Time
+	maxPrioNeedFetch time.Time
 
 	// The last value recorded for max_priority
-	lastMaxPrio int
+	maxPrio int
 }
 
 var MaxPriorityPeriod time.Duration
@@ -85,8 +85,8 @@ func NewDatastore() (*Datastore, error) {
 	}
 	ds.activeFetchersTTL = int(durr / time.Second)
 
-	ds.lastMaxPrioNeedFetch = time.Now().AddDate(-1, 0, 0)
-	ds.lastMaxPrio = walker.Config.Cassandra.DefaultDomainPriority
+	ds.maxPrioNeedFetch = time.Now().AddDate(-1, 0, 0)
+	ds.maxPrio = walker.Config.Cassandra.DefaultDomainPriority
 
 	return ds, nil
 }
@@ -516,17 +516,17 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 }
 
 func (ds *Datastore) maxPriority() int {
-	if time.Now().After(ds.lastMaxPrioNeedFetch) {
+	if time.Now().After(ds.maxPrioNeedFetch) {
 		var prio int
 		err := ds.db.Query("SELECT val FROM walker_globals WHERE key = ?", "max_priority").Scan(&prio)
 		if err != nil {
 			log4go.Error("maxPriority failed to read max_priority: %v", err)
 		} else {
-			ds.lastMaxPrio = prio
-			ds.lastMaxPrioNeedFetch = time.Now().Add(MaxPriorityPeriod)
+			ds.maxPrio = prio
+			ds.maxPrioNeedFetch = time.Now().Add(MaxPriorityPeriod)
 		}
 	}
-	return ds.lastMaxPrio
+	return ds.maxPrio
 }
 
 //
