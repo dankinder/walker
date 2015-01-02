@@ -161,7 +161,7 @@ func (d *Dispatcher) pollMaxPriority() {
 			goto LOOP
 		}
 		if max < 0 {
-			max = walker.Config.Cassandra.DefaultDomainPriority
+			goto LOOP
 		}
 
 		err = d.db.Query("INSERT INTO walker_globals (key, val) VALUES (?, ?)", max_priority, max).Exec()

@@ -44,7 +44,10 @@ type Datastore struct {
 	// The time stamp, after which, max_priority should be re-read
 	maxPrioNeedFetch time.Time
 
-	// The last value recorded for max_priority
+	// The value in this variable is the last recorded value of max_priority, if a
+	// value was recorded. Otherwise, if max_priority hasn't been read successfully
+	// it equals Config.Cassandra.DefaultDomainPriority. In either case maxPrio is the
+	// best max_priority value available.
 	maxPrio int
 }
 
@@ -105,7 +108,6 @@ var limitPerClaimCycle int = 50
 
 // The allowed values of the priority in the domain_info table
 var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
-var MaxPriority = AllowedPriorities[0]
 
 // The argument seedDomain seeds the search for the next host. seedDomain may be nil, or may
 // point at a string. If seedDomain is nil, or *seedDomain == "" then the search will start at
@@ -154,7 +156,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 		return false
 	}
 
-	if cnt >= MaxPriority {
+	if cnt >= ds.maxPriority() {
 		return true
 	}
 
@@ -163,7 +165,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 
 // This method sets the domain_counters table correctly after a domain has been claimed.
 func (ds *Datastore) domainPriorityClaim(dom string) bool {
-	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority, dom).Exec()
+	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", ds.maxPriority(), dom).Exec()
 	if err != nil {
 		log4go.Error("domainPrioritySet failed to clear domain_counters: %v", err)
 		return false
