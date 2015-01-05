@@ -32,15 +32,16 @@ package cmd
 import (
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sort"
 	"strings"
 	"syscall"
 
-	"code.google.com/p/log4go"
+	// allow http profile
+	_ "net/http/pprof"
 
+	"code.google.com/p/log4go"
 	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
@@ -78,6 +79,7 @@ type CommanderStreams struct {
 	Exit   func(status int)
 }
 
+// Streams allows user to set global CommandStreams object
 func Streams(cstream CommanderStreams) CommanderStreams {
 	old := commander.Streams
 	commander.Streams = cstream
@@ -150,7 +152,7 @@ var readLinkLink string
 var readLinkBodyOnly bool
 var readLinkMetaOnly bool
 
-// Allows tests to clear readLink options
+// ReadLinkClearOptions allows tests to clear readLink options
 func ReadLinkClearOptions() {
 	readLinkLink = ""
 	readLinkBodyOnly = false
@@ -278,7 +280,7 @@ func init() {
 	walkerCommand.PersistentFlags().StringVarP(&config,
 		"config", "c", "", "path to a config file to load")
 
-	var noConsole bool = false
+	var noConsole = false
 	crawlCommand := &cobra.Command{
 		Use:   "crawl",
 		Short: "start an all-in-one crawler",

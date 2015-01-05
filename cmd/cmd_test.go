@@ -289,7 +289,7 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 
 func TestReadlinkCommand(t *testing.T) {
 	// Define some useful constants
-	goodUrl, _ := walker.ParseURL("http://test.com/page1.com")
+	goodURL, _ := walker.ParseURL("http://test.com/page1.com")
 	crawlTime, _ := time.Parse("Mon Jan 2 15:04:05 -0700 MST 2006", "Mon Jan 2 15:04:05 -0700 MST 2006")
 	body := `<!DOCTYPE html>
 <html>
@@ -309,12 +309,12 @@ func TestReadlinkCommand(t *testing.T) {
 
 	// Define some link infos
 	notYetCrawledLinfo := walker.LinkInfo{
-		URL:       goodUrl,
+		URL:       goodURL,
 		CrawlTime: walker.NotYetCrawled,
 	}
 
 	goodLinfo := walker.LinkInfo{
-		URL:            goodUrl,
+		URL:            goodURL,
 		Status:         200,
 		CrawlTime:      crawlTime,
 		Error:          "A nice long\nError\nwith plenty of \nnewlines and such",
@@ -338,7 +338,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "linkNotThere",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo:  nil,
 			stderr: "Failed to find link http://test.com/page1.com in datastore",
 			estat:  1,
@@ -346,7 +346,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "notYetCrawled",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo:  &notYetCrawledLinfo,
 			stdout: "Link http://test.com/page1.com is present, but has not yet been fetched",
 			estat:  0,
@@ -354,7 +354,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "badOptions",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-mb"},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String(), "-mb"},
 			linfo:  nil,
 			stderr: "Can't specify both --body-only/-b AND --meta-only/-m",
 			estat:  1,
@@ -362,7 +362,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:   "standard",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `Url:            http://test.com/page1.com
@@ -397,7 +397,7 @@ BODY:
 
 		{
 			tag:   "metaOnly",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-m"},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String(), "-m"},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `Url:            http://test.com/page1.com
@@ -421,7 +421,7 @@ HEADERS:
 
 		{
 			tag:   "bodyOnly",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-b"},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String(), "-b"},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `<!DOCTYPE html>
@@ -441,7 +441,7 @@ HEADERS:
 		ReadLinkClearOptions()
 
 		datastore := &helpers.MockDatastore{}
-		datastore.On("FindLink", goodUrl, true).Return(tst.linfo, nil)
+		datastore.On("FindLink", goodURL, true).Return(tst.linfo, nil)
 		Datastore(datastore)
 		origArgs := os.Args
 		os.Args = tst.call
