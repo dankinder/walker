@@ -52,7 +52,7 @@ func callControllerFull(url string, body string, urlPattern string, controller f
 	//
 	// Set your method based on the body input
 	//
-	var bodyBuff io.Reader = nil
+	var bodyBuff io.Reader
 	method := "GET"
 	ct := ""
 	if body != "" {

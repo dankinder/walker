@@ -78,6 +78,7 @@ func (mm *Matcher) addMediaType(mimeString string) error {
 	return nil
 }
 
+// Match returns true if mimeString matches, false otherwise.
 func (mm *Matcher) Match(mimeString string) (bool, error) {
 	mediaName, _, err := mime.ParseMediaType(mimeString)
 	if err != nil {
