@@ -99,7 +99,7 @@ type FetchManager struct {
 	// http_keep_alive == "threshold". Otherwise it's nil.
 	TransNoKeepAlive http.RoundTripper
 
-	// Parsed duration of the string Config.Fetcher.HttpKeepAliveThreshold
+	// Parsed duration of the string Config.Fetcher.HTTPKeepAliveThreshold
 	KeepAliveThreshold time.Duration
 
 	fetchers  []*fetcher
@@ -189,13 +189,13 @@ func (fm *FetchManager) Start() {
 
 	fm.started = true
 
-	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
+	timeout, err := time.ParseDuration(Config.Fetcher.HTTPTimeout)
 	if err != nil {
-		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+		// This shouldn't happen because HTTPTimeout is tested in assertConfigInvariants
 		panic(err)
 	}
 
-	fm.KeepAliveThreshold, err = time.ParseDuration(Config.Fetcher.HttpKeepAliveThreshold)
+	fm.KeepAliveThreshold, err = time.ParseDuration(Config.Fetcher.HTTPKeepAliveThreshold)
 	if err != nil {
 		// Shouldn't happen since this variable is parsed in assertConfigInvariants
 		panic(err)
@@ -203,7 +203,7 @@ func (fm *FetchManager) Start() {
 
 	if fm.Transport == nil {
 		keepAlive := 30 * time.Second
-		if strings.ToLower(Config.Fetcher.HttpKeepAlive) == "never" {
+		if strings.ToLower(Config.Fetcher.HTTPKeepAlive) == "never" {
 			keepAlive = 0 * time.Second
 		}
 
@@ -219,7 +219,7 @@ func (fm *FetchManager) Start() {
 			TLSHandshakeTimeout: 10 * time.Second,
 		}
 	}
-	if fm.TransNoKeepAlive == nil && strings.ToLower(Config.Fetcher.HttpKeepAlive) == "threshold" {
+	if fm.TransNoKeepAlive == nil && strings.ToLower(Config.Fetcher.HTTPKeepAlive) == "threshold" {
 		fm.TransNoKeepAlive = &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
@@ -346,9 +346,9 @@ func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
 }
 
 func newFetcher(fm *FetchManager) *fetcher {
-	timeout, err := time.ParseDuration(Config.Fetcher.HttpTimeout)
+	timeout, err := time.ParseDuration(Config.Fetcher.HTTPTimeout)
 	if err != nil {
-		// This shouldn't happen because HttpTimeout is tested in assertConfigInvariants
+		// This shouldn't happen because HTTPTimeout is tested in assertConfigInvariants
 		panic(err)
 	}
 

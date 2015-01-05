@@ -12,12 +12,12 @@ import (
 )
 
 // Config is the configuration instance the rest of walker should access for
-// global configuration values. See WalkerConfig for available config members.
-var Config WalkerConfig
+// global configuration values. See ConfigStruct for available config members.
+var Config ConfigStruct
 
 // ConfigName is the path (can be relative or absolute) to the config file that
 // should be read.
-var ConfigName string = "walker.yaml"
+var ConfigName = "walker.yaml"
 
 func init() {
 	err := readConfig()
@@ -30,10 +30,10 @@ func init() {
 	}
 }
 
-// WalkerConfig defines the available global configuration parameters for
+// ConfigStruct defines the available global configuration parameters for
 // walker. It reads values straight from the config file (walker.yaml by
 // default). See sample-walker.yaml for explanations and default values.
-type WalkerConfig struct {
+type ConfigStruct struct {
 
 	//TODO: allow -1 as a no max value
 
@@ -47,7 +47,7 @@ type WalkerConfig struct {
 		MaxLinksPerPage          int      `yaml:"max_links_per_page"`
 		NumSimultaneousFetchers  int      `yaml:"num_simultaneous_fetchers"`
 		BlacklistPrivateIPs      bool     `yaml:"blacklist_private_ips"`
-		HttpTimeout              string   `yaml:"http_timeout"`
+		HTTPTimeout              string   `yaml:"http_timeout"`
 		HonorMetaNoindex         bool     `yaml:"honor_meta_noindex"`
 		HonorMetaNofollow        bool     `yaml:"honor_meta_nofollow"`
 		ExcludeLinkPatterns      []string `yaml:"exclude_link_patterns"`
@@ -58,8 +58,8 @@ type WalkerConfig struct {
 		ActiveFetchersTTL        string   `yaml:"active_fetchers_ttl"`
 		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
-		HttpKeepAlive            string   `yaml:"http_keep_alive"`
-		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
+		HTTPKeepAlive            string   `yaml:"http_keep_alive"`
+		HTTPKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
@@ -125,7 +125,7 @@ func SetDefaultConfig() {
 	Config.Fetcher.MaxLinksPerPage = 1000
 	Config.Fetcher.NumSimultaneousFetchers = 10
 	Config.Fetcher.BlacklistPrivateIPs = true
-	Config.Fetcher.HttpTimeout = "30s"
+	Config.Fetcher.HTTPTimeout = "30s"
 	Config.Fetcher.HonorMetaNoindex = true
 	Config.Fetcher.HonorMetaNofollow = false
 	Config.Fetcher.ExcludeLinkPatterns = nil
@@ -136,8 +136,8 @@ func SetDefaultConfig() {
 	Config.Fetcher.ActiveFetchersTTL = "15m"
 	Config.Fetcher.ActiveFetchersCacheratio = 0.75
 	Config.Fetcher.ActiveFetchersKeepratio = 0.75
-	Config.Fetcher.HttpKeepAlive = "always"
-	Config.Fetcher.HttpKeepAliveThreshold = "15s"
+	Config.Fetcher.HTTPKeepAlive = "always"
+	Config.Fetcher.HTTPKeepAliveThreshold = "15s"
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -207,9 +207,9 @@ func assertConfigInvariants() error {
 	}
 
 	fet := &Config.Fetcher
-	_, err = time.ParseDuration(fet.HttpTimeout)
+	_, err = time.ParseDuration(fet.HTTPTimeout)
 	if err != nil {
-		errs = append(errs, fmt.Sprintf("HttpTimeout failed to parse: %v", err))
+		errs = append(errs, fmt.Sprintf("HTTPTimeout failed to parse: %v", err))
 	}
 	_, err = aggregateRegex(fet.ExcludeLinkPatterns, "exclude_link_patterns")
 	if err != nil {
@@ -239,14 +239,14 @@ func assertConfigInvariants() error {
 		errs = append(errs, "Consistency problem: MaxCrawlDelay > DefaultCrawlDealy")
 	}
 
-	switch strings.ToLower(fet.HttpKeepAlive) {
+	switch strings.ToLower(fet.HTTPKeepAlive) {
 	case "always", "threshold", "never":
 	default:
-		errs = append(errs, "Fetcher.HttpKeepAlive not one of (always, threshold, never)")
+		errs = append(errs, "Fetcher.HTTPKeepAlive not one of (always, threshold, never)")
 	}
-	_, err = time.ParseDuration(fet.HttpKeepAliveThreshold)
+	_, err = time.ParseDuration(fet.HTTPKeepAliveThreshold)
 	if err != nil {
-		errs = append(errs, fmt.Sprintf("Fetcher.HttpKeepAliveThreshold failed to parse: %v", err))
+		errs = append(errs, fmt.Sprintf("Fetcher.HTTPKeepAliveThreshold failed to parse: %v", err))
 	}
 
 	_, err = time.ParseDuration(Config.Cassandra.Timeout)
@@ -280,7 +280,7 @@ func assertConfigInvariants() error {
 	return nil
 }
 
-// This function allows code to set up data structures that depend on the
+// PostConfigHooks allows code to set up data structures that depend on the
 // config. It is always called right after the config file is consumed. But
 // it's also public so if you modify the config in a test, you may need to
 // call this function. This function is idempotent; so you can call it as many
