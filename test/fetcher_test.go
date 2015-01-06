@@ -226,7 +226,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		h.On("HandleResponse", mock.Anything).Return()
 	}
 	for _, host := range test.hosts {
-		ds.On("ClaimNewHost", mock.Anything).Return(host.domain).Once()
+		ds.On("ClaimNewHost").Return(host.domain).Once()
 		var urls []*walker.URL
 		for _, link := range host.links {
 			if !link.robots {
@@ -250,7 +250,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	}
 	// This last call will make ClaimNewHost return "" on each subsequent call,
 	// which will put the fetcher to sleep.
-	ds.On("ClaimNewHost", mock.Anything).Return("")
+	ds.On("ClaimNewHost").Return("")
 
 	//
 	// Run the manager

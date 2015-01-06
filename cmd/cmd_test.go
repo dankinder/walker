@@ -33,8 +33,8 @@ func TestCommandsReadConfig(t *testing.T) {
 	Handler(handler)
 
 	datastore := &helpers.MockDatastore{}
-	datastore.On("ClaimNewHost", mock.Anything).Return("")
-	datastore.On("ClaimNewHost", mock.Anything).Return("")
+	datastore.On("ClaimNewHost").Return("")
+	datastore.On("ClaimNewHost").Return("")
 	datastore.On("StoreParsedURL", mock.Anything, mock.Anything).Return()
 	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
@@ -89,7 +89,7 @@ func TestCrawlCommand(t *testing.T) {
 		Handler(handler)
 
 		datastore := &helpers.MockDatastore{}
-		datastore.On("ClaimNewHost", mock.Anything).Return("")
+		datastore.On("ClaimNewHost").Return("")
 		datastore.On("KeepAlive").Return(nil)
 		Datastore(datastore)
 
@@ -117,7 +117,7 @@ func TestFetchCommand(t *testing.T) {
 	Handler(handler)
 
 	datastore := &helpers.MockDatastore{}
-	datastore.On("ClaimNewHost", mock.Anything).Return("")
+	datastore.On("ClaimNewHost").Return("")
 	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
 
