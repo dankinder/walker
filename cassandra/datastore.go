@@ -123,9 +123,11 @@ func (ds *Datastore) ClaimNewHost() string {
 	return domain
 }
 
-// domainPriorityTry will return true if the domain, dom, is eligible to be claimed.
-// The second argument, domPriority, is the domain priority of dom. Note this method updates
-// the domain_counters table.
+// domainPriorityTry will return true if the domain, dom, is eligible to be claimed. The second argument, domPriority,
+// is the domain priority of dom. This method updates the domain_counters table. NOTE: next_crawl uses cassandra
+// counters which can increment/decrement in a concurrent-consistent manner. Plus, the compare-and-set operation in
+// tryClaimHosts guarantees that only one thread can claim a domain, even if several workers, on several different
+// machines, are simultaneously trying to claim the domain.
 func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl+? WHERE dom = ?", domPriority, dom).Exec()
 	if err != nil {
