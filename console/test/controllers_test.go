@@ -663,6 +663,13 @@ func TestListHistorical(t *testing.T) {
 		}
 	})
 
+	doc.Find(".container h2 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "http://") {
+			t.Fatalf("[.container h2 a] Bad prefix got %s, expected 'http://'", text)
+		}
+	})
+
 	tables = doc.Find(".container table")
 	if tables.Size() != 1 {
 		t.Fatalf("[.container table] Bad size got %d, expected %d", tables.Size(), 1)
