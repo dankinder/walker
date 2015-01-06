@@ -178,6 +178,9 @@ cassandra:
     # How many times to retry a cassandra query before the query resolves in error
     num_query_retries: 3
 
+    # The priority new domains will be added with.
+    default_domain_priority: 1
+
 # Console specific config
 console:
     port: 3000

@@ -89,6 +89,7 @@ type WalkerConfig struct {
 		StoreResponseBody     bool     `yaml:"store_response_body"`
 		StoreResponseHeaders  bool     `yaml:"store_response_headers"`
 		NumQueryRetries       int      `yaml:"num_query_retries"`
+		DefaultDomainPriority int      `yaml:"default_domain_priority"`
 
 		//TODO: Currently only exposing values needed for testing; should expose more?
 		//Consistency      Consistency
@@ -164,6 +165,7 @@ func SetDefaultConfig() {
 	Config.Cassandra.StoreResponseBody = false
 	Config.Cassandra.StoreResponseHeaders = false
 	Config.Cassandra.NumQueryRetries = 3
+	Config.Cassandra.DefaultDomainPriority = 1
 
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"
