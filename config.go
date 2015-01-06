@@ -224,7 +224,7 @@ func assertConfigInvariants() error {
 		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL failed to parse: %v", err))
 	}
 	if int(afTTL/time.Second) < 1 {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL must be 1s or larger", err))
+		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersTTL must be 1s or larger"))
 	}
 
 	def, err := time.ParseDuration(fet.DefaultCrawlDelay)
@@ -256,14 +256,14 @@ func assertConfigInvariants() error {
 
 	keeprat := Config.Fetcher.ActiveFetchersKeepratio
 	if keeprat < 0 || keeprat >= 1.0 {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersKeepratio failed to be in the correct range:"+
-			" must choose X such that 0 <= X < 1", err))
+		errs = append(errs, "Fetcher.ActiveFetchersKeepratio failed to be in the correct range:"+
+			" must choose X such that 0 <= X < 1")
 	}
 
 	cacherat := Config.Fetcher.ActiveFetchersCacheratio
 	if cacherat < 0 || cacherat >= 1.0 {
-		errs = append(errs, fmt.Sprintf("Fetcher.ActiveFetchersCacheratio failed to be in the correct range:"+
-			" must choose X such that 0 <= X < 1", err))
+		errs = append(errs, "Fetcher.ActiveFetchersCacheratio failed to be in the correct range:"+
+			" must choose X such that 0 <= X < 1")
 	}
 
 	if len(errs) > 0 {

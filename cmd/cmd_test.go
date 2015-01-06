@@ -264,15 +264,15 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 	for i := 0; ; i++ {
 		if i >= len(left) && i >= len(right) {
 			match = true
-			return
+			break
 		} else if i >= len(left) {
 			leftLine = "<<<no data>>>"
 			rightLine = strings.TrimSpace(right[i])
-			return
+			break
 		} else if i >= len(right) {
 			leftLine = strings.TrimSpace(left[i])
 			rightLine = "<<<no data>>>"
-			return
+			break
 		}
 
 		l := strings.TrimSpace(left[i])
@@ -280,7 +280,7 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 		if l != r {
 			leftLine = left[i]
 			rightLine = right[i]
-			return
+			break
 		}
 	}
 
