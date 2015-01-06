@@ -812,7 +812,7 @@ func TestDispatchInterval(t *testing.T) {
 	time.Sleep(time.Millisecond * 200)
 
 	// By now the link should have been dispatched. Pretend we crawled it.
-	host := ds.ClaimNewHost(nil)
+	host := ds.ClaimNewHost()
 	for _ = range ds.LinksForHost(host) {
 	}
 	ds.UnclaimHost(host)
@@ -822,7 +822,7 @@ func TestDispatchInterval(t *testing.T) {
 
 	d.StopDispatcher()
 
-	host = ds.ClaimNewHost(nil)
+	host = ds.ClaimNewHost()
 	if host != "" {
 		t.Error("Expected host not to be dispatched again due to dispatch interval")
 	}

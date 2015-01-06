@@ -23,8 +23,8 @@ func (ds *MockDatastore) StoreURLFetchResults(fr *walker.FetchResults) {
 	ds.Mock.Called(fr)
 }
 
-func (ds *MockDatastore) ClaimNewHost(domainSeed *string) string {
-	args := ds.Mock.Called(domainSeed)
+func (ds *MockDatastore) ClaimNewHost() string {
+	args := ds.Mock.Called()
 	return args.String(0)
 }
 

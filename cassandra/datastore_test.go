@@ -123,12 +123,12 @@ func TestDatastoreBasic(t *testing.T) {
 		}
 	}
 
-	host := ds.ClaimNewHost(nil)
+	host := ds.ClaimNewHost()
 	if host != "test2.com" {
 		t.Errorf("Expected test2.com but got %q", host)
 	}
 
-	host = ds.ClaimNewHost(nil)
+	host = ds.ClaimNewHost()
 	if host != "test.com" {
 		t.Errorf("Expected test.com but got %q", host)
 	}
@@ -694,7 +694,7 @@ func TestClaimHostConcurrency(t *testing.T) {
 			startWg.Wait()
 			var h []string
 			for {
-				host := ds.ClaimNewHost(nil)
+				host := ds.ClaimNewHost()
 				if host == "" {
 					break
 				}
@@ -757,7 +757,7 @@ func TestDomainPriority(t *testing.T) {
 
 	ncount := 0
 	for {
-		host := ds.ClaimNewHost(nil)
+		host := ds.ClaimNewHost()
 		if host == "" {
 			break
 		}
@@ -803,7 +803,7 @@ func TestDomainPriorityRatio(t *testing.T) {
 	hosts := 0
 	got := map[string]int{}
 	for i := 0; i < numRuns; i++ {
-		host := ds.ClaimNewHost(nil)
+		host := ds.ClaimNewHost()
 		if host == "" {
 			continue
 		}
