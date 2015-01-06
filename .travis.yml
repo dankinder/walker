@@ -10,6 +10,6 @@ before_install:
   - wget http://www.us.apache.org/dist/cassandra/2.1.2/apache-cassandra-2.1.2-bin.tar.gz && tar -xvzf apache-cassandra-2.1.2-bin.tar.gz && sudo sh apache-cassandra-2.1.2/bin/cassandra
 
 before_script:
-  - sudo GOPATH=/tmp/tempGOPATH $(which go) get code.google.com/p/go.tools/cmd/...
+  - sudo GOPATH=/tmp/tempGOPATH $(which go) get code.google.com/p/go.tools/cmd/cover
 
 script: ./script/test.sh
