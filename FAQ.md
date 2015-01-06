@@ -87,7 +87,7 @@ In command-line terms:
 
 This should sufficiently allow Walker testing and development on your Mac.
 
-#### How do interpret the "priority" integer attached to each domain?
+#### How does one interpret the "priority" integer attached to each domain?
 
 The dispatcher will schedule domains to be crawled based on the value of this priority integer. The rule is that domains
 are crawled in proportion to this priority.  For example, consider two domains A and B, where the priority of A is twice
