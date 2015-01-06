@@ -119,8 +119,6 @@ func parseHTML(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 			}
 		}
 	}
-
-	return
 }
 
 func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
