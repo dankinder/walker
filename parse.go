@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"code.google.com/p/go.net/html"
@@ -104,7 +105,8 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 					links = parseIframe(tokenizer, links, metaNofollow)
 
 				case "meta":
-					isRobots, index, follow := parseMetaAttrs(tokenizer)
+					var isRobots, index, follow bool
+					links, isRobots, index, follow = parseMetaAttrs(tokenizer, links)
 					if isRobots {
 						metaNoindex = metaNoindex || index
 						metaNofollow = metaNofollow || follow
@@ -190,24 +192,46 @@ var nofollowWordBytes = []byte("nofollow")
 var robotsWordBytes = []byte("robots")
 var srcWordBytes = []byte("src")
 var srcdocWordBytes = []byte("srcdoc")
+var httpEquivWordBytes = []byte("http-equiv")
+var refreshWordBytes = []byte("refresh")
+var metaRefreshPattern = regexp.MustCompile(`^\s*\d+;\s*url=(.*)`)
 
-func parseMetaAttrs(tokenizer *html.Tokenizer) (isRobots bool, noIndex bool, noFollow bool) {
+func parseMetaAttrs(tokenizer *html.Tokenizer, in_links []*URL) (links []*URL, isRobots bool, noIndex bool, noFollow bool) {
+	links = in_links
+	var content, httpEquiv []byte
 	for {
 		key, val, moreAttr := tokenizer.TagAttr()
 		if bytes.Compare(key, nameWordBytes) == 0 {
 			name := bytes.ToLower(val)
 			isRobots = bytes.Compare(name, robotsWordBytes) == 0
 		} else if bytes.Compare(key, contentWordBytes) == 0 {
-			content := bytes.ToLower(val)
+			content = bytes.ToLower(val)
 			// This will match ill-formatted contents like "noindexnofollow",
 			// but I don't expect that to be a big deal.
 			noIndex = bytes.Contains(content, noindexWordBytes)
 			noFollow = bytes.Contains(content, nofollowWordBytes)
+		} else if bytes.Compare(key, httpEquivWordBytes) == 0 {
+			httpEquiv = bytes.ToLower(val)
 		}
 		if !moreAttr {
 			break
 		}
 	}
+
+	if bytes.Compare(httpEquiv, refreshWordBytes) == 0 && content != nil {
+		results := metaRefreshPattern.FindSubmatch(content)
+		if results != nil {
+			link := strings.TrimSpace(string(results[1]))
+			u, err := ParseAndNormalizeURL(link)
+			if err != nil {
+				log4go.Error("parseMetaAttrs failed to parse url for %q: %v", link, err)
+
+			} else {
+				links = append(links, u)
+			}
+		}
+	}
+
 	return
 }
 

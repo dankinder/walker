@@ -1778,6 +1778,45 @@ func TestMaxPathLength(t *testing.T) {
 	}
 }
 
+func TestParseHttpEquiv(t *testing.T) {
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="refresh" content="5; url=http://a.com/page1.html">
+<title>Title</title>
+</head>
+<body>
+Some text here.
+>>>>>>> master
+</body>
+</html>`
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+	}
+
+	results := runFetcher(tests, defaultSleep, t)
+
+	expected := map[string]bool{
+		"http://a.com/page1.html": true,
+	}
+
+	ulst, _ := results.dsStoreParsedURLCalls()
+	for i := range ulst {
+		u := ulst[i]
+		if expected[u.String()] {
+			delete(expected, u.String())
+		} else {
+			t.Errorf("StoreParsedURL mismatch found unexpected link %q", u.String())
+		}
+	}
+
+	for e := range expected {
+		t.Errorf("StoreParsedURL expected to see %q, but didn't", e)
+	}
+}
+
 func TestBugTrn210(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
