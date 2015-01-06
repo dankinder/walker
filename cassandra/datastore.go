@@ -40,6 +40,15 @@ type Datastore struct {
 	// Number of seconds the crawlerUUID lives in active_fetchers before
 	// it's flushed (unless KeepAlive is called in the interim).
 	activeFetchersTTL int
+
+	// This field stores the seed domain for the next ClaimNewHost call
+	claimCursor string
+
+	// restartCursor is used to indicate the claimCursor should be restarted.
+	// Note: we used to use claimCursor == "" to indicate that the cursor should
+	// be restarted, but that left us vulnerable to the (unlikely) event that
+	// the empty string was stored in domain_infos.
+	restartCursor bool
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -69,6 +78,8 @@ func NewDatastore() (*Datastore, error) {
 	}
 	ds.activeFetchersTTL = int(durr / time.Second)
 
+	ds.restartCursor = true
+
 	return ds, nil
 }
 
@@ -88,18 +99,14 @@ var limitPerClaimCycle int = 50
 var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
 var MaxPriority = AllowedPriorities[0]
 
-// The argument seedDomain seeds the search for the next host. seedDomain may be nil, or may
-// point at a string. If seedDomain is nil, or *seedDomain == "" then the search will start at
-// the beginning of the table, otherwise the search will start . If seedDomain != nil, the next seed domain will be saved into
-// the string point to by seedDomain.
-func (ds *Datastore) ClaimNewHost(seedDomain *string) string {
+func (ds *Datastore) ClaimNewHost() string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
 	if len(ds.domains) == 0 {
 		retryLimit := 5
 		for i := 0; i < retryLimit; i++ {
-			domainsPerPrio, retry := ds.tryClaimHosts(limitPerClaimCycle-len(ds.domains), seedDomain)
+			domainsPerPrio, retry := ds.tryClaimHosts(limitPerClaimCycle - len(ds.domains))
 			ds.domains = append(ds.domains, domainsPerPrio...)
 			if !retry {
 				break
@@ -154,11 +161,10 @@ func (ds *Datastore) domainPriorityClaim(dom string) bool {
 }
 
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
-// if the caller should re-call the method. The seedDomain pointer is the domain
-// to start the iteration with (or nil)
-func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []string, retry bool) {
+// if the caller should re-call the method.
+func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	var domain_iter *gocql.Iter
-	if seedDomain == nil || *seedDomain == "" {
+	if ds.restartCursor {
 		loopQuery := fmt.Sprintf(`SELECT dom, priority 
 									FROM domain_info
 									WHERE 
@@ -167,6 +173,7 @@ func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []str
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
 		domain_iter = ds.db.Query(loopQuery).Iter()
+		ds.restartCursor = false
 	} else {
 		loopQuery := fmt.Sprintf(`SELECT dom, priority 
 									FROM domain_info
@@ -176,7 +183,7 @@ func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []str
 								 		TOKEN(dom) > TOKEN(?)
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
-		domain_iter = ds.db.Query(loopQuery, *seedDomain).Iter()
+		domain_iter = ds.db.Query(loopQuery, ds.claimCursor).Iter()
 	}
 
 	casQuery := `UPDATE domain_info 
@@ -198,7 +205,9 @@ func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []str
 	var domPriority int
 	start := time.Now()
 	trumpedClaim := 0
+	scanComplete := false
 	for domain_iter.Scan(&domain, &domPriority) {
+		scanComplete = true
 		if !ds.domainPriorityTry(domain, domPriority) {
 			continue
 		}
@@ -228,11 +237,13 @@ func (ds *Datastore) tryClaimHosts(limit int, seedDomain *string) (domains []str
 		return
 	}
 
-	if seedDomain != nil {
-		*seedDomain = domain
-	}
+	ds.claimCursor = domain
 
-	if trumpedClaim >= limit {
+	if !scanComplete {
+		// Restart claimCursor.
+		ds.restartCursor = true
+		retry = true
+	} else if trumpedClaim >= limit {
 		log4go.Fine("tryClaimHosts requesting retry with trumpedClaim = %d, and limit = %d", trumpedClaim, limit)
 		retry = true
 	}

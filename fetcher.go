@@ -314,9 +314,6 @@ type fetcher struct {
 
 	// Where to read content pages into
 	readBuffer bytes.Buffer
-
-	// This field stores the seed domain for the next claim
-	claimCursor string
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -403,7 +400,7 @@ func (f *fetcher) crawlNewHost() bool {
 	default:
 	}
 
-	f.host = f.fm.Datastore.ClaimNewHost(&f.claimCursor)
+	f.host = f.fm.Datastore.ClaimNewHost()
 	if f.host == "" {
 		time.Sleep(time.Second)
 		return true
