@@ -480,14 +480,13 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", domain, err)
 		return err
 	}
-	if lastEmptyDispatch.After(lastDispatch) {
-		if time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
-			err := d.db.Query(`UPDATE domain_info SET dispatched = false WHERE dom = ?`, domain).Exec()
-			if err != nil {
-				return fmt.Errorf("Premature return: error resetting domain %q: %v", domain, err)
-			}
-			return nil
+	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
+		err := d.db.Query(`UPDATE domain_info SET dispatched = false WHERE dom = ?`, domain).Exec()
+		if err != nil {
+			return fmt.Errorf("Premature return: error resetting domain %q: %v", domain, err)
 		}
+		return nil
+
 	}
 
 	//
