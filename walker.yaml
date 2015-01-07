@@ -35,7 +35,7 @@ fetcher:
 
     # For the purpose of parsing out links for crawling, walker looks at the
     # following tags:
-    #   - a, area, form, frame, iframe, script, link, img
+    #   - a, area, form, frame, iframe, script, link, img, object, embed, and meta
     # It ignores several by default.
     ignore_tags: [script, img, link]
 
@@ -171,6 +171,9 @@ cassandra:
 
     # How many times to retry a cassandra query before the query resolves in error
     num_query_retries: 3
+
+    # The priority new domains will be added with.
+    default_domain_priority: 1
 
 # Console specific config
 console:

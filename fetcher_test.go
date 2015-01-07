@@ -1649,7 +1649,6 @@ func TestKeepAliveThreshold(t *testing.T) {
 		hasParsedLinks:   false,
 		transport:        transport,
 		transNoKeepAlive: transNoKeepAlive,
-
 		hosts: []DomainSpec{
 			DomainSpec{
 				domain: "a.com",
@@ -1724,5 +1723,97 @@ func TestKeepAliveThreshold(t *testing.T) {
 	}
 	for v := range expectInTransNoKeepAlive {
 		t.Errorf("Expected to find link %v in transNoKeepAlive, but didn't", v)
+	}
+}
+
+func TestParseHttpEquiv(t *testing.T) {
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="refresh" content="5; url=http://a.com/page1.html">
+<title>Title</title>
+</head>
+<body>
+Some text here.
+</body>
+</html>`
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
+	}
+
+	results := runFetcher(tests, defaultSleep, t)
+
+	expected := map[string]bool{
+		"http://a.com/page1.html": true,
+	}
+
+	ulst, _ := results.dsStoreParsedURLCalls()
+	for i := range ulst {
+		u := ulst[i]
+		if expected[u.String()] {
+			delete(expected, u.String())
+		} else {
+			t.Errorf("StoreParsedURL mismatch found unexpected link %q", u.String())
+		}
+	}
+
+	for e := range expected {
+		t.Errorf("StoreParsedURL expected to see %q, but didn't", e)
+	}
+}
+
+func TestBugTrn210(t *testing.T) {
+	tests := TestSpec{
+		hasParsedLinks: false,
+		hosts: []DomainSpec{
+			DomainSpec{
+				domain: "a.com",
+				links: []LinkSpec{
+
+					LinkSpec{
+						url: "http://a.com/robots.txt",
+						response: &MockResponse{
+							Body: "User-agent: *\nDisallow: /\n",
+						},
+						robots: true,
+					},
+
+					LinkSpec{
+						url: "http://a.com/",
+					},
+
+					LinkSpec{
+						url: "http://a.com/page1.html",
+					},
+				},
+			},
+		},
+	}
+
+	results := runFetcher(tests, defaultSleep, t)
+	stores := results.dsStoreURLFetchResultsCalls()
+
+	expected := map[string]bool{
+		"http://a.com/":           true,
+		"http://a.com/page1.html": true,
+	}
+
+	for _, fr := range stores {
+		if expected[fr.URL.String()] {
+			delete(expected, fr.URL.String())
+		} else {
+			t.Errorf("Unexpected link found: %v", fr.URL.String())
+		}
+		if fr.FetchTime != NotYetCrawled {
+			t.Errorf("Bad FetchTime for %v", fr.URL.String())
+		}
+		if !fr.ExcludedByRobots {
+			t.Errorf("Bad ExcludedByRobots for %v", fr.URL.String())
+		}
+	}
+	for link := range expected {
+		t.Errorf("Failed to find link %v", link)
 	}
 }
