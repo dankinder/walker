@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 # Change directory to the root of this walker repository
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
