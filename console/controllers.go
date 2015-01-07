@@ -607,6 +607,7 @@ func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 	}
 
 	mp := map[string]interface{}{
+		"Domain":    u.Host,
 		"LinkTopic": u.String(),
 		"Linfos":    linfos,
 	}

@@ -663,6 +663,13 @@ func TestListHistorical(t *testing.T) {
 		}
 	})
 
+	doc.Find(".container h3 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "Domain Info") {
+			t.Fatalf("[.container h3 a] Bad prefix got %s, expected 'Domain Info'", text)
+		}
+	})
+
 	doc.Find(".container h2 a").First().Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if !strings.HasPrefix(text, "http://") {
