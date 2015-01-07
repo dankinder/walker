@@ -101,8 +101,6 @@ var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters her
 var MaxPriority = AllowedPriorities[0]
 
 // ClaimNewHost is documented on the walker.Datastore interface.
-// XXX: We could reproduce the docs on walker.Datastore interface, but that introduces the possibility of the two
-// documentation locations getting out of sync.
 func (ds *Datastore) ClaimNewHost() string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
