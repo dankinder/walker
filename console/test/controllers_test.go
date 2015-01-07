@@ -493,6 +493,23 @@ func TestListLinksSecondPage(t *testing.T) {
 		t.FailNow()
 	}
 
+	// Test the h2 is a link to the domain info page
+	doc.Find(".container h2 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "Domain Info") {
+			t.Fatalf("[.container h3 a] Bad prefix got %s, expected 'Domain Info'", text)
+		}
+		link, linkOk := sel.Attr("href")
+		if !linkOk {
+			t.Errorf("[.container h2 a] Failed to find href attribute in the h2")
+			return
+		}
+		if !strings.HasPrefix(link, "/links") {
+			t.Fatalf("[.container h2 a] Failed to find prefix /links in href (%s)", link)
+			return
+		}
+	})
+
 	nextButton := doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn") && strings.Contains(sel.Text(), "Next")
 	})
