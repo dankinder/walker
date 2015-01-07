@@ -241,8 +241,8 @@ type insertTest struct {
 func getModelTestDatastore(t *testing.T) *Datastore {
 	db := GetTestDB()
 
-	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 0)`
-	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 0)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, claim_time, priority) VALUES (?, ?, 1)`
+	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, dispatched, priority) VALUES (?, ?, ?, true, 1)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	queries := []*gocql.Query{
@@ -295,7 +295,7 @@ func getModelTestDatastore(t *testing.T) *Datastore {
 
 	{
 		insertDomainInfoExcluded := `INSERT INTO domain_info (dom, claim_time, priority, excluded, exclude_reason) 
-									 VALUES (?, ?, 0, true, ?)`
+									 VALUES (?, ?, 1, true, ?)`
 		dom := fmt.Sprintf("excluded.com")
 		reason := "Reason for exclusion"
 		err := db.Query(insertDomainInfoExcluded, dom, walker.NotYetCrawled, reason).Exec()

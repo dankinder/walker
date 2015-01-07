@@ -75,9 +75,9 @@ func spoofDataLong() {
 
 	rand.Seed(42)
 
-	insertDomainInfo := `INSERT INTO domain_info (dom, priority) VALUES (?, 0)`
-	insertDomainInfoExcluded := `INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 0, true, ?)`
-	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, priority) VALUES (?, ?, ?, 0)`
+	insertDomainInfo := `INSERT INTO domain_info (dom, priority) VALUES (?, 1)`
+	insertDomainInfoExcluded := `INSERT INTO domain_info (dom, priority, excluded, exclude_reason) VALUES (?, 1, true, ?)`
+	insertDomainToCrawl := `INSERT INTO domain_info (dom, claim_tok, claim_time, priority) VALUES (?, ?, ?, 1)`
 	insertSegment := `INSERT INTO segments (dom, subdom, path, proto) VALUES (?, ?, ?, ?)`
 	insertLink := `INSERT INTO links (dom, subdom, path, proto, time, stat, err, robot_ex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 

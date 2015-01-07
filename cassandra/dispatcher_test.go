@@ -399,14 +399,18 @@ func TestDispatcherBasic(t *testing.T) {
 	walker.Config.Dispatcher.RefreshPercentage = 33
 
 	var q *gocql.Query
-
 	for _, dt := range DispatcherTests {
 		db := GetTestDB() // runs between tests to reset the db
 
 		for _, edi := range dt.ExistingDomainInfos {
+			priority := edi.Priority
+			if priority == 0 {
+				priority = MaxPriority
+			}
+
 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
 							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
@@ -441,7 +445,7 @@ func TestDispatcherBasic(t *testing.T) {
 
 		d := &Dispatcher{}
 		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 150)
 		d.StopDispatcher()
 
 		expectedResults := map[url.URL]bool{}
@@ -482,7 +486,7 @@ func TestDispatcherBasic(t *testing.T) {
 func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 	db := GetTestDB()
 	q := db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched)
-					VALUES (?, ?, ?, ?)`, "test.com", gocql.UUID{}, 0, false)
+					VALUES (?, ?, ?, ?)`, "test.com", gocql.UUID{}, 1, false)
 	if err := q.Exec(); err != nil {
 		t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 	}
@@ -545,9 +549,14 @@ func TestMinLinkRefreshTime(t *testing.T) {
 		db := GetTestDB() // runs between tests to reset the db
 
 		for _, edi := range dt.ExistingDomainInfos {
+			priority := edi.Priority
+			if priority == 0 {
+				priority = MaxPriority
+			}
+
 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
 							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
@@ -582,7 +591,7 @@ func TestMinLinkRefreshTime(t *testing.T) {
 
 		d := &Dispatcher{}
 		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 300)
 		d.StopDispatcher()
 
 		expectedResults := map[url.URL]bool{}
@@ -661,9 +670,13 @@ func TestAutoUnclaim(t *testing.T) {
 	for _, dt := range tests {
 		db := GetTestDB()
 		for _, edi := range dt.ExistingDomainInfos {
+			priority := edi.Priority
+			if priority == 0 {
+				priority = MaxPriority
+			}
 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
 							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
@@ -901,7 +914,7 @@ func TestURLCorrection(t *testing.T) {
 			}
 			expected[tst.expect] = 2
 		}
-		err = db.Query(`INSERT INTO domain_info (dom) VALUES (?)`, dom).Exec()
+		err = db.Query(`INSERT INTO domain_info (dom, priority) VALUES (?, ?)`, dom, MaxPriority).Exec()
 		if err != nil {
 			t.Fatalf("Failed to insert into domain_info for %v: %v", tst.input, err)
 		}
@@ -1003,9 +1016,13 @@ func TestDomainInfoStats(t *testing.T) {
 		db := GetTestDB() // runs between tests to reset the db
 
 		for _, edi := range dt.ExistingDomainInfos {
+			priority := edi.Priority
+			if priority == 0 {
+				priority = MaxPriority
+			}
 			q = db.Query(`INSERT INTO domain_info (dom, claim_tok, priority, dispatched, excluded)
 							VALUES (?, ?, ?, ?, ?)`,
-				edi.Dom, edi.ClaimTok, edi.Priority, edi.Dispatched, edi.Excluded)
+				edi.Dom, edi.ClaimTok, priority, edi.Dispatched, edi.Excluded)
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 			}
@@ -1028,7 +1045,7 @@ func TestDomainInfoStats(t *testing.T) {
 
 		d := &Dispatcher{}
 		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 300)
 		d.StopDispatcher()
 
 		var linksCount, uncrawledLinksCount, queuedLinksCount int
