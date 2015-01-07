@@ -159,7 +159,7 @@ func (self *TestResults) assertExpectations(t *testing.T) {
 // singleLinkDomainSpec can be used to provide a DomainSpec for a single link.
 // This is just a convenience function.
 func singleLinkDomainSpec(link string, response *MockResponse) DomainSpec {
-	u := Parse(link)
+	u := MustParse(link)
 	domain, err := u.ToplevelDomainPlusOne()
 	if err != nil {
 		panic(err)
@@ -211,12 +211,12 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	ds.On("KeepAlive").Return(nil)
 
 	if !test.hasNoLinks {
-		ds.On("StoreURLFetchResults", mock.AnythingOfType("*FetchResults")).Return()
+		ds.On("StoreURLFetchResults", mock.AnythingOfType("*walker.FetchResults")).Return()
 	}
 	if test.hasParsedLinks {
 		ds.On("StoreParsedURL",
-			mock.AnythingOfType("*URL"),
-			mock.AnythingOfType("*FetchResults")).Return()
+			mock.AnythingOfType("*walker.URL"),
+			mock.AnythingOfType("*walker.FetchResults")).Return()
 
 	}
 
@@ -228,7 +228,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		var urls []*URL
 		for _, link := range host.links {
 			if !link.robots {
-				u := Parse(link.url)
+				u := MustParse(link.url)
 				zero := time.Time{}
 				if link.lastCrawled != zero {
 					u.LastCrawled = link.lastCrawled

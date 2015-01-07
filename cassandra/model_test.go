@@ -7,8 +7,8 @@ package cassandra
 // TODO: there is likely still room to further synthesize these test and
 // 		 datastore_test.go (these tests were totally separate in console/test/
 // 		 before they were brought in here). For example we could consider
-// 		 building helpers.LoadTestData further into a robust fixtures
-// 		 infrastructure and incorporate it into datastore_test.go
+// 		 building LoadTestData further into a robust fixtures infrastructure
+// 		 and incorporate it into datastore_test.go
 
 import (
 	"fmt"
@@ -17,7 +17,6 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
 )
 
 //
@@ -26,66 +25,66 @@ import (
 var fooTime = time.Now().AddDate(0, 0, -1)
 var testTime = time.Now().AddDate(0, 0, -2)
 var bazUuid, _ = gocql.RandomUUID()
-var testComLinkOrder []walker.LinkInfo
-var testComLinkHash = map[string]walker.LinkInfo{
-	"http://test.com/page1.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://test.com/page1.html"),
+var testComLinkOrder []LinkInfo
+var testComLinkHash = map[string]LinkInfo{
+	"http://test.com/page1.html": LinkInfo{
+		URL:            walker.MustParse("http://test.com/page1.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page2.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://test.com/page2.html"),
+	"http://test.com/page2.html": LinkInfo{
+		URL:            walker.MustParse("http://test.com/page2.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page3.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://test.com/page3.html"),
+	"http://test.com/page3.html": LinkInfo{
+		URL:            walker.MustParse("http://test.com/page3.html"),
 		Status:         404,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page4.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://test.com/page4.html"),
+	"http://test.com/page4.html": LinkInfo{
+		URL:            walker.MustParse("http://test.com/page4.html"),
 		Status:         200,
 		Error:          "An Error",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://test.com/page5.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://test.com/page5.html"),
+	"http://test.com/page5.html": LinkInfo{
+		URL:            walker.MustParse("http://test.com/page5.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: true,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"http://sub.test.com/page6.html": walker.LinkInfo{
-		URL:            helpers.Parse("http://sub.test.com/page6.html"),
+	"http://sub.test.com/page6.html": LinkInfo{
+		URL:            walker.MustParse("http://sub.test.com/page6.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page7.html": walker.LinkInfo{
-		URL:            helpers.Parse("https://sub.test.com/page7.html"),
+	"https://sub.test.com/page7.html": LinkInfo{
+		URL:            walker.MustParse("https://sub.test.com/page7.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
 		CrawlTime:      walker.NotYetCrawled,
 	},
 
-	"https://sub.test.com/page8.html": walker.LinkInfo{
-		URL:            helpers.Parse("https://sub.test.com/page8.html"),
+	"https://sub.test.com/page8.html": LinkInfo{
+		URL:            walker.MustParse("https://sub.test.com/page8.html"),
 		Status:         200,
 		Error:          "",
 		RobotsExcluded: false,
@@ -93,36 +92,36 @@ var testComLinkHash = map[string]walker.LinkInfo{
 	},
 }
 
-var bazLinkHistoryOrder []walker.LinkInfo
+var bazLinkHistoryOrder []LinkInfo
 
-var bazLinkHistoryInit = []walker.LinkInfo{
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+var bazLinkHistoryInit = []LinkInfo{
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: walker.NotYetCrawled,
 	},
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -1),
 	},
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -2),
 	},
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -3),
 	},
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -4),
 	},
-	walker.LinkInfo{
-		URL:       helpers.Parse("http://sub.baz.com/page1.html"),
+	LinkInfo{
+		URL:       walker.MustParse("http://sub.baz.com/page1.html"),
 		Status:    200,
 		CrawlTime: time.Now().AddDate(0, 0, -5),
 	},
@@ -154,7 +153,7 @@ type linkTest struct {
 	seedURL     *walker.URL
 	filterRegex string
 	limit       int
-	expected    []walker.LinkInfo
+	expected    []LinkInfo
 }
 
 const LIM = 50
@@ -661,17 +660,17 @@ func TestListLinks(t *testing.T) {
 			tag:    "foo pull",
 			domain: "foo.com",
 			limit:  LIM,
-			expected: []walker.LinkInfo{
-				walker.LinkInfo{
-					URL:            helpers.Parse("http://sub.foo.com/page1.html"),
+			expected: []LinkInfo{
+				LinkInfo{
+					URL:            walker.MustParse("http://sub.foo.com/page1.html"),
 					Status:         200,
 					Error:          "",
 					RobotsExcluded: false,
 					CrawlTime:      fooTime,
 				},
 
-				walker.LinkInfo{
-					URL:            helpers.Parse("http://sub.foo.com/page2.html"),
+				LinkInfo{
+					URL:            walker.MustParse("http://sub.foo.com/page2.html"),
 					Status:         200,
 					Error:          "",
 					RobotsExcluded: false,
@@ -684,7 +683,7 @@ func TestListLinks(t *testing.T) {
 			tag:      "bar pull",
 			domain:   "bar.com",
 			limit:    LIM,
-			expected: []walker.LinkInfo{},
+			expected: []LinkInfo{},
 		},
 
 		linkTest{
@@ -749,7 +748,7 @@ func TestListLinkHistorical(t *testing.T) {
 	tests := []linkTest{
 		linkTest{
 			tag:      "full read",
-			histURL:  helpers.Parse("http://sub.baz.com/page1.html"),
+			histURL:  walker.MustParse("http://sub.baz.com/page1.html"),
 			limit:    LIM,
 			expected: bazLinkHistoryOrder,
 		},
@@ -979,7 +978,7 @@ func TestCloseToLimitBug(t *testing.T) {
 			domain:   "baz.com",
 			tag:      "bug exposed with limit 1",
 			limit:    1,
-			expected: []walker.LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
+			expected: []LinkInfo{bazLinkHistoryOrder[len(bazLinkHistoryOrder)-1]},
 		},
 	}
 
@@ -1034,14 +1033,14 @@ func TestFilterRegex(t *testing.T) {
 	// This function composes LinkInfo array from the urls in filterURLs. The
 	// index argument corresponds to  which element of filterURLs to include
 	// in the LinkInfo list.
-	pickFiltered := func(index ...int) []walker.LinkInfo {
-		var r []walker.LinkInfo
+	pickFiltered := func(index ...int) []LinkInfo {
+		var r []LinkInfo
 		for _, i := range index {
 			if i >= len(filterURLs) || i < 0 {
 				panic("INTERNAL ERROR")
 			}
-			r = append(r, walker.LinkInfo{
-				URL: helpers.Parse(filterURLs[i]),
+			r = append(r, LinkInfo{
+				URL: walker.MustParse(filterURLs[i]),
 			})
 		}
 		return r

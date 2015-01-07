@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// MockDatastore implements walker's Datastore interface for testing.
 type MockDatastore struct {
 	mock.Mock
 }
@@ -52,9 +53,8 @@ func (ds *MockDatastore) KeepAlive() error {
 	return nil
 }
 
-func (ds *MockDatastore) FindLink(u *URL, collectContent bool) (*LinkInfo, error) {
-	args := ds.Mock.Called(u, collectContent)
-	return args.Get(0).(*LinkInfo), args.Error(1)
+func (ds *MockDatastore) Close() {
+	ds.Mock.Called()
 }
 
 type MockHandler struct {

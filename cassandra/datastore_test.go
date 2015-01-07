@@ -15,11 +15,10 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
 )
 
 func init() {
-	helpers.LoadTestConfig("test-walker.yaml")
+	walker.LoadTestConfig("test-walker.yaml")
 
 	// For tests it's useful to see more than the default INFO
 	log4go.AddFilter("stdout", log4go.DEBUG, log4go.NewConsoleLogWriter())
@@ -43,7 +42,7 @@ var page2URL *walker.URL
 var page2Fetch *walker.FetchResults
 
 func init() {
-	page1URL = helpers.Parse("http://test.com/page1.html")
+	page1URL = walker.MustParse("http://test.com/page1.html")
 	page1Fetch = &walker.FetchResults{
 		URL:       page1URL,
 		FetchTime: time.Now(),
@@ -65,7 +64,7 @@ func init() {
 			},
 		},
 	}
-	page2URL = helpers.Parse("http://test.com/page2.html")
+	page2URL = walker.MustParse("http://test.com/page2.html")
 	page2Fetch = &walker.FetchResults{
 		URL:       page2URL,
 		FetchTime: time.Now(),
@@ -157,8 +156,8 @@ func TestDatastoreBasic(t *testing.T) {
 			expectedResults, results)
 	}
 
-	ds.StoreParsedURL(helpers.Parse("http://test2.com/page1-1.html"), page1Fetch)
-	ds.StoreParsedURL(helpers.Parse("http://test2.com/page2-1.html"), page2Fetch)
+	ds.StoreParsedURL(walker.MustParse("http://test2.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(walker.MustParse("http://test2.com/page2-1.html"), page2Fetch)
 
 	var count int
 	db.Query(`SELECT COUNT(*) FROM links WHERE dom = 'test2.com'`).Scan(&count)
@@ -193,7 +192,7 @@ func TestNewDomainAdditions(t *testing.T) {
 	defer func() { walker.Config.Cassandra.AddNewDomains = origAddNewDomains }()
 
 	walker.Config.Cassandra.AddNewDomains = false
-	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(walker.MustParse("http://test.com/page1-1.html"), page1Fetch)
 
 	var count int
 	db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = 'test.com'`).Scan(&count)
@@ -207,7 +206,7 @@ func TestNewDomainAdditions(t *testing.T) {
 	}
 
 	walker.Config.Cassandra.AddNewDomains = true
-	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(walker.MustParse("http://test.com/page1-1.html"), page1Fetch)
 
 	err := db.Query(`SELECT COUNT(*) FROM domain_info
 						WHERE dom = 'test.com'
@@ -222,7 +221,7 @@ func TestNewDomainAdditions(t *testing.T) {
 	}
 
 	db.Query(`DELETE FROM domain_info WHERE dom = 'test.com'`).Exec()
-	ds.StoreParsedURL(helpers.Parse("http://test.com/page1-1.html"), page1Fetch)
+	ds.StoreParsedURL(walker.MustParse("http://test.com/page1-1.html"), page1Fetch)
 	db.Query(`SELECT COUNT(*) FROM domain_info WHERE dom = 'test.com'`).Scan(&count)
 	if count != 0 {
 		t.Error("Expected test.com not to be added to domain_info due to cache")
@@ -257,7 +256,7 @@ func init() {
 	StoreURLExpectations = []StoreURLExpectation{
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("http://test.com/page1.html"),
+				URL:       walker.MustParse("http://test.com/page1.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -280,7 +279,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("http://test.com/page2.html?var1=abc&var2=def"),
+				URL:       walker.MustParse("http://test.com/page2.html?var1=abc&var2=def"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -300,7 +299,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:              helpers.Parse("http://test.com/page3.html"),
+				URL:              walker.MustParse("http://test.com/page3.html"),
 				ExcludedByRobots: true,
 				FnvFingerprint:   3,
 			},
@@ -315,7 +314,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("http://test.com/page4.html"),
+				URL:       walker.MustParse("http://test.com/page4.html"),
 				FetchTime: time.Unix(1234, 5678),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -333,7 +332,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("https://test.com/page5.html"),
+				URL:       walker.MustParse("https://test.com/page5.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -351,7 +350,7 @@ func init() {
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("https://sub.dom1.test.com/page5.html"),
+				URL:       walker.MustParse("https://sub.dom1.test.com/page5.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -371,7 +370,7 @@ func init() {
 
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:       helpers.Parse("https://sub.dom1.test.com/page5.html"),
+				URL:       walker.MustParse("https://sub.dom1.test.com/page5.html"),
 				FetchTime: time.Unix(0, 0),
 				Response: &http.Response{
 					StatusCode: 200,
@@ -572,8 +571,8 @@ func TestAddingRedirects(t *testing.T) {
 	}
 
 	fr := walker.FetchResults{
-		URL:            helpers.Parse(link(1)),
-		RedirectedFrom: []*walker.URL{helpers.Parse(link(2)), helpers.Parse(link(3))},
+		URL:            walker.MustParse(link(1)),
+		RedirectedFrom: []*walker.URL{walker.MustParse(link(2)), walker.MustParse(link(3))},
 		FetchTime:      time.Unix(0, 0),
 	}
 
@@ -589,7 +588,7 @@ func TestAddingRedirects(t *testing.T) {
 	}
 
 	for _, exp := range expected {
-		url := helpers.Parse(exp.link)
+		url := walker.MustParse(exp.link)
 
 		dom, subdom, _ := url.TLDPlusOneAndSubdomain()
 		itr := db.Query("SELECT redto_url FROM links WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?",

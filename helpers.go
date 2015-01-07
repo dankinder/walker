@@ -7,9 +7,12 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"code.google.com/p/log4go"
 )
 
 // LoadTestConfig loads the given test config yaml file. The given path is
@@ -32,6 +35,14 @@ func GetTestFileDir() string {
 	_, p, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("Failed to get location of test source file")
+	}
+	if !filepath.IsAbs(p) {
+		log4go.Warn("Tried to use runtime.Caller to get the test file "+
+			"directory, but the path is incorrect: %v\nMost likely this means the "+
+			"-cover flag was used with `go test`, which does not return a usable "+
+			"path when testing the walker package. Returning './test' as the test "+
+			"directory; if CWD != the root walker directory, tests will fail.", p)
+		return "test"
 	}
 	return path.Join(path.Dir(p), "test")
 }
@@ -90,14 +101,14 @@ type cancelTrackingTransport struct {
 	Canceled map[string]int
 }
 
-func (self *cancelTrackingTransport) cancelRequest(req *http.Request) {
+func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
 	if c, cok := self.Canceled[key]; cok {
 		count = c
 	}
 	self.Canceled[key] = count + 1
-	self.Transport.cancelRequest(req)
+	self.Transport.CancelRequest(req)
 }
 
 //
@@ -301,5 +312,5 @@ func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // This allows the mapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (self *mapRoundTrip) cancelRequest(req *http.Request) {
+func (self *mapRoundTrip) CancelRequest(req *http.Request) {
 }
