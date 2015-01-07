@@ -54,6 +54,9 @@ type Dispatcher struct {
 
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
+
+	// How long do we wait before retrying a domain that didn't have any links.
+	emptyDispatchRetryInterval time.Duration
 }
 
 func (d *Dispatcher) StartDispatcher() error {
@@ -84,6 +87,11 @@ func (d *Dispatcher) StartDispatcher() error {
 		panic(err) // Should not happen since it is parsed at config load
 	}
 	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
+
+	d.emptyDispatchRetryInterval, err = time.ParseDuration(walker.Config.Dispatcher.EmptyDispatchRetryInterval)
+	if err != nil {
+		panic(err)
+	}
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
@@ -463,6 +471,26 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	log4go.Info("Generating a crawl segment for %v", domain)
 
 	//
+	// If domain is empty, return early
+	//
+	var lastDispatch, lastEmptyDispatch time.Time
+	err := d.db.Query("SELECT last_dispatch, last_empty_dispatch FROM domain_info WHERE dom = ?",
+		domain).Scan(&lastDispatch, &lastEmptyDispatch)
+	if err != nil {
+		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", domain, err)
+		return err
+	}
+	if lastEmptyDispatch.After(lastDispatch) {
+		if time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
+			err := d.db.Query(`UPDATE domain_info SET dispatched = false WHERE dom = ?`, domain).Exec()
+			if err != nil {
+				return fmt.Errorf("Premature return: error resetting domain %q: %v", domain, err)
+			}
+			return nil
+		}
+	}
+
+	//
 	// Three lists to hold the 3 link types
 	//
 	var getNowLinks []*walker.URL    // links marked getnow
@@ -616,18 +644,28 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		dispatched = false
 	}
 
+	dispatchStamp := time.Now()
+	dispatchFieldName := "last_dispatch"
+	if !dispatched {
+		dispatchFieldName = "last_empty_dispatch"
+	}
+
 	//
 	// Update domain_info
 	//
-	err := d.db.Query(`UPDATE domain_info 
-					   SET 
-					   		dispatched = ?,
-					   		tot_links = ?,
-					   		uncrawled_links = ?,
-					   		queued_links = ?
-					   WHERE dom = ?`, dispatched, linksCount, uncrawledLinksCount, len(links), domain).Exec()
+	updateQuery := fmt.Sprintf(`UPDATE domain_info
+								   SET 
+								   		dispatched = ?,
+								   		tot_links = ?,
+								   		uncrawled_links = ?,
+								   		queued_links = ?,
+								   		%s = ?
+								   WHERE dom = ?`, dispatchFieldName)
+
+	err = d.db.Query(updateQuery, dispatched, linksCount, uncrawledLinksCount, len(links), dispatchStamp,
+		domain).Exec()
 	if err != nil {
-		return fmt.Errorf("error inserting %v to domains_to_crawl: %v", domain, err)
+		return fmt.Errorf("error inserting %v to domain_info: %v", domain, err)
 	}
 	log4go.Info("Generated segment for %v (%v links)", domain, len(links))
 
