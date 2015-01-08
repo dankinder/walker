@@ -1025,15 +1025,11 @@ func TestAddLinks(t *testing.T) {
 		t.Log(body)
 		t.FailNow()
 	}
-	res := doc.Find(".container > ul li")
-	if res.Size() != 1 {
-		t.Fatalf("[.container > ul li] Size mismatch got %d, expected 1", res.Size())
-	}
+	res := doc.Find(".container h2.status")
 	res.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
-		e := "All links added"
-		if text != e {
-			t.Fatalf("[.container ul li] Mismatched text got '%v', expected '%v'", text, e)
+		if !strings.HasPrefix(text, "Links Added") {
+			t.Fatalf("[.container h2] Mismatched text got '%v', expected 'Links Added'", text)
 		}
 	})
 
