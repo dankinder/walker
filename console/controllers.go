@@ -605,9 +605,13 @@ func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("ListLinkHistorical (%v): %v", u, err))
 		return
 	}
-
+	domain, err := u.ToplevelDomainPlusOne()
+	if err != nil {
+		replyServerError(w, fmt.Errorf("ListLinkHistorical - ToplevelDomainPlusOne (%v): %v", u, err))
+		return
+	}
 	mp := map[string]interface{}{
-		"Domain":    u.Host,
+		"Domain":    domain,
 		"LinkTopic": u.String(),
 		"Linfos":    linfos,
 	}
