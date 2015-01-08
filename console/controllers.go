@@ -407,9 +407,22 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	type HistoryLink struct {
+		URL         string
+		HistoryPath string
+	}
+	var historyLinks []HistoryLink
+	for _, link := range links {
+		h := HistoryLink{
+			URL:         link,
+			HistoryPath: "/historical/" + encode32(link),
+		}
+		historyLinks = append(historyLinks, h)
+	}
+	// build up links to historical page for each link
 	mp := map[string]interface{}{
-		"HasInfoMessage": true,
-		"InfoMessage":    []string{"All links added"},
+		"HasInfoMessage": false, // the default ul format makes no sense here
+		"HLinks":         historyLinks,
 	}
 	Render.HTML(w, http.StatusOK, "add", mp)
 	return
@@ -608,8 +621,13 @@ func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("ListLinkHistorical (%v): %v", u, err))
 		return
 	}
-
+	domain, err := u.ToplevelDomainPlusOne()
+	if err != nil {
+		replyServerError(w, fmt.Errorf("ListLinkHistorical - ToplevelDomainPlusOne (%v): %v", u, err))
+		return
+	}
 	mp := map[string]interface{}{
+		"Domain":    domain,
 		"LinkTopic": u.String(),
 		"Linfos":    linfos,
 	}
