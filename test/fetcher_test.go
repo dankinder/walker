@@ -911,12 +911,12 @@ func TestHrefWithSpace(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestHttpTimeout(t *testing.T) {
-	origTimeout := walker.Config.Fetcher.HttpTimeout
+func TestHTTPTimeout(t *testing.T) {
+	origTimeout := walker.Config.Fetcher.HTTPTimeout
 	defer func() {
-		walker.Config.Fetcher.HttpTimeout = origTimeout
+		walker.Config.Fetcher.HTTPTimeout = origTimeout
 	}()
-	walker.Config.Fetcher.HttpTimeout = "200ms"
+	walker.Config.Fetcher.HTTPTimeout = "200ms"
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
@@ -1632,16 +1632,16 @@ func TestStoreBody(t *testing.T) {
 }
 
 func TestKeepAliveThreshold(t *testing.T) {
-	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
-	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
+	origKeepAlive := walker.Config.Fetcher.HTTPKeepAlive
+	origThreshold := walker.Config.Fetcher.HTTPKeepAliveThreshold
 	origSimul := walker.Config.Fetcher.NumSimultaneousFetchers
 	defer func() {
-		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
-		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+		walker.Config.Fetcher.HTTPKeepAlive = origKeepAlive
+		walker.Config.Fetcher.HTTPKeepAliveThreshold = origThreshold
 		walker.Config.Fetcher.NumSimultaneousFetchers = origSimul
 	}()
-	walker.Config.Fetcher.HttpKeepAlive = "threshold"
-	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+	walker.Config.Fetcher.HTTPKeepAlive = "threshold"
+	walker.Config.Fetcher.HTTPKeepAliveThreshold = "500ms"
 	walker.Config.Fetcher.NumSimultaneousFetchers = 1
 
 	transport := helpers.GetRecordingTransport("transport")

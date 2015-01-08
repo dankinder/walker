@@ -52,7 +52,7 @@ func callControllerFull(url string, body string, urlPattern string, controller f
 	//
 	// Set your method based on the body input
 	//
-	var bodyBuff io.Reader = nil
+	var bodyBuff io.Reader
 	method := "GET"
 	ct := ""
 	if body != "" {
@@ -365,7 +365,7 @@ func TestListLinksWeb(t *testing.T) {
 
 	secondColSize := domainTable.Find("tr > td:nth-child(2)").Size()
 	if secondColSize != len(domainKeys) {
-		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %q", secondColSize, len(domainKeys))
+		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %d", secondColSize, len(domainKeys))
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
