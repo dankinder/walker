@@ -1178,14 +1178,14 @@ func TestChangePriority(t *testing.T) {
 	}
 
 	prio := priority()
-	if prio != 0 {
-		t.Errorf("Expected initial priority to be zero, but found %d", prio)
+	if prio != 1 {
+		t.Errorf("Expected initial priority to be 1, but found %d", prio)
 	}
 
 	//
 	// Now set a new priority
 	//
-	doc, body, status = callController("http://localhost:3000/changePriority/t1.com/-4", "",
+	doc, body, status = callController("http://localhost:3000/changePriority/t1.com/4", "",
 		"/changePriority/{domain}/{priority}",
 		console.ChangePriorityController)
 	if status != http.StatusFound {
@@ -1204,8 +1204,8 @@ func TestChangePriority(t *testing.T) {
 	}
 
 	prio = priority()
-	if prio != -4 {
-		t.Errorf("Expected modified priority to be -4, but found %d", prio)
+	if prio != 4 {
+		t.Errorf("Expected modified priority to be 4, but found %d", prio)
 	}
 }
 
