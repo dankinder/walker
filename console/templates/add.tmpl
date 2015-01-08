@@ -1,3 +1,11 @@
+{{ if .HLinks}}
+    <h2 class="status">Links Added</h2>
+    <ul>
+        {{range .HLinks}}
+            <li class="info-li"><a href="{{.HistoryPath}}" title="view link history">{{.URL}}</a></li>
+        {{end}}
+    </ul>
+{{end}}
 <h2>Add Links</h2>
 
 <!-- This styling makes the checkbox bigger, and orients the h3 text  -->
@@ -42,6 +50,5 @@
         </div>
     </div>
 </form>
-
 
 
