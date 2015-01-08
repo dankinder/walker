@@ -468,8 +468,6 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 // and inserts the domain into domains_to_crawl (assuming a segment is ready to
 // go)
 func (d *Dispatcher) generateSegment(domain string) error {
-	log4go.Info("Generating a crawl segment for %v", domain)
-
 	//
 	// If domain is empty, return early
 	//
@@ -481,13 +479,11 @@ func (d *Dispatcher) generateSegment(domain string) error {
 		return err
 	}
 	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
-		err := d.db.Query(`UPDATE domain_info SET dispatched = false WHERE dom = ?`, domain).Exec()
-		if err != nil {
-			return fmt.Errorf("Premature return: error resetting domain %q: %v", domain, err)
-		}
+		log4go.Debug("generateSegment pruned dispatch of domain %v", domain)
 		return nil
-
 	}
+
+	log4go.Info("Generating a crawl segment for %v", domain)
 
 	//
 	// Three lists to hold the 3 link types
