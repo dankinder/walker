@@ -58,8 +58,8 @@ type ConfigStruct struct {
 		ActiveFetchersTTL        string   `yaml:"active_fetchers_ttl"`
 		ActiveFetchersCacheratio float32  `yaml:"active_fetchers_cacheratio"`
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
-		HttpKeepAlive            string   `yaml:"http_keep_alive"`
-		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
+		HTTPKeepAlive            string   `yaml:"http_keep_alive"`
+		HTTPKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
 		MaxPathLength            int      `yaml:"max_path_length"`
 	} `yaml:"fetcher"`
 
@@ -138,8 +138,8 @@ func SetDefaultConfig() {
 	Config.Fetcher.ActiveFetchersTTL = "15m"
 	Config.Fetcher.ActiveFetchersCacheratio = 0.75
 	Config.Fetcher.ActiveFetchersKeepratio = 0.75
-	Config.Fetcher.HttpKeepAlive = "always"
-	Config.Fetcher.HttpKeepAliveThreshold = "15s"
+	Config.Fetcher.HTTPKeepAlive = "always"
+	Config.Fetcher.HTTPKeepAliveThreshold = "15s"
 	Config.Fetcher.MaxPathLength = 2048
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
