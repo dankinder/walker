@@ -1787,7 +1787,6 @@ func TestParseHttpEquiv(t *testing.T) {
 </head>
 <body>
 Some text here.
->>>>>>> master
 </body>
 </html>`
 
