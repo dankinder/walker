@@ -679,10 +679,17 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 
 // shouldStoreParsedLink returns true if the argument URL should
 // be stored in datastore. The link can (currently) be rejected
-// because it's not in the AcceptProtocols, or if the path matches
-// exclude_link_patterns and doesn't match include_link_patterns
+// because
+//   (*) it's not in the AcceptProtocols
+//   (*) if the path matches exclude_link_patterns and doesn't match include_link_patterns.
+//   (*) the link's path is longer than (the positive) Config.Fetcher.MaxPathLength variable
+//
 func (f *fetcher) shouldStoreParsedLink(u *URL) bool {
 	path := u.RequestURI()
+	if Config.Fetcher.MaxPathLength > 0 && len(path) > Config.Fetcher.MaxPathLength {
+		return false
+	}
+
 	include := !(f.excludeLink != nil && f.excludeLink.MatchString(path)) ||
 		(f.includeLink != nil && f.includeLink.MatchString(path))
 	if !include {

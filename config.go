@@ -60,6 +60,7 @@ type WalkerConfig struct {
 		ActiveFetchersKeepratio  float32  `yaml:"active_fetchers_keepratio"`
 		HttpKeepAlive            string   `yaml:"http_keep_alive"`
 		HttpKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
+		MaxPathLength            int      `yaml:"max_path_length"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
@@ -139,6 +140,7 @@ func SetDefaultConfig() {
 	Config.Fetcher.ActiveFetchersKeepratio = 0.75
 	Config.Fetcher.HttpKeepAlive = "always"
 	Config.Fetcher.HttpKeepAliveThreshold = "15s"
+	Config.Fetcher.MaxPathLength = 2048
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
