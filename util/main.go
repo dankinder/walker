@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// UtilCommand is a global link to all the util commands.
 var UtilCommand = cobra.Command{
 	Use: "util",
 }

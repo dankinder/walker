@@ -24,7 +24,7 @@ import (
 //
 var fooTime = time.Now().AddDate(0, 0, -1)
 var testTime = time.Now().AddDate(0, 0, -2)
-var bazUuid, _ = gocql.RandomUUID()
+var bazUUID, _ = gocql.RandomUUID()
 var testComLinkOrder []LinkInfo
 var testComLinkHash = map[string]LinkInfo{
 	"http://test.com/page1.html": LinkInfo{
@@ -158,14 +158,14 @@ type linkTest struct {
 
 const LIM = 50
 
-const EPSILON_SECONDS = 1
+const EpsilonSeconds = 1
 
 func timeClose(l time.Time, r time.Time) bool {
 	delta := l.Unix() - r.Unix()
 	if delta < 0 {
 		delta = -delta
 	}
-	return delta <= EPSILON_SECONDS
+	return delta <= EpsilonSeconds
 }
 
 //Shared Domain Information
@@ -175,7 +175,7 @@ var bazDomain = DomainInfo{
 	NumberLinksQueued:    1,
 	NumberLinksUncrawled: 0,
 	ClaimTime:            testTime,
-	ClaimToken:           bazUuid,
+	ClaimToken:           bazUUID,
 }
 
 var fooDomain = DomainInfo{
@@ -265,7 +265,7 @@ func getModelTestDatastore(t *testing.T) *Datastore {
 
 		db.Query(insertDomainInfo, "bar.com", walker.NotYetCrawled),
 
-		db.Query(insertDomainToCrawl, "baz.com", bazUuid, testTime),
+		db.Query(insertDomainToCrawl, "baz.com", bazUUID, testTime),
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[0].CrawlTime, 200, "", false),
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[1].CrawlTime, 200, "", false),
 		db.Query(insertLink, "baz.com", "sub", "/page1.html", "http", bazLinkHistoryInit[2].CrawlTime, 200, "", false),
@@ -355,7 +355,7 @@ func getModelTestDatastore(t *testing.T) *Datastore {
 
 	itr = db.Query("SELECT dom, subdom, path, proto FROM links").Iter()
 	var foundBaz = false
-	var beforeBazComLink *walker.URL = nil
+	var beforeBazComLink *walker.URL
 	for itr.Scan(&domain, &subdomain, &path, &protocol) {
 		url, err := walker.CreateURL(domain, subdomain, path, protocol, walker.NotYetCrawled)
 		if err != nil {

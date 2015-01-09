@@ -63,7 +63,7 @@ func getFakeTransport() http.RoundTripper {
 }
 
 //
-// Count how many times the Dial routine is called
+// RecordingTransport counts how many times the Dial routine is called
 //
 type recordingTransport struct {
 	http.Transport
@@ -94,21 +94,21 @@ func getRecordingTransport(name string) *recordingTransport {
 }
 
 //
-// http.Transport that tracks which requests where canceled.
+// CancelTrackingTransport isa http.Transport that tracks which requests where canceled.
 //
 type cancelTrackingTransport struct {
 	http.Transport
 	Canceled map[string]int
 }
 
-func (self *cancelTrackingTransport) CancelRequest(req *http.Request) {
+func (ctt *cancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
-	if c, cok := self.Canceled[key]; cok {
+	if c, cok := ctt.Canceled[key]; cok {
 		count = c
 	}
-	self.Canceled[key] = count + 1
-	self.Transport.CancelRequest(req)
+	ctt.Canceled[key] = count + 1
+	ctt.Transport.CancelRequest(req)
 }
 
 //
@@ -118,13 +118,15 @@ type wontConnectDial struct {
 	quit chan struct{}
 }
 
-func (self *wontConnectDial) Close() error {
-	close(self.quit)
+// Close allows usert to close the wontConnectDial
+func (wcd *wontConnectDial) Close() error {
+	close(wcd.quit)
 	return nil
 }
 
-func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
-	<-self.quit
+// Dial function won't return until quit is closed.
+func (wcd *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
+	<-wcd.quit
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
@@ -147,11 +149,11 @@ func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
 //
 type emptyAddr struct{}
 
-func (self *emptyAddr) Network() string {
+func (ea *emptyAddr) Network() string {
 	return ""
 }
 
-func (self *emptyAddr) String() string {
+func (ea *emptyAddr) String() string {
 	return ""
 
 }
@@ -164,41 +166,41 @@ type stallingConn struct {
 	quit   chan struct{}
 }
 
-func (self *stallingConn) Read(b []byte) (int, error) {
-	<-self.quit
+func (sc *stallingConn) Read(b []byte) (int, error) {
+	<-sc.quit
 	return 0, fmt.Errorf("Staling Read")
 }
 
-func (self *stallingConn) Write(b []byte) (int, error) {
-	<-self.quit
+func (sc *stallingConn) Write(b []byte) (int, error) {
+	<-sc.quit
 	return 0, fmt.Errorf("Staling Write")
 }
 
-func (self *stallingConn) Close() error {
-	if !self.closed {
-		close(self.quit)
+func (sc *stallingConn) Close() error {
+	if !sc.closed {
+		close(sc.quit)
 	}
-	self.closed = true
+	sc.closed = true
 	return nil
 }
 
-func (self *stallingConn) LocalAddr() net.Addr {
+func (sc *stallingConn) LocalAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingConn) RemoteAddr() net.Addr {
+func (sc *stallingConn) RemoteAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingConn) SetDeadline(t time.Time) error {
+func (sc *stallingConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingConn) SetReadDeadline(t time.Time) error {
+func (sc *stallingConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingConn) SetWriteDeadline(t time.Time) error {
+func (sc *stallingConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
@@ -209,21 +211,21 @@ type stallCloser struct {
 	stalls map[*stallingConn]bool
 }
 
-func (self *stallCloser) Close() error {
-	for conn := range self.stalls {
+func (sc *stallCloser) Close() error {
+	for conn := range sc.stalls {
 		conn.Close()
 	}
 	return nil
 }
 
-func (self *stallCloser) newConn() *stallingConn {
+func (sc *stallCloser) newConn() *stallingConn {
 	x := &stallingConn{quit: make(chan struct{})}
-	self.stalls[x] = true
+	sc.stalls[x] = true
 	return x
 }
 
-func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
-	return self.newConn(), nil
+func (sc *stallCloser) Dial(network, addr string) (net.Conn, error) {
+	return sc.newConn(), nil
 }
 
 func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {

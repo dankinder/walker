@@ -52,7 +52,7 @@ func callControllerFull(url string, body string, urlPattern string, controller f
 	//
 	// Set your method based on the body input
 	//
-	var bodyBuff io.Reader = nil
+	var bodyBuff io.Reader
 	method := "GET"
 	ct := ""
 	if body != "" {
@@ -129,12 +129,12 @@ func TestLayout(t *testing.T) {
 		found, foundOk := mainLinks[link]
 
 		if !foundOk {
-			t.Errorf("[nav ul li a] Failed to find link '%s' in menu list", link)
+			t.Errorf("[nav ul li a] Failed to find link %q in menu list", link)
 			return
 		}
 
 		if found != text {
-			t.Errorf("[nav ul li a] Text mismatch for %s: got '%s', expected '%s'", link, text, found)
+			t.Errorf("[nav ul li a] Text mismatch for %q: got %q, expected %q", link, text, found)
 			return
 		}
 
@@ -159,7 +159,7 @@ func TestLayout(t *testing.T) {
 			return
 		}
 		if !cssLinks[link] {
-			t.Errorf("[head link] Failed to find link %s", link)
+			t.Errorf("[head link] Failed to find link %q", link)
 			return
 		}
 
@@ -184,7 +184,7 @@ func TestLayout(t *testing.T) {
 			return
 		}
 		if !jsLinks[link] {
-			t.Errorf("[head script] Failed to find link %s", link)
+			t.Errorf("[head script] Failed to find link %q", link)
 			return
 		}
 
@@ -212,7 +212,7 @@ func TestHome(t *testing.T) {
 		text := strings.TrimSpace(sel.Text())
 		exp := "Walker Console"
 		if !strings.Contains(text, exp) {
-			t.Errorf("[.container p] <p> mismatch: got '%s', expected to contain '%s'", text, exp)
+			t.Errorf("[.container p] <p> mismatch: got %q, expected to contain %q", text, exp)
 		}
 	})
 }
@@ -320,7 +320,7 @@ func TestListLinksWeb(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != h2[count] {
-			t.Fatalf("[.container h2] Text mismatch got '%s', expected '%s'", text, h2[count])
+			t.Fatalf("[.container h2] Text mismatch got %q, expected %q", text, h2[count])
 		}
 
 		count++
@@ -357,7 +357,7 @@ func TestListLinksWeb(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != domainKeys[count] {
-			t.Fatalf("[.container table tr > td:nth-child(1)] Column key mismatch '%s', expected '%s'", text, domainKeys[count])
+			t.Fatalf("[.container table tr > td:nth-child(1)] Column key mismatch %q, expected %q", text, domainKeys[count])
 		}
 
 		count++
@@ -365,7 +365,7 @@ func TestListLinksWeb(t *testing.T) {
 
 	secondColSize := domainTable.Find("tr > td:nth-child(2)").Size()
 	if secondColSize != len(domainKeys) {
-		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %s", secondColSize, len(domainKeys))
+		t.Fatalf("[.container table tr > td:nth-child(2)] Second column mismatch got %d, expected %d", secondColSize, len(domainKeys))
 	}
 
 	thirdColSize := domainTable.Find("tr > td:nth-child(3)").Size()
@@ -392,7 +392,7 @@ func TestListLinksWeb(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != linksColHeaders[count] {
-			t.Fatalf("[.container table thead th] Col name mismatch got '%s', expected '%s'", text, linksColHeaders[count])
+			t.Fatalf("[.container table thead th] Col name mismatch got %q, expected %q", text, linksColHeaders[count])
 		}
 
 		count++
@@ -409,7 +409,7 @@ func TestListLinksWeb(t *testing.T) {
 			return
 		}
 		if !strings.HasPrefix(link, "/historical") {
-			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%s)", link)
+			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%q)", link)
 			return
 		}
 	})
@@ -431,16 +431,16 @@ func TestListLinksWeb(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != buttons[count] {
-			t.Fatalf("[.container .row > a <buttons>] Button text mismatch got '%s', expected '%s'", text, buttons[count])
+			t.Fatalf("[.container .row > a <buttons>] Button text mismatch got %q, expected %q", text, buttons[count])
 		}
 
 		if text == "Previous" {
 			if !sel.HasClass("disabled") {
-				t.Fatalf("[.container .row > a <buttons>] Failed button disable for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button disable for %q", text)
 			}
 		} else {
 			if sel.HasClass("disabled") {
-				t.Fatalf("[.container .row > a <buttons>] Failed button undisabled for %s", text)
+				t.Fatalf("[.container .row > a <buttons>] Failed button undisabled for %q", text)
 			}
 		}
 
@@ -493,6 +493,23 @@ func TestListLinksSecondPage(t *testing.T) {
 		t.FailNow()
 	}
 
+	// Test the h2 is a link to the domain info page
+	doc.Find(".container h2 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "Domain Info") {
+			t.Fatalf("[.container h3 a] Bad prefix got %q, expected 'Domain Info'", text)
+		}
+		link, linkOk := sel.Attr("href")
+		if !linkOk {
+			t.Errorf("[.container h2 a] Failed to find href attribute in the h2")
+			return
+		}
+		if !strings.HasPrefix(link, "/links") {
+			t.Fatalf("[.container h2 a] Failed to find prefix /links in href (%q)", link)
+			return
+		}
+	})
+
 	nextButton := doc.Find(".container a").FilterFunction(func(index int, sel *goquery.Selection) bool {
 		return sel.HasClass("btn") && strings.Contains(sel.Text(), "Next")
 	})
@@ -540,7 +557,7 @@ func TestListLinksSecondPage(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != linksColHeaders[count] {
-			t.Fatalf("[.container table thead th] Col name mismatch got '%s', expected '%s'", text, linksColHeaders[count])
+			t.Fatalf("[.container table thead th] Col name mismatch got %q, expected %q", text, linksColHeaders[count])
 		}
 
 		count++
@@ -557,7 +574,7 @@ func TestListLinksSecondPage(t *testing.T) {
 			return
 		}
 		if !strings.HasPrefix(link, "/historical") {
-			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%s)", link)
+			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%q)", link)
 			return
 		}
 	})
@@ -580,16 +597,16 @@ func TestListLinksSecondPage(t *testing.T) {
 	sub.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != buttons[count] {
-			t.Fatalf("[.container a <buttons>] Failed text got '%s', expected '%s'", text, buttons[count])
+			t.Fatalf("[.container a <buttons>] Failed text got %q, expected %q", text, buttons[count])
 		}
 
 		if text == "Previous" {
 			if sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed disabled for %s", text)
+				t.Fatalf("[.container a <buttons>] Failed disabled for %q", text)
 			}
 		} else {
 			if !sel.HasClass("disabled") {
-				t.Fatalf("[.container a <buttons>] Failed disabled for %s", text)
+				t.Fatalf("[.container a <buttons>] Failed disabled for %q", text)
 			}
 		}
 
@@ -638,7 +655,7 @@ func TestListHistorical(t *testing.T) {
 			return
 		}
 		if !strings.HasPrefix(link, "/historical") {
-			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%s)", link)
+			t.Fatalf("[.container table tbody tr td a] Failed to find prefix /historical in href (%q)", link)
 			return
 		}
 
@@ -659,7 +676,21 @@ func TestListHistorical(t *testing.T) {
 	doc.Find(".container h2").First().Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if !strings.HasPrefix(text, "History for Link") {
-			t.Fatalf("[.container h2] Bad prefix got %s, expected 'History for Link'", text)
+			t.Fatalf("[.container h2] Bad prefix got %q, expected 'History for Link'", text)
+		}
+	})
+
+	doc.Find(".container h3 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "Domain Info") {
+			t.Fatalf("[.container h3 a] Bad prefix got %q, expected 'Domain Info'", text)
+		}
+	})
+
+	doc.Find(".container h2 a").First().Each(func(index int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		if !strings.HasPrefix(text, "http://") {
+			t.Fatalf("[.container h2 a] Bad prefix got %q, expected 'http://'", text)
 		}
 	})
 
@@ -679,7 +710,7 @@ func TestListHistorical(t *testing.T) {
 	tables.Find("thead th").Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != colHeaders[count] {
-			t.Fatalf("[.container table thead th] Column header got '%s', expected '%s'", text, colHeaders[count])
+			t.Fatalf("[.container table thead th] Column header got %q, expected %q", text, colHeaders[count])
 		}
 
 		count++
@@ -714,7 +745,7 @@ func TestFindDomains(t *testing.T) {
 	doc.Find(".container h2").Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != "Find domains" {
-			t.Errorf("[.container h2] H2 mismatch got '%s', expected '%s'", text, "Find domains")
+			t.Errorf("[.container h2] H2 mismatch got %q, expected %q", text, "Find domains")
 		}
 	})
 
@@ -730,7 +761,7 @@ func TestFindDomains(t *testing.T) {
 	} else {
 		e := "Enter domains: one per line"
 		if placeholder != e {
-			t.Fatalf("[.container form textarea] Bad placeholder attribute got %s, expected %s", placeholder, e)
+			t.Fatalf("[.container form textarea] Bad placeholder attribute got %q, expected %q", placeholder, e)
 		}
 	}
 
@@ -742,7 +773,7 @@ func TestFindDomains(t *testing.T) {
 	if !typOk {
 		t.Fatalf("[.container form input] Failed to find type attribute")
 	} else if typ != "submit" {
-		t.Fatalf("[.container form input] Type mismatch got '%s', expected 'submit'", typ)
+		t.Fatalf("[.container form input] Type mismatch got %q, expected 'submit'", typ)
 	}
 
 	//
@@ -828,7 +859,7 @@ func TestFindDomains(t *testing.T) {
 	text := strings.TrimSpace(sub.Text())
 	etext := "Failed to specify any targets"
 	if text != etext {
-		t.Fatalf("[.info-li] Error message mismatch: got '%s', expected '%s'", text, etext)
+		t.Fatalf("[.info-li] Error message mismatch: got %q, expected %q", text, etext)
 	}
 
 	//
@@ -849,7 +880,7 @@ func TestFindDomains(t *testing.T) {
 	text = strings.TrimSpace(sub.Text())
 	etext = "Failed to specify any targets"
 	if text != etext {
-		t.Fatalf("[.info-li] Error message mismatch: got '%s', expected '%s'", text, etext)
+		t.Fatalf("[.info-li] Error message mismatch: got %q, expected %q", text, etext)
 	}
 }
 
@@ -869,7 +900,7 @@ func TestFindLinks(t *testing.T) {
 	doc.Find(".container h2").Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
 		if text != "Find Links" {
-			t.Errorf("[.container h2] Header mismatch got '%s', expected '%s'", text, "Find Links")
+			t.Errorf("[.container h2] Header mismatch got %q, expected %q", text, "Find Links")
 		}
 	})
 
@@ -886,7 +917,7 @@ func TestFindLinks(t *testing.T) {
 	} else {
 		e := "Enter links: one per line"
 		if placeholder != e {
-			t.Fatalf("[.container form textarea] Bad placeholder attribute got %s, expected %s", placeholder, e)
+			t.Fatalf("[.container form textarea] Bad placeholder attribute got %q, expected %q", placeholder, e)
 		}
 	}
 
@@ -897,7 +928,7 @@ func TestFindLinks(t *testing.T) {
 	if !typOk {
 		t.Fatalf("[.container form input] Failed to find type attribute")
 	} else if typ != "submit" {
-		t.Fatalf("[.container form input] Type mismatch got '%s', expected 'submit'", typ)
+		t.Fatalf("[.container form input] Type mismatch got %q, expected 'submit'", typ)
 	}
 
 	//
@@ -941,7 +972,7 @@ func TestAddLinks(t *testing.T) {
 		text := strings.TrimSpace(sel.Text())
 		e := "Add Links"
 		if text != e {
-			t.Fatalf("[.container h2] Header mismatch got '%s', expected '%s'", text, e)
+			t.Fatalf("[.container h2] Header mismatch got %q, expected %q", text, e)
 		}
 	})
 
@@ -956,7 +987,7 @@ func TestAddLinks(t *testing.T) {
 	} else {
 		e := "Enter links: one per line"
 		if placeholder != e {
-			t.Fatalf("[.container form textarea] Bad placeholder attribute got %s, expected %s", placeholder, e)
+			t.Fatalf("[.container form textarea] Bad placeholder attribute got %q, expected %q", placeholder, e)
 		}
 	}
 
@@ -968,7 +999,7 @@ func TestAddLinks(t *testing.T) {
 	if !typOk {
 		t.Fatalf("[.container form input[type=submit]] Failed to find type attribute")
 	} else if typ != "submit" {
-		t.Fatalf("[.container form input[type=submit]] Bad type got %s, expected submit", typ)
+		t.Fatalf("[.container form input[type=submit]] Bad type got %q, expected submit", typ)
 	}
 
 	input = form.Find("input[type=checkbox]")
@@ -979,7 +1010,7 @@ func TestAddLinks(t *testing.T) {
 	if !typOk {
 		t.Fatalf("[.container form input[type=checkbox]] Failed to find type attribute")
 	} else if typ != "checkbox" {
-		t.Fatalf("[.container form input[type=checkbox]] Bad type got %s, expected checkbox", typ)
+		t.Fatalf("[.container form input[type=checkbox]] Bad type got %q, expected checkbox", typ)
 	}
 
 	//
@@ -994,15 +1025,11 @@ func TestAddLinks(t *testing.T) {
 		t.Log(body)
 		t.FailNow()
 	}
-	res := doc.Find(".container > ul li")
-	if res.Size() != 1 {
-		t.Fatalf("[.container > ul li] Size mismatch got %d, expected 1", res.Size())
-	}
+	res := doc.Find(".container h2.status")
 	res.Each(func(index int, sel *goquery.Selection) {
 		text := strings.TrimSpace(sel.Text())
-		e := "All links added"
-		if text != e {
-			t.Fatalf("[.container ul li] Mismatched text got '%v', expected '%v'", text, e)
+		if !strings.HasPrefix(text, "Links Added") {
+			t.Fatalf("[.container h2] Mismatched text got '%v', expected 'Links Added'", text)
 		}
 	})
 

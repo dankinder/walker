@@ -23,15 +23,18 @@ func (ds *MockDatastore) StoreURLFetchResults(fr *FetchResults) {
 	ds.Mock.Called(fr)
 }
 
+// ClaimNewHost implements walker.Datastore interface
 func (ds *MockDatastore) ClaimNewHost() string {
 	args := ds.Mock.Called()
 	return args.String(0)
 }
 
+// UnclaimHost implements walker.Datastore interface
 func (ds *MockDatastore) UnclaimHost(host string) {
 	ds.Mock.Called(host)
 }
 
+// UnclaimAll implements method on cassandra.Datastore
 func (ds *MockDatastore) UnclaimAll() error {
 	args := ds.Mock.Called()
 	return args.Error(0)
@@ -48,6 +51,7 @@ func (ds *MockDatastore) LinksForHost(domain string) <-chan *URL {
 	return ch
 }
 
+// KeepAlive implements walker.Datastore interface
 func (ds *MockDatastore) KeepAlive() error {
 	ds.Mock.Called()
 	return nil
@@ -57,6 +61,7 @@ func (ds *MockDatastore) Close() {
 	ds.Mock.Called()
 }
 
+// MockHandler implements the walker.Handler interface
 type MockHandler struct {
 	mock.Mock
 }
@@ -72,15 +77,18 @@ func (h *MockHandler) HandleResponse(fr *FetchResults) {
 	h.Mock.Called(fr)
 }
 
+// MockDispatcher implements the walker.Dispatcher interface
 type MockDispatcher struct {
 	mock.Mock
 }
 
+// StartDispatcher implements the walker.Dispatcher interface
 func (d *MockDispatcher) StartDispatcher() error {
 	args := d.Mock.Called()
 	return args.Error(0)
 }
 
+// StopDispatcher implements the walker.Dispatcher interface
 func (d *MockDispatcher) StopDispatcher() error {
 	args := d.Mock.Called()
 	return args.Error(0)
@@ -126,6 +134,7 @@ type MockHTTPHandler struct {
 	headers map[string]map[string][]http.Header
 }
 
+// NewMockHTTPHandler creates a new MockHTTPHandler
 func NewMockHTTPHandler() *MockHTTPHandler {
 	s := new(MockHTTPHandler)
 	s.returns = map[string]map[string]*MockResponse{
@@ -181,6 +190,7 @@ func (s *MockHTTPHandler) storeHeader(method string, link string, inHeaders http
 	return nil
 }
 
+// ServeHTTP implements http.Handler interface
 func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil {
 		r.URL.Scheme = "http"
@@ -270,9 +280,9 @@ func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.
 
 	if depth < 0 {
 		return head[len(head)-1], nil
-	} else {
-		return head[depth], nil
 	}
+
+	return head[depth], nil
 }
 
 // Requested returns true if the url was requested, and false otherwise.
@@ -294,6 +304,7 @@ func (rs *MockRemoteServer) Requested(method string, url string) bool {
 	return true
 }
 
+// Stop will stop the faux-server.
 func (rs *MockRemoteServer) Stop() {
 	rs.listener.Close()
 }
