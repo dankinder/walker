@@ -89,6 +89,8 @@ func ParseURL(ref string) (*URL, error) {
 	return wurl, nil
 }
 
+// ParseAndNormalizeURL will walker.ParseURL the argument string,
+// and then Normalize the resulting URL.
 func ParseAndNormalizeURL(ref string) (*URL, error) {
 	u, err := ParseURL(ref)
 	if err != nil {
@@ -98,7 +100,7 @@ func ParseAndNormalizeURL(ref string) (*URL, error) {
 	return u, nil
 }
 
-// This method will normalize the URL according to the current set of normalizing rules.
+// Normalize will process the URL according to the current set of normalizing rules.
 func (u *URL) Normalize() {
 	rawURL := u.URL
 
@@ -125,6 +127,7 @@ func (u *URL) Normalize() {
 	}
 }
 
+// Clone will create a copy of this walker.URL
 func (u *URL) Clone() *URL {
 	nurl := *u.URL
 
@@ -139,7 +142,7 @@ func (u *URL) Clone() *URL {
 	}
 }
 
-// Return nil if u is normalized. Otherwise, return the normalized version of u.
+// NormalizedForm returns nil if u is normalized. Otherwise, return the normalized version of u.
 func (u *URL) NormalizedForm() *URL {
 	// We compare the fields of url.URL below. A few notes:
 	//   (a) We do not compare the Opaque field, as it doesn't appear links we'll be looking at will use that field.
@@ -158,9 +161,9 @@ func (u *URL) NormalizedForm() *URL {
 
 	if normal {
 		return nil
-	} else {
-		return c
 	}
+
+	return c
 }
 
 // ToplevelDomainPlusOne returns the Effective Toplevel Domain of this host as
@@ -204,7 +207,7 @@ func (u *URL) TLDPlusOneAndSubdomain() (string, string, error) {
 	return dom, subdom, nil
 }
 
-// Return the 5 tuple that is the primary key for this url in the links table. The return values
+// PrimaryKey returns the 5 tuple that is the primary key for this url in the links table. The return values
 // are (with cassandra keys in parens)
 // (a) Domain (dom)
 // (b) Subdomain (subdom)

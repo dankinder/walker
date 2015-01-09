@@ -1,6 +1,3 @@
-/*
-	This file contains the web-facing handlers.
-*/
 package console
 
 import (
@@ -17,8 +14,9 @@ import (
 	"github.com/iParadigms/walker/cassandra"
 )
 
-var DS *cassandra.Datastore
+var DS cassandra.ModelDatastore
 
+// Route represents an http endpoint
 type Route struct {
 	Path       string
 	Controller func(w http.ResponseWriter, req *http.Request)
@@ -30,6 +28,7 @@ type dropdownElement struct {
 	Text string
 }
 
+// Routes returns all the endpoints for console
 func Routes() []Route {
 	return []Route{
 		Route{Path: "/", Controller: HomeController},
@@ -50,6 +49,7 @@ func Routes() []Route {
 	}
 }
 
+// HomeController returns / page
 func HomeController(w http.ResponseWriter, req *http.Request) {
 	mp := map[string]interface{}{}
 	Render.HTML(w, http.StatusOK, "home", mp)
@@ -177,6 +177,7 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 	return theLink, encode32(strings.Join(theList, ";")), nil
 }
 
+// ListDomainsController returns pages rooted at /list
 func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	seed := vars["seed"]
@@ -245,6 +246,7 @@ func ListDomainsController(w http.ResponseWriter, req *http.Request) {
 	Render.HTML(w, http.StatusOK, "list", mp)
 }
 
+// FindDomainController returns pages rooted at /find
 func FindDomainController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		mp := map[string]interface{}{}
@@ -334,8 +336,7 @@ func FindDomainController(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// TODO: I think that we should have a confirm page after you add the links. But thats
-// an advanced feature.
+// AddLinkIndexController returns pages rooted at /add
 func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		mp := map[string]interface{}{}
@@ -405,14 +406,28 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	type HistoryLink struct {
+		URL         string
+		HistoryPath string
+	}
+	var historyLinks []HistoryLink
+	for _, link := range links {
+		h := HistoryLink{
+			URL:         link,
+			HistoryPath: "/historical/" + encode32(link),
+		}
+		historyLinks = append(historyLinks, h)
+	}
+	// build up links to historical page for each link
 	mp := map[string]interface{}{
-		"HasInfoMessage": true,
-		"InfoMessage":    []string{"All links added"},
+		"HasInfoMessage": false, // the default ul format makes no sense here
+		"HLinks":         historyLinks,
 	}
 	Render.HTML(w, http.StatusOK, "add", mp)
 	return
 }
 
+// LinksController returns pages rooted at /links
 //IMPL NOTE: Why does linksController encode the seedURL in base32, rather than URL encode it?
 // The reason is that various components along the way are tripping on the appearance of the
 // seedURL argument. First, it appears that the browser is unencoding the link BEFORE submitting it
@@ -420,7 +435,6 @@ func AddLinkIndexController(w http.ResponseWriter, req *http.Request) {
 // to be choking on the url-encoded text as well. For example if the url encoded seedURL ends with
 // .html, it appears that this is causing the server to throw a 301. Unknown why that is. But the net effect
 // is that, if I totally disguise the link in base32, everything works.
-
 func LinksController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	domain := vars["domain"]
@@ -581,6 +595,7 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// LinksHistoricalController returns pages rooted at /links
 func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	url := vars["url"]
@@ -605,14 +620,20 @@ func LinksHistoricalController(w http.ResponseWriter, req *http.Request) {
 		replyServerError(w, fmt.Errorf("ListLinkHistorical (%v): %v", u, err))
 		return
 	}
-
+	domain, err := u.ToplevelDomainPlusOne()
+	if err != nil {
+		replyServerError(w, fmt.Errorf("ListLinkHistorical - ToplevelDomainPlusOne (%v): %v", u, err))
+		return
+	}
 	mp := map[string]interface{}{
+		"Domain":    domain,
 		"LinkTopic": u.String(),
 		"Linfos":    linfos,
 	}
 	Render.HTML(w, http.StatusOK, "historical", mp)
 }
 
+// FindLinksController returns pages rooted at /findLinks
 func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		mp := map[string]interface{}{}
@@ -636,7 +657,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	lines := strings.Split(text, "\n")
 	var info []string
 	var errs []string
-	var linfos []*walker.LinkInfo
+	var linfos []*cassandra.LinkInfo
 	for i := range lines {
 		link := strings.TrimSpace(lines[i])
 		if link == "" {
@@ -706,6 +727,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// ExcludeToggleController handles web based exclusions
 func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	domain := vars["domain"]
@@ -736,6 +758,7 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
 }
 
+// ChangePriorityController handles web-based priority changes.
 func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	domain := vars["domain"]
@@ -771,6 +794,7 @@ func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
+// FilterLinksController returns pages rooted at /filterLinks
 func FilterLinksController(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		mp := map[string]interface{}{

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
+	"github.com/iParadigms/walker/cassandra"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -26,34 +26,34 @@ func TestCommandsReadConfig(t *testing.T) {
 	defer func() {
 		os.Args = orig
 		// Reset config for the remaining tests
-		helpers.LoadTestConfig("test-walker.yaml")
+		walker.LoadTestConfig("test-walker.yaml")
 	}()
 
-	handler := &helpers.MockHandler{}
+	handler := &walker.MockHandler{}
 	Handler(handler)
 
-	datastore := &helpers.MockDatastore{}
+	datastore := &walker.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("StoreParsedURL", mock.Anything, mock.Anything).Return()
 	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
 
-	dispatcher := &helpers.MockDispatcher{}
+	dispatcher := &walker.MockDispatcher{}
 	dispatcher.On("StartDispatcher").Return(nil)
 	dispatcher.On("StopDispatcher").Return(nil)
 	Dispatcher(dispatcher)
 
 	var walkerCommands = []string{"crawl", "fetch", "dispatch", "seed"}
 	for _, walkerCom := range walkerCommands {
-		helpers.LoadTestConfig("test-walker.yaml")
+		walker.LoadTestConfig("test-walker.yaml")
 		expectedDefaultAgent := "Walker (http://github.com/iParadigms/walker)"
 		if walker.Config.Fetcher.UserAgent != expectedDefaultAgent {
 			t.Fatalf("Failed to reset default config value (user_agent), expected: %v\nBut got: %v",
 				expectedDefaultAgent, walker.Config.Fetcher.UserAgent)
 		}
 
-		conf := path.Join(helpers.GetTestFileDir(), "test-walker2.yaml")
+		conf := path.Join(walker.GetTestFileDir(), "test-walker2.yaml")
 		switch walkerCom {
 		case "seed":
 			os.Args = []string{os.Args[0], walkerCom, "--url=http://test.com", "--config=" + conf}
@@ -85,15 +85,15 @@ func TestCrawlCommand(t *testing.T) {
 	}
 
 	for index := range args {
-		handler := &helpers.MockHandler{}
+		handler := &walker.MockHandler{}
 		Handler(handler)
 
-		datastore := &helpers.MockDatastore{}
+		datastore := &walker.MockDatastore{}
 		datastore.On("ClaimNewHost").Return("")
 		datastore.On("KeepAlive").Return(nil)
 		Datastore(datastore)
 
-		dispatcher := &helpers.MockDispatcher{}
+		dispatcher := &walker.MockDispatcher{}
 		dispatcher.On("StartDispatcher").Return(nil)
 		dispatcher.On("StopDispatcher").Return(nil)
 		Dispatcher(dispatcher)
@@ -113,16 +113,16 @@ func TestCrawlCommand(t *testing.T) {
 }
 
 func TestFetchCommand(t *testing.T) {
-	handler := &helpers.MockHandler{}
+	handler := &walker.MockHandler{}
 	Handler(handler)
 
-	datastore := &helpers.MockDatastore{}
+	datastore := &walker.MockDatastore{}
 	datastore.On("ClaimNewHost").Return("")
 	datastore.On("KeepAlive").Return(nil)
 	Datastore(datastore)
 
 	// Set the dispatcher to ensure it doesn't receive any calls
-	dispatcher := &helpers.MockDispatcher{}
+	dispatcher := &walker.MockDispatcher{}
 	Dispatcher(dispatcher)
 
 	orig := os.Args
@@ -142,13 +142,13 @@ func TestFetchCommand(t *testing.T) {
 
 func TestDispatchCommand(t *testing.T) {
 	// Set a handler and datastore to ensure they doesn't receive any calls
-	handler := &helpers.MockHandler{}
+	handler := &walker.MockHandler{}
 	Handler(handler)
 
-	datastore := &helpers.MockDatastore{}
+	datastore := &walker.MockDatastore{}
 	Datastore(datastore)
 
-	dispatcher := &helpers.MockDispatcher{}
+	dispatcher := &walker.MockDispatcher{}
 	dispatcher.On("StartDispatcher").Return(nil)
 	dispatcher.On("StopDispatcher").Return(nil)
 	Dispatcher(dispatcher)
@@ -170,7 +170,7 @@ func TestDispatchCommand(t *testing.T) {
 
 func TestSeedCommand(t *testing.T) {
 	u, _ := walker.ParseURL("http://test.com")
-	datastore := &helpers.MockDatastore{}
+	datastore := &walker.MockDatastore{}
 	datastore.On("StoreParsedURL", u, mock.AnythingOfType("*walker.FetchResults")).Return("")
 	Datastore(datastore)
 
@@ -264,15 +264,15 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 	for i := 0; ; i++ {
 		if i >= len(left) && i >= len(right) {
 			match = true
-			return
+			break
 		} else if i >= len(left) {
 			leftLine = "<<<no data>>>"
 			rightLine = strings.TrimSpace(right[i])
-			return
+			break
 		} else if i >= len(right) {
 			leftLine = strings.TrimSpace(left[i])
 			rightLine = "<<<no data>>>"
-			return
+			break
 		}
 
 		l := strings.TrimSpace(left[i])
@@ -280,7 +280,7 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 		if l != r {
 			leftLine = left[i]
 			rightLine = right[i]
-			return
+			break
 		}
 	}
 
@@ -289,7 +289,7 @@ func compareLongString(leftStr string, rightStr string) (match bool, leftLine st
 
 func TestReadlinkCommand(t *testing.T) {
 	// Define some useful constants
-	goodUrl, _ := walker.ParseURL("http://test.com/page1.com")
+	goodURL, _ := walker.ParseURL("http://test.com/page1.com")
 	crawlTime, _ := time.Parse("Mon Jan 2 15:04:05 -0700 MST 2006", "Mon Jan 2 15:04:05 -0700 MST 2006")
 	body := `<!DOCTYPE html>
 <html>
@@ -308,13 +308,13 @@ func TestReadlinkCommand(t *testing.T) {
 	}
 
 	// Define some link infos
-	notYetCrawledLinfo := walker.LinkInfo{
-		URL:       goodUrl,
+	notYetCrawledLinfo := cassandra.LinkInfo{
+		URL:       goodURL,
 		CrawlTime: walker.NotYetCrawled,
 	}
 
-	goodLinfo := walker.LinkInfo{
-		URL:            goodUrl,
+	goodLinfo := cassandra.LinkInfo{
+		URL:            goodURL,
 		Status:         200,
 		CrawlTime:      crawlTime,
 		Error:          "A nice long\nError\nwith plenty of \nnewlines and such",
@@ -330,7 +330,7 @@ func TestReadlinkCommand(t *testing.T) {
 	tests := []struct {
 		tag    string
 		call   []string
-		linfo  *walker.LinkInfo
+		linfo  *cassandra.LinkInfo
 		stdout string
 		stderr string
 		estat  int
@@ -338,7 +338,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "linkNotThere",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo:  nil,
 			stderr: "Failed to find link http://test.com/page1.com in datastore",
 			estat:  1,
@@ -346,7 +346,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "notYetCrawled",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo:  &notYetCrawledLinfo,
 			stdout: "Link http://test.com/page1.com is present, but has not yet been fetched",
 			estat:  0,
@@ -354,7 +354,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:    "badOptions",
-			call:   []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-mb"},
+			call:   []string{os.Args[0], "readlink", "-u", goodURL.String(), "-mb"},
 			linfo:  nil,
 			stderr: "Can't specify both --body-only/-b AND --meta-only/-m",
 			estat:  1,
@@ -362,7 +362,7 @@ func TestReadlinkCommand(t *testing.T) {
 
 		{
 			tag:   "standard",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String()},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String()},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `Url:            http://test.com/page1.com
@@ -397,7 +397,7 @@ BODY:
 
 		{
 			tag:   "metaOnly",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-m"},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String(), "-m"},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `Url:            http://test.com/page1.com
@@ -421,7 +421,7 @@ HEADERS:
 
 		{
 			tag:   "bodyOnly",
-			call:  []string{os.Args[0], "readlink", "-u", goodUrl.String(), "-b"},
+			call:  []string{os.Args[0], "readlink", "-u", goodURL.String(), "-b"},
 			linfo: &goodLinfo,
 			estat: 0,
 			stdout: `<!DOCTYPE html>
@@ -440,8 +440,8 @@ HEADERS:
 	for _, tst := range tests {
 		ReadLinkClearOptions()
 
-		datastore := &helpers.MockDatastore{}
-		datastore.On("FindLink", goodUrl, true).Return(tst.linfo, nil)
+		datastore := &cassandra.MockModelDatastore{}
+		datastore.On("FindLink", goodURL, true).Return(tst.linfo, nil)
 		Datastore(datastore)
 		origArgs := os.Args
 		os.Args = tst.call

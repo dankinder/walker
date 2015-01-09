@@ -12,7 +12,7 @@ import (
 	"github.com/iParadigms/walker"
 )
 
-// GetConfig
+// GetConfig returns a fresh ClusterConfig, configured against walker.Config
 func GetConfig() *gocql.ClusterConfig {
 	timeout, err := time.ParseDuration(walker.Config.Cassandra.Timeout)
 	if err != nil {

@@ -83,6 +83,7 @@ func NewDatastore() (*Datastore, error) {
 	return ds, nil
 }
 
+// Close will close the Datastore
 func (ds *Datastore) Close() {
 	ds.db.Close()
 }
@@ -93,12 +94,13 @@ func (ds *Datastore) Close() {
 
 // limitPerClaimCycle is the target number of domains to put in the
 // Datastore.domains per population.
-var limitPerClaimCycle int = 50
+var limitPerClaimCycle = 50
 
 // The allowed values of the priority in the domain_info table
 var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
 var MaxPriority = AllowedPriorities[0]
 
+// ClaimNewHost is documented on the walker.Datastore interface.
 func (ds *Datastore) ClaimNewHost() string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
@@ -165,7 +167,7 @@ func (ds *Datastore) domainPriorityClaim(dom string) bool {
 // tryClaimHosts trys to read a list of hosts from domain_info. Returns retry
 // if the caller should re-call the method.
 func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
-	var domain_iter *gocql.Iter
+	var domainIter *gocql.Iter
 	if ds.restartCursor {
 		loopQuery := fmt.Sprintf(`SELECT dom, priority 
 									FROM domain_info
@@ -174,7 +176,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 								 		dispatched = true
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
-		domain_iter = ds.db.Query(loopQuery).Iter()
+		domainIter = ds.db.Query(loopQuery).Iter()
 		ds.restartCursor = false
 	} else {
 		loopQuery := fmt.Sprintf(`SELECT dom, priority 
@@ -185,7 +187,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 								 		TOKEN(dom) > TOKEN(?)
 								 	LIMIT %d 
 								 	ALLOW FILTERING`, limit)
-		domain_iter = ds.db.Query(loopQuery, ds.claimCursor).Iter()
+		domainIter = ds.db.Query(loopQuery, ds.claimCursor).Iter()
 	}
 
 	casQuery := `UPDATE domain_info 
@@ -208,7 +210,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	start := time.Now()
 	trumpedClaim := 0
 	scanComplete := false
-	for domain_iter.Scan(&domain, &domPriority) {
+	for domainIter.Scan(&domain, &domPriority) {
 		scanComplete = true
 		if !ds.domainPriorityTry(domain, domPriority) {
 			continue
@@ -232,7 +234,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 		}
 	}
 
-	err := domain_iter.Close()
+	err := domainIter.Close()
 
 	if err != nil {
 		log4go.Error("Domain iteration query failed: %v", err)
@@ -253,6 +255,7 @@ func (ds *Datastore) tryClaimHosts(limit int) (domains []string, retry bool) {
 	return
 }
 
+// UnclaimHost is documented on the walker.Datastore interface.
 func (ds *Datastore) UnclaimHost(host string) {
 	err := ds.db.Query(`DELETE FROM segments WHERE dom = ?`, host).Exec()
 	if err != nil {
@@ -270,6 +273,7 @@ func (ds *Datastore) UnclaimHost(host string) {
 	}
 }
 
+// LinksForHost is documented on the walker.Datastore interface.
 func (ds *Datastore) LinksForHost(domain string) <-chan *walker.URL {
 	links, err := ds.getSegmentLinks(domain)
 	if err != nil {
@@ -298,9 +302,9 @@ func (ds *Datastore) getSegmentLinks(domain string) (links []*walker.URL, err er
 	defer func() { err = iter.Close() }()
 
 	var dbdomain, subdomain, path, protocol string
-	var crawl_time time.Time
-	for iter.Scan(&dbdomain, &subdomain, &path, &protocol, &crawl_time) {
-		u, e := walker.CreateURL(dbdomain, subdomain, path, protocol, crawl_time)
+	var crawlTime time.Time
+	for iter.Scan(&dbdomain, &subdomain, &path, &protocol, &crawlTime) {
+		u, e := walker.CreateURL(dbdomain, subdomain, path, protocol, crawlTime)
 		if e != nil {
 			log4go.Error("Error adding link (%v) to crawl: %v", u, e)
 		} else {
@@ -318,6 +322,7 @@ type dbfield struct {
 	value interface{}
 }
 
+// StoreURLFetchResults is documented on the walker.Datastore interface.
 func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 	url := fr.URL
 	if len(fr.RedirectedFrom) > 0 {
@@ -413,6 +418,7 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 	}
 }
 
+// StoreParsedURL is documented on the walker.Datastore interface.
 func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	if !u.IsAbs() {
 		log4go.Warn("Link should not have made it to StoreParsedURL: %v", u)
@@ -443,6 +449,7 @@ func (ds *Datastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
 	}
 }
 
+// KeepAlive is documented on the walker.Datastore interface.
 func (ds *Datastore) KeepAlive() error {
 	err := ds.db.Query(`INSERT INTO active_fetchers (tok) VALUES (?) USING TTL ?`,
 		ds.crawlerUUID, ds.activeFetchersTTL).Exec()
@@ -513,92 +520,31 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 // DomainInfo calls
 //
 
-// DomainInfo defines a row from the domain_info table
-type DomainInfo struct {
-	// TLD+1
-	Domain string
-
-	// Is this domain excluded from the crawl?
-	Excluded bool
-
-	// Why did this domain get excluded, or empty if not excluded
-	ExcludeReason string
-
-	// When did this domain last get queued to be crawled. Or TimeQueed.IsZero() if not crawled
-	ClaimTime time.Time
-
-	// What was the UUID of the crawler that last crawled the domain
-	ClaimToken gocql.UUID
-
-	// Number of (unique) links found in this domain
-	NumberLinksTotal int
-
-	// Number of (unique) links queued to be processed for this domain
-	NumberLinksQueued int
-
-	// Number of links not yet crawled
-	NumberLinksUncrawled int
-
-	// Priority of this domain
-	Priority int
-}
-
-// DomainInfoUpdateConfig is used to configure the method Datastore.UpdateDomain
-type DomainInfoUpdateConfig struct {
-
-	// Setting Exclude to true indicates that the ExcludeReason field of the DomainInfo passed to UpdateDomain should be
-	// persisted to the database.
-	Exclude bool
-
-	// Setting Priority to true indicates that the Priority field of the DomainInfo passed to UpdateDomain should be
-	// persisted to the database.
-	Priority bool
-}
-
-// DQ is a domain query struct used for getting domains from cassandra.
-// Zero-values mean use default behavior.
-type DQ struct {
-	// When listing domains, the seed should be the domain preceding the
-	// queried set. When paginating, use the last domain of the previous set as
-	// the seed.
-	// Default: select from the beginning
-	Seed string
-
-	// Limit the returned results, used for pagination.
-	// Default: no limit
-	Limit int
-
-	// Set to true to get only dispatched domains
-	// default: get all domains
-	Working bool
-}
-
-// FindDomain returns the DomainInfo for the specified domain
 func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 	itr := ds.db.Query(`SELECT claim_tok, claim_time, excluded, exclude_reason, priority, tot_links, uncrawled_links, 
 						queued_links FROM domain_info WHERE dom = ?`, domain).Iter()
-	var claim_tok gocql.UUID
-	var claim_time time.Time
+	var claimTok gocql.UUID
+	var claimTime time.Time
 	var excluded bool
-	var exclude_reason string
+	var excludeReason string
 	var priority, linksCount, uncrawledLinksCount, queuedLinksCount int
-	if !itr.Scan(&claim_tok, &claim_time, &excluded, &exclude_reason, &priority, &linksCount, &uncrawledLinksCount,
+	if !itr.Scan(&claimTok, &claimTime, &excluded, &excludeReason, &priority, &linksCount, &uncrawledLinksCount,
 		&queuedLinksCount) {
 		err := itr.Close()
 		return nil, err
 	}
 
 	reason := ""
-	if exclude_reason != "" {
-		reason = exclude_reason
+	if excludeReason != "" {
+		reason = excludeReason
 	} else if excluded {
 		// This should just be a backstop in case someone doesn't set exclude_reason.
 		reason = "Exclusion marked"
 	}
 	dinfo := &DomainInfo{
 		Domain:               domain,
-		ClaimToken:           claim_tok,
-		ClaimTime:            claim_time,
+		ClaimToken:           claimTok,
+		ClaimTime:            claimTime,
 		Excluded:             excluded,
 		ExcludeReason:        reason,
 		Priority:             priority,
@@ -614,8 +560,6 @@ func (ds *Datastore) FindDomain(domain string) (*DomainInfo, error) {
 	return dinfo, err
 }
 
-// ListDomains returns a slice of DomainInfo structs populated according to the
-// specified DQ (domain query)
 func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	conditions := []string{}
 	args := []interface{}{}
@@ -645,16 +589,16 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	itr := ds.db.Query(cql, args...).Iter()
 
 	var dinfos []*DomainInfo
-	var domain, exclude_reason string
-	var claim_tok gocql.UUID
-	var claim_time time.Time
+	var domain, excludeReason string
+	var claimTok gocql.UUID
+	var claimTime time.Time
 	var excluded bool
 	var priority, linksCount, uncrawledLinksCount, queuedLinksCount int
-	for itr.Scan(&domain, &claim_tok, &claim_time, &excluded, &exclude_reason, &priority, &linksCount,
+	for itr.Scan(&domain, &claimTok, &claimTime, &excluded, &excludeReason, &priority, &linksCount,
 		&uncrawledLinksCount, &queuedLinksCount) {
 		reason := ""
-		if exclude_reason != "" {
-			reason = exclude_reason
+		if excludeReason != "" {
+			reason = excludeReason
 		} else if excluded {
 			// This should just be a backstop in case someone doesn't set exclude_reason.
 			reason = "Exclusion marked"
@@ -662,8 +606,8 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 
 		dinfos = append(dinfos, &DomainInfo{
 			Domain:               domain,
-			ClaimToken:           claim_tok,
-			ClaimTime:            claim_time,
+			ClaimToken:           claimTok,
+			ClaimTime:            claimTime,
 			Excluded:             excluded,
 			ExcludeReason:        reason,
 			Priority:             priority,
@@ -680,24 +624,51 @@ func (ds *Datastore) ListDomains(query DQ) ([]*DomainInfo, error) {
 	return dinfos, err
 }
 
+func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInfoUpdateConfig) error {
+
+	vars := []string{}
+	args := []interface{}{}
+
+	if cfg.Exclude {
+		reason := info.ExcludeReason
+		if !info.Excluded {
+			reason = ""
+		}
+		vars = append(vars, "excluded", "exclude_reason")
+		args = append(args, info.Excluded, reason)
+	}
+
+	if cfg.Priority {
+		vars = append(vars, "priority")
+		args = append(args, info.Priority)
+	}
+
+	if len(vars) < 1 {
+		return fmt.Errorf("Expected at least one variable set in cfg (of type DomainInfoUpdateConfig)")
+	}
+
+	var buffer bytes.Buffer
+	buffer.WriteString("UPDATE domain_info\n")
+	buffer.WriteString("SET\n")
+	for i, v := range vars {
+		buffer.WriteString(v)
+		if i != len(vars)-1 {
+			buffer.WriteString(" = ?,\n")
+		} else {
+			buffer.WriteString(" = ?\n")
+		}
+	}
+	buffer.WriteString("WHERE dom = ?\n")
+	args = append(args, domain)
+	query := buffer.String()
+
+	err := ds.db.Query(query, args...).Exec()
+	return err
+}
+
 //
 // LinkInfo calls
 //
-
-// LQ is a link query struct used for gettings links from cassandra.
-// Zero-values mean use default behavior.
-type LQ struct {
-	// When listing links, the seed should be the URL preceding the queried
-	// set. When paginating, use the last URL of the previous set as the seed.
-	// Default: select from the beginning
-	Seed *walker.URL
-
-	// Limit the returned results, used for pagination.
-	// Default: no limit
-	Limit int
-
-	FilterRegex string
-}
 
 // rememberTimes is a map helper for showing only the latest link results
 type rememberTimes struct {
@@ -705,11 +676,7 @@ type rememberTimes struct {
 	ind int
 }
 
-// FindLink returns a walker.LinkInfo matching the given URL. Arguments to this function are
-// (a) u is the url to find
-// (b) collectContent, if true, indicates that Body and Headers field of walker.LinkInfo will
-//     be populated.
-func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error) {
+func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*LinkInfo, error) {
 	tld1, subtld1, err := u.TLDPlusOneAndSubdomain()
 	if err != nil {
 		return nil, err
@@ -742,9 +709,9 @@ func (ds *Datastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkI
 
 	if len(linfos) == 0 {
 		return nil, nil
-	} else {
-		return linfos[0], nil
 	}
+
+	return linfos[0], nil
 }
 
 // Pagination note:
@@ -781,14 +748,12 @@ type queryEntry struct {
 	args  []interface{}
 }
 
-// ListLinks fetches links for the given domain according to the given LQ (Link
-// Query)
-func (ds *Datastore) ListLinks(domain string, query LQ) ([]*walker.LinkInfo, error) {
+func (ds *Datastore) ListLinks(domain string, query LQ) ([]*LinkInfo, error) {
 	if query.Limit <= 0 {
 		return nil, fmt.Errorf("Bad value for limit parameter %d", query.Limit)
 	}
 
-	var acceptLink func(string) bool = nil
+	var acceptLink func(string) bool
 	if query.FilterRegex != "" {
 		re, err := regexp.Compile(query.FilterRegex)
 		if err != nil {
@@ -799,7 +764,7 @@ func (ds *Datastore) ListLinks(domain string, query LQ) ([]*walker.LinkInfo, err
 		}
 	}
 
-	var linfos []*walker.LinkInfo
+	var linfos []*LinkInfo
 	rtimes := map[string]rememberTimes{}
 	var table []queryEntry
 
@@ -867,8 +832,7 @@ func (ds *Datastore) ListLinks(domain string, query LQ) ([]*walker.LinkInfo, err
 	return linfos, nil
 }
 
-// ListLinkHistorical gets the crawl history of a specific link
-func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*walker.LinkInfo, error) {
+func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 	query := `SELECT dom, subdom, path, proto, time, stat,
 						err, robot_ex, redto_url, getnow, mime, fnv
               FROM links
@@ -880,7 +844,7 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*walker.LinkInfo, erro
 
 	itr := ds.db.Query(query, tld1, subtld1, u.RequestURI(), u.Scheme).Iter()
 
-	var linfos []*walker.LinkInfo
+	var linfos []*LinkInfo
 	var dom, sub, path, prot, getError, mime, redtoURL string
 	var crawlTime time.Time
 	var status int
@@ -895,7 +859,7 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*walker.LinkInfo, erro
 		//}
 
 		u, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
-		linfo := &walker.LinkInfo{
+		linfo := &LinkInfo{
 			URL:            u,
 			Status:         status,
 			Error:          getError,
@@ -917,21 +881,14 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*walker.LinkInfo, erro
 	return linfos, err
 }
 
-// InsertLink inserts the given link into the database, adding it's domain if
-// it does not exist. If excludeDomainReason is not empty, this domain will be
-// excluded from crawling marked with the given reason.
 func (ds *Datastore) InsertLink(link string, excludeDomainReason string) error {
 	errors := ds.InsertLinks([]string{link}, excludeDomainReason)
 	if len(errors) > 0 {
 		return errors[0]
-	} else {
-		return nil
 	}
+	return nil
 }
 
-// InsertLinks does the same as InsertLink with many potential errors. It will
-// insert as many as it can (it won't stop once it hits a bad link) and only
-// return errors for problematic links or domains.
 func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []error {
 	//
 	// Collect domains
@@ -1008,15 +965,15 @@ func (ds *Datastore) InsertLinks(links []string, excludeDomainReason string) []e
 	return errList
 }
 
-//collectwalker.LinkInfos populates a []walker.LinkInfo list given a cassandra iterator. Arguments are described as:
-// (a) linfos is the list of walker.LinkInfo's to build on
+//collectLinkInfos populates a []LinkInfo list given a cassandra iterator. Arguments are described as:
+// (a) linfos is the list of LinkInfo's to build on
 // (b) rtimes is scratch space used to filter most recent link
 // (c) itr is a gocql.Iter instance to be read
 // (d) limit is the max length of linfos
 // (e) linkAccept is a func(string)bool. If linkAccept(linkText) returns false, the link IS NOT retained in linfos [
 //  This is used to implement filterRegex on ListLinks]
-func (ds *Datastore) collectLinkInfos(linfos []*walker.LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
-	linkAccept func(string) bool, collectContent bool) ([]*walker.LinkInfo, error) {
+func (ds *Datastore) collectLinkInfos(linfos []*LinkInfo, rtimes map[string]rememberTimes, itr *gocql.Iter, limit int,
+	linkAccept func(string) bool, collectContent bool) ([]*LinkInfo, error) {
 	var domain, subdomain, path, protocol, anerror string
 	var crawlTime time.Time
 	var robotsExcluded bool
@@ -1059,7 +1016,7 @@ func (ds *Datastore) collectLinkInfos(linfos []*walker.LinkInfo, rtimes map[stri
 			headers = nil
 		}
 
-		linfo := &walker.LinkInfo{
+		linfo := &LinkInfo{
 			URL:            u,
 			Status:         status,
 			Error:          anerror,
@@ -1085,52 +1042,6 @@ func (ds *Datastore) collectLinkInfos(linfos []*walker.LinkInfo, rtimes map[stri
 	}
 
 	return linfos, nil
-}
-
-// UpdateDomain updates the given domain with fields from `info`. Which fields will be persisted to the store from
-// the argument DomainInfo is configured from the DomainInfoUpdateConfig argument. For example, to persist
-// the Priority field in the info strut, one would pass DomainInfoUpdateConfig{Priority: true} as the cfg
-// argument to UpdateDomain.
-func (ds *Datastore) UpdateDomain(domain string, info *DomainInfo, cfg DomainInfoUpdateConfig) error {
-
-	vars := []string{}
-	args := []interface{}{}
-
-	if cfg.Exclude {
-		reason := info.ExcludeReason
-		if !info.Excluded {
-			reason = ""
-		}
-		vars = append(vars, "excluded", "exclude_reason")
-		args = append(args, info.Excluded, reason)
-	}
-
-	if cfg.Priority {
-		vars = append(vars, "priority")
-		args = append(args, info.Priority)
-	}
-
-	if len(vars) < 1 {
-		return fmt.Errorf("Expected at least one variable set in cfg (of type DomainInfoUpdateConfig)")
-	}
-
-	var buffer bytes.Buffer
-	buffer.WriteString("UPDATE domain_info\n")
-	buffer.WriteString("SET\n")
-	for i, v := range vars {
-		buffer.WriteString(v)
-		if i != len(vars)-1 {
-			buffer.WriteString(" = ?,\n")
-		} else {
-			buffer.WriteString(" = ?\n")
-		}
-	}
-	buffer.WriteString("WHERE dom = ?\n")
-	args = append(args, domain)
-	query := buffer.String()
-
-	err := ds.db.Query(query, args...).Exec()
-	return err
 }
 
 //

@@ -1,4 +1,4 @@
-package helpers
+package walker
 
 import (
 	"bytes"
@@ -7,40 +7,43 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/iParadigms/walker"
 	"github.com/stretchr/testify/mock"
 )
 
+// MockDatastore implements walker's Datastore interface for testing.
 type MockDatastore struct {
 	mock.Mock
 }
 
-func (ds *MockDatastore) StoreParsedURL(u *walker.URL, fr *walker.FetchResults) {
+func (ds *MockDatastore) StoreParsedURL(u *URL, fr *FetchResults) {
 	ds.Mock.Called(u, fr)
 }
 
-func (ds *MockDatastore) StoreURLFetchResults(fr *walker.FetchResults) {
+func (ds *MockDatastore) StoreURLFetchResults(fr *FetchResults) {
 	ds.Mock.Called(fr)
 }
 
+// ClaimNewHost implements walker.Datastore interface
 func (ds *MockDatastore) ClaimNewHost() string {
 	args := ds.Mock.Called()
 	return args.String(0)
 }
 
+// UnclaimHost implements walker.Datastore interface
 func (ds *MockDatastore) UnclaimHost(host string) {
 	ds.Mock.Called(host)
 }
 
+// UnclaimAll implements method on cassandra.Datastore
 func (ds *MockDatastore) UnclaimAll() error {
 	args := ds.Mock.Called()
 	return args.Error(0)
 }
 
-func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
+func (ds *MockDatastore) LinksForHost(domain string) <-chan *URL {
 	args := ds.Mock.Called(domain)
-	urls := args.Get(0).([]*walker.URL)
-	ch := make(chan *walker.URL, len(urls))
+	urls := args.Get(0).([]*URL)
+	ch := make(chan *URL, len(urls))
 	for _, u := range urls {
 		ch <- u
 	}
@@ -48,21 +51,22 @@ func (ds *MockDatastore) LinksForHost(domain string) <-chan *walker.URL {
 	return ch
 }
 
+// KeepAlive implements walker.Datastore interface
 func (ds *MockDatastore) KeepAlive() error {
 	ds.Mock.Called()
 	return nil
 }
 
-func (ds *MockDatastore) FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error) {
-	args := ds.Mock.Called(u, collectContent)
-	return args.Get(0).(*walker.LinkInfo), args.Error(1)
+func (ds *MockDatastore) Close() {
+	ds.Mock.Called()
 }
 
+// MockHandler implements the walker.Handler interface
 type MockHandler struct {
 	mock.Mock
 }
 
-func (h *MockHandler) HandleResponse(fr *walker.FetchResults) {
+func (h *MockHandler) HandleResponse(fr *FetchResults) {
 	// Copy response body so that the fetcher code can reuse readBuffer
 	var buffer bytes.Buffer
 	_, err := buffer.ReadFrom(fr.Response.Body)
@@ -73,15 +77,18 @@ func (h *MockHandler) HandleResponse(fr *walker.FetchResults) {
 	h.Mock.Called(fr)
 }
 
+// MockDispatcher implements the walker.Dispatcher interface
 type MockDispatcher struct {
 	mock.Mock
 }
 
+// StartDispatcher implements the walker.Dispatcher interface
 func (d *MockDispatcher) StartDispatcher() error {
 	args := d.Mock.Called()
 	return args.Error(0)
 }
 
+// StopDispatcher implements the walker.Dispatcher interface
 func (d *MockDispatcher) StopDispatcher() error {
 	args := d.Mock.Called()
 	return args.Error(0)
@@ -127,6 +134,7 @@ type MockHTTPHandler struct {
 	headers map[string]map[string][]http.Header
 }
 
+// NewMockHTTPHandler creates a new MockHTTPHandler
 func NewMockHTTPHandler() *MockHTTPHandler {
 	s := new(MockHTTPHandler)
 	s.returns = map[string]map[string]*MockResponse{
@@ -182,6 +190,7 @@ func (s *MockHTTPHandler) storeHeader(method string, link string, inHeaders http
 	return nil
 }
 
+// ServeHTTP implements http.Handler interface
 func (s *MockHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.TLS == nil {
 		r.URL.Scheme = "http"
@@ -271,9 +280,9 @@ func (rs *MockRemoteServer) Headers(method string, url string, depth int) (http.
 
 	if depth < 0 {
 		return head[len(head)-1], nil
-	} else {
-		return head[depth], nil
 	}
+
+	return head[depth], nil
 }
 
 // Requested returns true if the url was requested, and false otherwise.
@@ -295,6 +304,7 @@ func (rs *MockRemoteServer) Requested(method string, url string) bool {
 	return true
 }
 
+// Stop will stop the faux-server.
 func (rs *MockRemoteServer) Stop() {
 	rs.listener.Close()
 }

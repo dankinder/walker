@@ -59,6 +59,7 @@ type Dispatcher struct {
 	emptyDispatchRetryInterval time.Duration
 }
 
+// StartDispatcher starts the dispatcher
 func (d *Dispatcher) StartDispatcher() error {
 	log4go.Info("Starting CassandraDispatcher")
 	d.cf = GetConfig()
@@ -105,6 +106,7 @@ func (d *Dispatcher) StartDispatcher() error {
 	return nil
 }
 
+// StopDispatcher stops the dispatcher.
 func (d *Dispatcher) StopDispatcher() error {
 	log4go.Info("Stopping CassandraDispatcher")
 	close(d.quit)
@@ -274,9 +276,9 @@ func (d *Dispatcher) generateRoutine() {
 func imin(l int, r int) int {
 	if l < r {
 		return l
-	} else {
-		return r
 	}
+
+	return r
 }
 
 func round(f float64) int {
@@ -285,9 +287,8 @@ func round(f float64) int {
 	floor := math.Floor(abs)
 	if abs-floor >= 0.5 {
 		return int(sign * (floor + 1))
-	} else {
-		return int(sign * floor)
 	}
+	return int(sign * floor)
 }
 
 //
@@ -297,7 +298,7 @@ func round(f float64) int {
 //
 type cell struct {
 	subdom, path, proto string
-	crawl_time          time.Time
+	crawlTime           time.Time
 	getnow              bool
 }
 
@@ -309,30 +310,35 @@ func (c *cell) equivalent(other *cell) bool {
 }
 
 //
-// PriorityUrl is a heap of URLs, where the next element Pop'ed off the list
+// PriorityURL is a heap of URLs, where the next element Pop'ed off the list
 // points to the oldest (as measured by LastCrawled) element in the list. This
 // class is designed to be used with the container/heap package. This type is
 // currently only used in generateSegments
 //
-type PriorityUrl []*walker.URL
+type PriorityURL []*walker.URL
 
-func (pq PriorityUrl) Len() int {
+// Returns the length of this PriorityURL
+func (pq PriorityURL) Len() int {
 	return len(pq)
 }
 
-func (pq PriorityUrl) Less(i, j int) bool {
+// Return logical less-than between two items in this PriorityURL
+func (pq PriorityURL) Less(i, j int) bool {
 	return pq[i].LastCrawled.Before(pq[j].LastCrawled)
 }
 
-func (pq PriorityUrl) Swap(i, j int) {
+// Swap two items in this PriorityURL
+func (pq PriorityURL) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }
 
-func (pq *PriorityUrl) Push(x interface{}) {
+// Push an item onto this PriorityURL
+func (pq *PriorityURL) Push(x interface{}) {
 	*pq = append(*pq, x.(*walker.URL))
 }
 
-func (pq *PriorityUrl) Pop() interface{} {
+// Pop an item onto this PriorityURL
+func (pq *PriorityURL) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	x := old[n-1]
@@ -490,7 +496,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	//
 	var getNowLinks []*walker.URL    // links marked getnow
 	var uncrawledLinks []*walker.URL // links that haven't been crawled
-	var crawledLinks PriorityUrl     // already crawled links, oldest links out first
+	var crawledLinks PriorityURL     // already crawled links, oldest links out first
 	heap.Init(&crawledLinks)
 
 	// cell push will push the argument cell onto one of the three link-lists.
@@ -500,13 +506,13 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
 	linksCount := 0
 	uncrawledLinksCount := 0
-	cell_push := func(c *cell) {
+	cellPush := func(c *cell) {
 		linksCount++
-		if c.crawl_time.Equal(walker.NotYetCrawled) {
+		if c.crawlTime.Equal(walker.NotYetCrawled) {
 			uncrawledLinksCount++
 		}
 
-		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawl_time)
+		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawlTime)
 		if err != nil {
 			log4go.Error("CreateURL: " + err.Error())
 			return
@@ -518,13 +524,13 @@ func (d *Dispatcher) generateSegment(domain string) error {
 
 		if c.getnow {
 			getNowLinks = append(getNowLinks, u)
-		} else if c.crawl_time.Equal(walker.NotYetCrawled) {
+		} else if c.crawlTime.Equal(walker.NotYetCrawled) {
 			if len(uncrawledLinks) < limit {
 				uncrawledLinks = append(uncrawledLinks, u)
 			}
 		} else {
 			// Was this link crawled less than MinLinkRefreshTime?
-			if c.crawl_time.Add(d.minRecrawlDelta).Before(now) {
+			if c.crawlTime.Add(d.minRecrawlDelta).Before(now) {
 				heap.Push(&crawledLinks, u)
 			}
 		}
@@ -551,18 +557,18 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	var current cell
 	var previous cell
 	iter := q.Iter()
-	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawl_time, &current.getnow) {
+	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawlTime, &current.getnow) {
 		if start {
 			previous = current
 			start = false
 		}
 
 		// IMPL NOTE: So the trick here is that, within a given domain, the entries
-		// come out so that the crawl_time increases as you iterate. So in order to
+		// come out so that the crawlTime increases as you iterate. So in order to
 		// get the most recent link, simply take the last link in a series that shares
 		// dom, subdom, path, and protocol
 		if !current.equivalent(&previous) {
-			cell_push(&previous)
+			cellPush(&previous)
 		}
 
 		previous = current
@@ -574,7 +580,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	}
 	// Check !start here because we don't want to push if we queried 0 links
 	if !start && finish {
-		cell_push(&previous)
+		cellPush(&previous)
 	}
 	if err := iter.Close(); err != nil {
 		return fmt.Errorf("error selecting links for %v: %v", domain, err)

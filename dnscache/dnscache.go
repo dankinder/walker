@@ -72,14 +72,14 @@ func (c *dnsCache) cachingDial(network, addr string) (net.Conn, error) {
 			returnErr := record.err
 			c.mu.RUnlock()
 			return nil, returnErr
-		} else {
-			c.mu.RUnlock()
-			return c.wrappedDial(network, resolvedAddr)
 		}
-	} else {
+
 		c.mu.RUnlock()
-		return c.cacheHost(network, addr)
+		return c.wrappedDial(network, resolvedAddr)
+
 	}
+	c.mu.RUnlock()
+	return c.cacheHost(network, addr)
 }
 
 // cacheHost caches the DNS lookup for this host, overwriting any entry
@@ -98,17 +98,17 @@ func (c *dnsCache) cacheHost(network, addr string) (net.Conn, error) {
 		})
 		c.mu.Unlock()
 		return nil, err
-	} else {
-		remoteipaddr := newConn.RemoteAddr().String()
-		c.cache.Add(mapEntryName, hostrecord{
-			ipaddr:      remoteipaddr,
-			blacklisted: false,
-			err:         nil,
-			lastQuery:   queryTime,
-		})
-		c.mu.Unlock()
-		return newConn, nil
 	}
+	remoteipaddr := newConn.RemoteAddr().String()
+	c.cache.Add(mapEntryName, hostrecord{
+		ipaddr:      remoteipaddr,
+		blacklisted: false,
+		err:         nil,
+		lastQuery:   queryTime,
+	})
+	c.mu.Unlock()
+	return newConn, nil
+
 }
 
 // get returns the hostrecord associated with the passed network:address, if it exists.

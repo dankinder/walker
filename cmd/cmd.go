@@ -32,15 +32,16 @@ package cmd
 import (
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sort"
 	"strings"
 	"syscall"
 
-	"code.google.com/p/log4go"
+	// allow http profile
+	_ "net/http/pprof"
 
+	"code.google.com/p/log4go"
 	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
@@ -78,6 +79,7 @@ type CommanderStreams struct {
 	Exit   func(status int)
 }
 
+// Streams allows user to set global CommandStreams object
 func Streams(cstream CommanderStreams) CommanderStreams {
 	old := commander.Streams
 	commander.Streams = cstream
@@ -150,7 +152,7 @@ var readLinkLink string
 var readLinkBodyOnly bool
 var readLinkMetaOnly bool
 
-// Allows tests to clear readLink options
+// ReadLinkClearOptions allows tests to clear readLink options
 func ReadLinkClearOptions() {
 	readLinkLink = ""
 	readLinkBodyOnly = false
@@ -175,27 +177,19 @@ var readLinkCommand = &cobra.Command{
 			exit(1)
 		}
 
-		// The reason Finder exists is that FindLink isn't in walker.Datastore, but I'd like to  use the mock datastore
-		// for this
-		type Finder interface {
-			FindLink(u *walker.URL, collectContent bool) (*walker.LinkInfo, error)
-		}
-
-		var ds Finder
 		if commander.Datastore == nil {
-			x, err := cassandra.NewDatastore()
+			ds, err := cassandra.NewDatastore()
 			if err != nil {
 				errorf("Failed creating Cassandra datastore: %v\n", err)
 				exit(1)
 			}
-			ds = x
-		} else {
-			var dsOk bool
-			ds, dsOk = commander.Datastore.(Finder)
-			if !dsOk {
-				errorf("Tried to use pre-configured datastore, but it wasn't a Finder\n")
-				exit(1)
-			}
+			commander.Datastore = ds
+		}
+
+		mds, ok := commander.Datastore.(cassandra.ModelDatastore)
+		if !ok {
+			errorf("Tried to use pre-configured datastore, but couldn't upgrade it to a cassandra.ModelDatastore\n")
+			exit(1)
 		}
 
 		u, err := walker.ParseURL(readLinkLink)
@@ -204,7 +198,7 @@ var readLinkCommand = &cobra.Command{
 			exit(1)
 		}
 
-		linfo, err := ds.FindLink(u, true)
+		linfo, err := mds.FindLink(u, true)
 		if err != nil {
 			errorf("Failed FindLink: %v\n", err)
 			exit(1)
@@ -278,7 +272,7 @@ func init() {
 	walkerCommand.PersistentFlags().StringVarP(&config,
 		"config", "c", "", "path to a config file to load")
 
-	var noConsole bool = false
+	var noConsole = false
 	crawlCommand := &cobra.Command{
 		Use:   "crawl",
 		Short: "start an all-in-one crawler",

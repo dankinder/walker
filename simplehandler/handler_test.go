@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
 )
 
 func TestSimpleWriterHandler(t *testing.T) {
@@ -19,25 +18,25 @@ func TestSimpleWriterHandler(t *testing.T) {
 		ExpectedFile string // "" if we expect no file matching PageContents
 	}{
 		{
-			helpers.Parse("http://test.com/page1.html"),
+			walker.MustParse("http://test.com/page1.html"),
 			[]byte("<html>stuff</html>"),
 			"test.com",
 			"test.com/page1.html",
 		},
 		{
-			helpers.Parse("http://test.com/"),
+			walker.MustParse("http://test.com/"),
 			[]byte("<html>stuff</html>"),
 			"test.com",
 			"",
 		},
 		{
-			helpers.Parse("http://test.com/a-dir/"),
+			walker.MustParse("http://test.com/a-dir/"),
 			[]byte("<html>blah</html>"),
 			"test.com/a-dir",
 			"",
 		},
 		{
-			helpers.Parse("http://test.com/a-dir/myfile"),
+			walker.MustParse("http://test.com/a-dir/myfile"),
 			[]byte(""),
 			"test.com/a-dir",
 			"test.com/a-dir/myfile",
@@ -95,7 +94,7 @@ func TestSimpleWriterHandler(t *testing.T) {
 func TestSimpleWriterHandlerIgnoresOnRobots(t *testing.T) {
 	h := &Handler{}
 
-	page2URL := helpers.Parse("http://test.com/page2.html")
+	page2URL := walker.MustParse("http://test.com/page2.html")
 	page2Contents := []byte("<html>stuff</html>")
 	page2Fetch := &walker.FetchResults{
 		URL:              page2URL,
@@ -131,7 +130,7 @@ func TestSimpleWriterHandlerIgnoresOnRobots(t *testing.T) {
 func TestSimpleWriterHandlerIgnoresBadHTTPCode(t *testing.T) {
 	h := &Handler{}
 
-	page3URL := helpers.Parse("http://test.com/page3.html")
+	page3URL := walker.MustParse("http://test.com/page3.html")
 	page3Contents := []byte("<html>stuff</html>")
 	page3Fetch := &walker.FetchResults{
 		URL:              page3URL,

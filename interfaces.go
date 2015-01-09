@@ -1,10 +1,5 @@
 package walker
 
-import (
-	"net/http"
-	"time"
-)
-
 // Handler defines the interface for objects that will be set as handlers on a
 // FetchManager.
 type Handler interface {
@@ -53,9 +48,13 @@ type Datastore interface {
 	// links (i.e. a fetcher should be safe feeding the same URL many times.
 	StoreParsedURL(u *URL, fr *FetchResults)
 
-	// This method will be called periodically in fetcher. This method should
+	// KeepAlive will be called periodically in fetcher. This method should
 	// notify the datastore that this fetcher is still alive.
 	KeepAlive() error
+
+	// Close will be called when no more Datastore calls will be made, allowing
+	// any necessary cleanup to take place.
+	Close()
 }
 
 // Dispatcher defines the calls a dispatcher should respond to. A dispatcher
@@ -73,40 +72,4 @@ type Dispatcher interface {
 	// Stop signals the dispatcher to stop. It should block until all internal
 	// goroutines have stopped.
 	StopDispatcher() error
-}
-
-// LinkInfo defines a row from the link or segment table
-type LinkInfo struct {
-	// URL of the link
-	URL *URL
-
-	// Status of the fetch
-	Status int
-
-	// When did this link get crawled
-	CrawlTime time.Time
-
-	// Any error reported when attempting to fetch the URL
-	Error string
-
-	// Was this excluded by robots
-	RobotsExcluded bool
-
-	// URL this link redirected to if it was a redirect
-	RedirectedTo string
-
-	// Whether this link was flagged for immediate fetching
-	GetNow bool
-
-	// Mime type (or Content-Type) of the returned data
-	Mime string
-
-	// FNV hash of the contents
-	FnvFingerprint int64
-
-	// Body of request (if configured to be stored)
-	Body string
-
-	// Header of request (if configured to be stored)
-	Headers http.Header
 }

@@ -17,7 +17,7 @@ import (
 // parseLinks tries to parse the http response in the given FetchResults for
 // links and stores them in the datastore.
 func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
-	outlinks, noindex, nofollow, err := parseHtml(body)
+	outlinks, noindex, nofollow, err := parseHTML(body)
 	if err != nil {
 		log4go.Debug("error parsing HTML for page %v: %v", fr.URL, err)
 		return
@@ -65,12 +65,12 @@ func getIncludedTags() map[string]bool {
 	return tags
 }
 
-// parseHtml processes the html stored in content.
+// parseHTML processes the html stored in content.
 // It returns:
 //     (a) a list of `links` on the page
 //     (b) a boolean metaNoindex to note if <meta name="ROBOTS" content="noindex"> was found
 //     (c) a boolean metaNofollow indicating if <meta name="ROBOTS" content="nofollow"> was found
-func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
+func parseHTML(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, err error) {
 	utf8Reader, err := charset.NewReader(bytes.NewReader(body), "text/html")
 	if err != nil {
 		return
@@ -121,8 +121,6 @@ func parseHtml(body []byte) (links []*URL, metaNoindex bool, metaNofollow bool, 
 			}
 		}
 	}
-
-	return
 }
 
 func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) []*URL {
@@ -152,15 +150,15 @@ func parseObjectOrEmbed(tokenizer *html.Tokenizer, links []*URL, isEmbed bool) [
 // (b) list of links already collected
 // (c) a flag indicating if the parser is currently in a nofollow state
 // and returns a possibly extended list of links.
-func parseIframe(tokenizer *html.Tokenizer, in_links []*URL, metaNofollow bool) (links []*URL) {
-	links = in_links
+func parseIframe(tokenizer *html.Tokenizer, inLinks []*URL, metaNofollow bool) (links []*URL) {
+	links = inLinks
 	docsrc, body, err := parseIframeAttrs(tokenizer)
 	if err != nil {
 		return
 	} else if docsrc {
 		var nlinks []*URL
 		var nNofollow bool
-		nlinks, _, nNofollow, err = parseHtml([]byte(body))
+		nlinks, _, nNofollow, err = parseHTML([]byte(body))
 		if err != nil {
 			log4go.Error("parseEmbed failed to parse docsrc: %v", err)
 			return
