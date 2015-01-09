@@ -1,4 +1,4 @@
-package test
+package walker
 
 import (
 	"path"
@@ -6,16 +6,13 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/iParadigms/walker"
-	"github.com/iParadigms/walker/helpers"
-
 	"code.google.com/p/log4go"
 )
 
 func init() {
 	// Tests outside of config_test.go also require this configuration to be
 	// loaded; Config tests should reset it by making this call
-	helpers.LoadTestConfig("test-walker.yaml")
+	LoadTestConfig("test-walker.yaml")
 
 	// For tests it's useful to see more than the default INFO
 	log4go.AddFilter("stdout", log4go.DEBUG, log4go.NewConsoleLogWriter())
@@ -24,21 +21,21 @@ func init() {
 func TestConfigLoading(t *testing.T) {
 	defer func() {
 		// Reset config for the remaining tests
-		helpers.LoadTestConfig("test-walker.yaml")
+		LoadTestConfig("test-walker.yaml")
 	}()
 
-	walker.Config.Fetcher.UserAgent = "Test Agent (set inline)"
-	walker.SetDefaultConfig()
+	Config.Fetcher.UserAgent = "Test Agent (set inline)"
+	SetDefaultConfig()
 	expectedAgentInline := "Walker (http://github.com/iParadigms/walker)"
-	if walker.Config.Fetcher.UserAgent != expectedAgentInline {
+	if Config.Fetcher.UserAgent != expectedAgentInline {
 		t.Errorf("Failed to reset default config value (user_agent), expected: %v\nBut got: %v",
-			expectedAgentInline, walker.Config.Fetcher.UserAgent)
+			expectedAgentInline, Config.Fetcher.UserAgent)
 	}
-	helpers.LoadTestConfig("test-walker2.yaml")
+	LoadTestConfig("test-walker2.yaml")
 	expectedAgentYaml := "Test Agent (set in yaml)"
-	if walker.Config.Fetcher.UserAgent != expectedAgentYaml {
+	if Config.Fetcher.UserAgent != expectedAgentYaml {
 		t.Errorf("Failed to set config value (user_agent) via yaml, expected: %v\nBut got: %v",
-			expectedAgentYaml, walker.Config.Fetcher.UserAgent)
+			expectedAgentYaml, Config.Fetcher.UserAgent)
 	}
 }
 
@@ -65,12 +62,12 @@ var ConfigTestCases = []ConfigTestCase{
 func TestConfigLoadingBadFiles(t *testing.T) {
 	defer func() {
 		// Reset config for the remaining tests
-		helpers.LoadTestConfig("test-walker.yaml")
+		LoadTestConfig("test-walker.yaml")
 	}()
 
-	testdir := helpers.GetTestFileDir()
+	testdir := GetTestFileDir()
 	for _, c := range ConfigTestCases {
-		err := walker.ReadConfigFile(path.Join(testdir, c.file))
+		err := ReadConfigFile(path.Join(testdir, c.file))
 		if err == nil {
 			t.Errorf("Expected an error trying to read %v but did not get one", c.file)
 		} else if !c.expected.MatchString(err.Error()) {
@@ -85,12 +82,12 @@ func TestConfigLoadingBadFiles(t *testing.T) {
 func TestSequenceOverwrites(t *testing.T) {
 	defer func() {
 		// Reset config for the remaining tests
-		helpers.LoadTestConfig("test-walker.yaml")
+		LoadTestConfig("test-walker.yaml")
 	}()
 
-	helpers.LoadTestConfig("test-cassandra-host.yaml")
-	if !reflect.DeepEqual(walker.Config.Cassandra.Hosts, []string{"other.host.com"}) {
+	LoadTestConfig("test-cassandra-host.yaml")
+	if !reflect.DeepEqual(Config.Cassandra.Hosts, []string{"other.host.com"}) {
 		t.Errorf("Yaml sequence did not properly get overwritten, got %v",
-			walker.Config.Cassandra.Hosts)
+			Config.Cassandra.Hosts)
 	}
 }

@@ -13,9 +13,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gorilla/mux"
+	"github.com/iParadigms/walker"
 	"github.com/iParadigms/walker/cassandra"
 	"github.com/iParadigms/walker/console"
-	"github.com/iParadigms/walker/helpers"
 )
 
 //
@@ -27,7 +27,7 @@ func spoofData() {
 		console.DS = nil
 	}
 
-	helpers.LoadTestConfig("test-walker.yaml")
+	walker.LoadTestConfig("test-walker.yaml")
 
 	console.SpoofData()
 	ds, err := cassandra.NewDatastore()

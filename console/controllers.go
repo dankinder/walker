@@ -14,8 +14,7 @@ import (
 	"github.com/iParadigms/walker/cassandra"
 )
 
-// DS is used by controllers to access the datastore
-var DS *cassandra.Datastore
+var DS cassandra.ModelDatastore
 
 // Route represents an http endpoint
 type Route struct {
@@ -658,7 +657,7 @@ func FindLinksController(w http.ResponseWriter, req *http.Request) {
 	lines := strings.Split(text, "\n")
 	var info []string
 	var errs []string
-	var linfos []*walker.LinkInfo
+	var linfos []*cassandra.LinkInfo
 	for i := range lines {
 		link := strings.TrimSpace(lines[i])
 		if link == "" {

@@ -1,4 +1,4 @@
-package helpers
+package walker
 
 import (
 	"fmt"
@@ -6,23 +6,23 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/iParadigms/walker"
+	"code.google.com/p/log4go"
 )
 
 // LoadTestConfig loads the given test config yaml file. The given path is
-// assumed to be relative to the `walker/helpers/` directory, the location of this
+// assumed to be relative to the `walker/test/` directory, the location of this
 // file. This will panic if it cannot read the requested config file. If you
-// expect an error or are testing walker.ReadConfigFile, use `GetTestFileDir()`
+// expect an error or are testing ReadConfigFile, use `GetTestFileDir()`
 // instead.
 func LoadTestConfig(filename string) {
 	testdir := GetTestFileDir()
-	err := walker.ReadConfigFile(path.Join(testdir, filename))
+	err := ReadConfigFile(path.Join(testdir, filename))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -36,20 +36,28 @@ func GetTestFileDir() string {
 	if !ok {
 		panic("Failed to get location of test source file")
 	}
-	return path.Dir(p)
+	if !filepath.IsAbs(p) {
+		log4go.Warn("Tried to use runtime.Caller to get the test file "+
+			"directory, but the path is incorrect: %v\nMost likely this means the "+
+			"-cover flag was used with `go test`, which does not return a usable "+
+			"path when testing the walker package. Returning './test' as the test "+
+			"directory; if CWD != the root walker directory, tests will fail.", p)
+		return "test"
+	}
+	return path.Join(path.Dir(p), "test")
 }
 
-// FakeDial makes connections to localhost, no matter what addr was given.
-func FakeDial(network, addr string) (net.Conn, error) {
+// fakeDial makes connections to localhost, no matter what addr was given.
+func fakeDial(network, addr string) (net.Conn, error) {
 	_, port, _ := net.SplitHostPort(addr)
 	return net.Dial(network, net.JoinHostPort("localhost", port))
 }
 
-// GetFakeTransport gets a http.RoundTripper that uses FakeDial
-func GetFakeTransport() http.RoundTripper {
+// getFakeTransport gets a http.RoundTripper that uses fakeDial
+func getFakeTransport() http.RoundTripper {
 	return &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
-		Dial:                FakeDial,
+		Dial:                fakeDial,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
 }
@@ -57,30 +65,27 @@ func GetFakeTransport() http.RoundTripper {
 //
 // RecordingTransport counts how many times the Dial routine is called
 //
-type RecordingTransport struct {
+type recordingTransport struct {
 	http.Transport
 	Name   string
 	Record []string
 }
 
-// RoundTrip implenets http.RoundTripper interface
-func (rt *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	rt.Record = append(rt.Record, req.URL.String())
-	return rt.Transport.RoundTrip(req)
+func (self *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	self.Record = append(self.Record, req.URL.String())
+	return self.Transport.RoundTrip(req)
 }
 
-// String implements Stringer interface
-func (rt *RecordingTransport) String() string {
-	return fmt.Sprintf("RecordingTransport named %v: %v", rt.Name, rt.Record)
+func (self *recordingTransport) String() string {
+	return fmt.Sprintf("recordingTransport named %v: %v", self.Name, self.Record)
 }
 
-// GetRecordingTransport returns a RecordingTransport with name set to name.
-func GetRecordingTransport(name string) *RecordingTransport {
-	r := &RecordingTransport{
+func getRecordingTransport(name string) *recordingTransport {
+	r := &recordingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			TLSHandshakeTimeout: 10 * time.Second,
-			Dial:                FakeDial,
+			Dial:                fakeDial,
 		},
 		Name: name,
 	}
@@ -91,13 +96,12 @@ func GetRecordingTransport(name string) *RecordingTransport {
 //
 // CancelTrackingTransport isa http.Transport that tracks which requests where canceled.
 //
-type CancelTrackingTransport struct {
+type cancelTrackingTransport struct {
 	http.Transport
 	Canceled map[string]int
 }
 
-// CancelRequest will be called in the http stack to cancel this request.
-func (ctt *CancelTrackingTransport) CancelRequest(req *http.Request) {
+func (ctt *cancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
 	if c, cok := ctt.Canceled[key]; cok {
@@ -126,10 +130,9 @@ func (wcd *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
-// GetWontConnectTransport produces a CancelTrackingTransport instance with a closer to close down the faux-connection.
-func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
+func getWontConnectTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
-	trans := &CancelTrackingTransport{
+	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
@@ -225,10 +228,9 @@ func (sc *stallCloser) Dial(network, addr string) (net.Conn, error) {
 	return sc.newConn(), nil
 }
 
-// GetStallingReadTransport returns a CancelTrackingTransport with a closer.
-func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
+func getStallingReadTransport() (*cancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
-	trans := &CancelTrackingTransport{
+	trans := &cancelTrackingTransport{
 		Transport: http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
 			Dial:                dialer.Dial,
@@ -239,21 +241,14 @@ func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
 	return trans, dialer
 }
 
-// Parse is a helper to just get a walker.URL object from a string we know is a
-// safe url (ParseURL requires us to deal with potential errors)
-func Parse(ref string) *walker.URL {
-	u, err := walker.ParseURL(ref)
+// MustParse is a helper for calling ParseURL when we kow the string is
+// a safe URL. It will panic if it fails.
+func MustParse(ref string) *URL {
+	u, err := ParseURL(ref)
 	if err != nil {
-		panic("Failed to parse walker.URL: " + ref)
+		panic("Failed to parse URL: " + ref)
 	}
 	return u
-}
-
-// URLParse is similar to `parse` but gives a Go builtin URL type (not a walker
-// URL)
-func URLParse(ref string) *url.URL {
-	u := Parse(ref)
-	return u.URL
 }
 
 func response404() *http.Response {
@@ -269,8 +264,7 @@ func response404() *http.Response {
 	}
 }
 
-// Response307 is a helpers that creates an http.Response object that is a 307 response
-func Response307(link string) *http.Response {
+func response307(link string) *http.Response {
 	return &http.Response{
 		Status:        "307",
 		StatusCode:    307,
@@ -283,8 +277,7 @@ func Response307(link string) *http.Response {
 	}
 }
 
-// Response200 is a helper that creates an http.Response that is a 200 response.
-func Response200() *http.Response {
+func response200() *http.Response {
 	return &http.Response{
 		Status:     "200 OK",
 		StatusCode: 200,
@@ -306,13 +299,12 @@ func Response200() *http.Response {
 	}
 }
 
-// MapRoundTrip maps input links --> http.Response. See TestRedirects for example.
-type MapRoundTrip struct {
+// mapRoundTrip maps input links --> http.Response. See TestRedirects for example.
+type mapRoundTrip struct {
 	Responses map[string]*http.Response
 }
 
-// RoundTrip implements the http.RoundTripper interface
-func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
+func (mrt *mapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 	res, resOk := mrt.Responses[req.URL.String()]
 	if !resOk {
 		return response404(), nil
@@ -320,7 +312,7 @@ func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
-// CancelRequest allows the MapRoundTrip to be canceled. Which is needed to prevent
+// This allows the mapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (mrt *MapRoundTrip) CancelRequest(req *http.Request) {
+func (self *mapRoundTrip) CancelRequest(req *http.Request) {
 }
