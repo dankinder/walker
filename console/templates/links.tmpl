@@ -37,7 +37,7 @@
 
 {{if .HasHeader}}
     <div class="row">
-        <div class="col-xs-8">
+        <div class="col-xs-10">
             <h2> Domain information for {{.Dinfo.Domain}} </h2>
             <table class="console-table table table-striped table-condensed">
                 <tr>
@@ -104,7 +104,7 @@
                     <td>
                         <form id="prioForm" action="/changePriority" method="POST">
                             <input type="hidden" name="domain" value="{{.Dinfo.Domain}}">
-                            Set Priority: <input type="text" name="priority" style="width: 45px;">
+                            Set Priority {{.MaxAllowedPrio}}: <input type="text" name="priority" style="width: 45px;">
                             <input type="submit" value="Submit" >
                         </form>
                     </td>

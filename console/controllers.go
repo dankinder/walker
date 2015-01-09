@@ -555,6 +555,11 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		})
 	}
 
+	maxAllowedPrio := ""
+	if walker.Config.Console.MaxAllowedDomainPriority > 0 {
+		maxAllowedPrio = fmt.Sprintf("(max %d)", walker.Config.Console.MaxAllowedDomainPriority)
+	}
+
 	// grab any info in the flash
 	infos, errors := session.Flashes()
 
@@ -582,6 +587,8 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"Prev":            prevLink,
 		"PrevList":        prevList,
 		"PageLengthLinks": pageLenDropdown,
+
+		"MaxAllowedPrio": maxAllowedPrio,
 
 		"HasInfoMessage":  len(infos) > 0,
 		"InfoMessage":     infos,
@@ -794,6 +801,13 @@ func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
 
 	if priority <= 0 {
 		session.AddErrorFlash(fmt.Sprintf("Priority must be greater than zero, not %q", priorityStr))
+		redirect()
+		return
+	}
+
+	mADP := walker.Config.Console.MaxAllowedDomainPriority
+	if mADP > 0 && priority > mADP {
+		session.AddErrorFlash(fmt.Sprintf("Priority must be less than max of %d, not %d", mADP, priority))
 		redirect()
 		return
 	}

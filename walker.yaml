@@ -187,3 +187,6 @@ console:
     template_directory: console/templates
     public_folder: console/public
 
+    # The maximum priority that console will accept when configuring domain priority. Set this <= 0 to have no maximum
+    max_allowed_domain_priority: 100
+
