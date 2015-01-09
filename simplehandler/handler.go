@@ -14,6 +14,7 @@ import (
 	"code.google.com/p/log4go"
 )
 
+// Handler implements an object that conforms to walker.Handler interface.
 type Handler struct{}
 
 // HandleResponse just writes returned pages as files locally, naming the file

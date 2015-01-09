@@ -911,12 +911,12 @@ func TestHrefWithSpace(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestHttpTimeout(t *testing.T) {
-	origTimeout := walker.Config.Fetcher.HttpTimeout
+func TestHTTPTimeout(t *testing.T) {
+	origTimeout := walker.Config.Fetcher.HTTPTimeout
 	defer func() {
-		walker.Config.Fetcher.HttpTimeout = origTimeout
+		walker.Config.Fetcher.HTTPTimeout = origTimeout
 	}()
-	walker.Config.Fetcher.HttpTimeout = "200ms"
+	walker.Config.Fetcher.HTTPTimeout = "200ms"
 
 	for _, timeoutType := range []string{"wontConnect", "stalledRead"} {
 
@@ -1539,7 +1539,7 @@ func TestMaxContentSize(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, 3*defaultSleep, t)
 
 	hcalls := results.handlerCalls()
 	if len(hcalls) != 0 {
@@ -1632,16 +1632,16 @@ func TestStoreBody(t *testing.T) {
 }
 
 func TestKeepAliveThreshold(t *testing.T) {
-	origKeepAlive := walker.Config.Fetcher.HttpKeepAlive
-	origThreshold := walker.Config.Fetcher.HttpKeepAliveThreshold
+	origKeepAlive := walker.Config.Fetcher.HTTPKeepAlive
+	origThreshold := walker.Config.Fetcher.HTTPKeepAliveThreshold
 	origSimul := walker.Config.Fetcher.NumSimultaneousFetchers
 	defer func() {
-		walker.Config.Fetcher.HttpKeepAlive = origKeepAlive
-		walker.Config.Fetcher.HttpKeepAliveThreshold = origThreshold
+		walker.Config.Fetcher.HTTPKeepAlive = origKeepAlive
+		walker.Config.Fetcher.HTTPKeepAliveThreshold = origThreshold
 		walker.Config.Fetcher.NumSimultaneousFetchers = origSimul
 	}()
-	walker.Config.Fetcher.HttpKeepAlive = "threshold"
-	walker.Config.Fetcher.HttpKeepAliveThreshold = "500ms"
+	walker.Config.Fetcher.HTTPKeepAlive = "threshold"
+	walker.Config.Fetcher.HTTPKeepAliveThreshold = "500ms"
 	walker.Config.Fetcher.NumSimultaneousFetchers = 1
 
 	transport := helpers.GetRecordingTransport("transport")
@@ -1725,6 +1725,56 @@ func TestKeepAliveThreshold(t *testing.T) {
 	}
 	for v := range expectInTransNoKeepAlive {
 		t.Errorf("Expected to find link %v in transNoKeepAlive, but didn't", v)
+	}
+}
+
+func TestMaxPathLength(t *testing.T) {
+	orig := walker.Config.Fetcher.MaxPathLength
+	defer func() {
+		walker.Config.Fetcher.MaxPathLength = orig
+	}()
+	walker.Config.Fetcher.MaxPathLength = 6
+
+	const html string = `<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Title</title>
+</head>
+<body>
+	<div id="menu">
+		<a href="/01234">yes</a>
+		<a href="/0123/4567">no</a>		
+		<a href="/0?a=b">yes</a>
+		<a href="/0?apple=orange">no</a>
+	</div>
+</body>
+</html>`
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &helpers.MockResponse{Body: html}),
+	}
+
+	results := runFetcher(tests, defaultSleep, t)
+
+	expected := map[string]bool{
+		"http://t1.com/01234": true,
+		"http://t1.com/0?a=b": true,
+	}
+
+	ulst, _ := results.dsStoreParsedURLCalls()
+	for i := range ulst {
+		u := ulst[i]
+		if expected[u.String()] {
+			delete(expected, u.String())
+		} else {
+			t.Errorf("StoreParsedURL mismatch found unexpected link %q", u.String())
+		}
+	}
+
+	for e := range expected {
+		t.Errorf("StoreParsedURL expected to see %q, but didn't", e)
 	}
 }
 

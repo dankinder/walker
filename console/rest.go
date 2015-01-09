@@ -19,6 +19,7 @@ import (
 // a version attribute.
 //
 
+// RestRoutes returns all Route's used in the Rest space.
 func RestRoutes() []Route {
 	return []Route{
 		Route{Path: "/rest/add", Controller: RestAdd},
@@ -42,10 +43,11 @@ func buildError(tag string, format string, args ...interface{}) *restErrorRespon
 type restAddRequest struct {
 	Version int `json:"version"`
 	Links   []struct {
-		Url string `json:"url"`
+		URL string `json:"url"`
 	} `json:"links"`
 }
 
+// RestAdd manages the rest endpoint rooted at /rest/add.
 func RestAdd(w http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
 	var adds restAddRequest
@@ -63,7 +65,7 @@ func RestAdd(w http.ResponseWriter, req *http.Request) {
 
 	var links []string
 	for _, l := range adds.Links {
-		u := l.Url
+		u := l.URL
 		if u == "" {
 			Render.JSON(w, http.StatusBadRequest, buildError("bad-link-element", "No URL provided for link"))
 			return

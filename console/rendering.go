@@ -19,60 +19,56 @@ import (
 )
 
 var zeroTime = time.Time{}
-var zeroUuid = gocql.UUID{}
+var zeroUUID = gocql.UUID{}
 var timeFormat = "2006-01-02 15:04:05 -0700"
 
 func yesOnFilledFunc(s string) string {
 	if s == "" {
 		return ""
-	} else {
-		return "yes"
 	}
+	return "yes"
+
 }
 
 func yesOnTrueFunc(q bool) string {
 	if q {
 		return "yes"
-	} else {
-		return ""
 	}
-
+	return ""
 }
 
 func activeSinceFunc(t time.Time) string {
 	if t == zeroTime {
 		return ""
-	} else {
-		return t.Format(timeFormat)
 	}
+	return t.Format(timeFormat)
 }
 
 func ftimeFunc(t time.Time) string {
 	if t == zeroTime || t.Equal(walker.NotYetCrawled) {
 		return "Not yet crawled"
-	} else {
-		return t.Format(timeFormat)
 	}
+	return t.Format(timeFormat)
 }
 
 func ftime2Func(t time.Time) string {
 	if t == zeroTime || t.Equal(walker.NotYetCrawled) {
 		return ""
-	} else {
-		return t.Format(timeFormat)
 	}
+	return t.Format(timeFormat)
 }
 
 func fuuidFunc(u gocql.UUID) string {
-	if u == zeroUuid {
+	if u == zeroUUID {
 		return ""
-	} else {
-		return u.String()
 	}
+	return u.String()
 }
 
+// Render is the global render.Render object used by all controllers
 var Render *render.Render
 
+// BuildRender builds Render
 func BuildRender() {
 	Render = render.New(render.Options{
 		Directory:     walker.Config.Console.TemplateDirectory,
@@ -119,9 +115,11 @@ func encode32(s string) string {
 //
 const DefaultPageWindowLength = 15
 
+// PageWindowLengthChoices lists the window length's listed on /list and /links page
 var PageWindowLengthChoices = []int{10, 15, 25, 35, 50, 75, 100, 150, 250}
 var sessionManager = sessions.NewCookieStore([]byte("01234567890123456789012345678901"))
 
+// Session object manages all controller sessions
 type Session struct {
 	req           *http.Request
 	w             http.ResponseWriter
@@ -129,6 +127,7 @@ type Session struct {
 	lastSaveError error
 }
 
+// GetSession returns a session object
 func GetSession(w http.ResponseWriter, req *http.Request) (*Session, error) {
 	sess, err := sessionManager.Get(req, "walker")
 	if err != nil {
@@ -137,12 +136,13 @@ func GetSession(w http.ResponseWriter, req *http.Request) (*Session, error) {
 	return &Session{req: req, w: w, sess: sess}, nil
 }
 
-func (self *Session) save() {
-	self.lastSaveError = self.sess.Save(self.req, self.w)
+func (sess *Session) save() {
+	sess.lastSaveError = sess.sess.Save(sess.req, sess.w)
 }
 
-func (self *Session) ListPageWindowLength() int {
-	val, valOk := self.sess.Values["pwl"]
+// ListPageWindowLength returns page length for /list page
+func (sess *Session) ListPageWindowLength() int {
+	val, valOk := sess.sess.Values["pwl"]
 	if !valOk {
 		return DefaultPageWindowLength
 	}
@@ -154,13 +154,14 @@ func (self *Session) ListPageWindowLength() int {
 	return pwl
 }
 
-func (self *Session) SetListPageWindowLength(plen int) {
-	self.sess.Values["pwl"] = plen
-	self.save()
+func (sess *Session) SetListPageWindowLength(plen int) {
+	sess.sess.Values["pwl"] = plen
+	sess.save()
 }
 
-func (self *Session) LinksPageWindowLength() int {
-	val, valOk := self.sess.Values["lpwl"]
+// LinksPageWindowLength returns the page length for /links page
+func (sess *Session) LinksPageWindowLength() int {
+	val, valOk := sess.sess.Values["lpwl"]
 	if !valOk {
 		return DefaultPageWindowLength
 	}
@@ -172,22 +173,23 @@ func (self *Session) LinksPageWindowLength() int {
 	return pwl
 }
 
-func (self *Session) SetLinksPageWindowLength(plen int) {
-	self.sess.Values["lpwl"] = plen
-	self.save()
+func (sess *Session) SetLinksPageWindowLength(plen int) {
+	sess.sess.Values["lpwl"] = plen
+	sess.save()
 }
 
-func (self *Session) AddInfoFlash(message string) {
-	self.sess.AddFlash("I" + message)
-	self.save()
+func (sess *Session) AddInfoFlash(message string) {
+	sess.sess.AddFlash("I" + message)
+	sess.save()
 }
 
-func (self *Session) AddErrorFlash(message string) {
-	self.sess.AddFlash("E" + message)
-	self.save()
+func (sess *Session) AddErrorFlash(message string) {
+	sess.sess.AddFlash("E" + message)
+	sess.save()
 }
-func (self *Session) Flashes() (infos []string, errors []string) {
-	for _, flash := range self.sess.Flashes() {
+
+func (sess *Session) Flashes() (infos []string, errors []string) {
+	for _, flash := range sess.sess.Flashes() {
 		s, sok := flash.(string)
 		if !sok || len(s) < 1 {
 			continue
@@ -200,6 +202,6 @@ func (self *Session) Flashes() (infos []string, errors []string) {
 		}
 	}
 
-	self.save()
+	sess.save()
 	return
 }

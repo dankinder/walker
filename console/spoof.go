@@ -19,6 +19,7 @@ import (
 
 var spoofRun sync.Once
 
+// SpoofData populates the ds with spoofed data.
 func SpoofData() {
 	spoofRun.Do(func() {
 		spoofDataLong()
@@ -165,7 +166,7 @@ func spoofDataLong() {
 
 	for i := 0; i < 10; i++ {
 		domain := fmt.Sprintf("t%d.com", i)
-		uuid := fakeUuid()
+		uuid := fakeUUID()
 		err = db.Query(insertDomainToCrawl, domain, uuid, time.Now()).Exec()
 		if err != nil {
 			panic(err)
@@ -193,7 +194,7 @@ func fakeCrawlTime() time.Time {
 	return t
 }
 
-var statusSelect []int = []int{
+var statusSelect = []int{
 	http.StatusContinue,
 	http.StatusSwitchingProtocols,
 	http.StatusOK,
@@ -239,15 +240,15 @@ var statusSelect []int = []int{
 func fakeStatus() int {
 	if rand.Float32() < 0.8 {
 		return http.StatusOK
-	} else {
-		return statusSelect[rand.Intn(len(statusSelect))]
 	}
+	return statusSelect[rand.Intn(len(statusSelect))]
+
 }
 
 var initUuids sync.Once
 var selectUuids []gocql.UUID
 
-func fakeUuid() gocql.UUID {
+func fakeUUID() gocql.UUID {
 	initUuids.Do(func() {
 		for i := 0; i < 5; i++ {
 			u, err := gocql.RandomUUID()

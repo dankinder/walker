@@ -55,7 +55,7 @@ func GetFakeTransport() http.RoundTripper {
 }
 
 //
-// Count how many times the Dial routine is called
+// RecordingTransport counts how many times the Dial routine is called
 //
 type RecordingTransport struct {
 	http.Transport
@@ -63,15 +63,18 @@ type RecordingTransport struct {
 	Record []string
 }
 
-func (self *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	self.Record = append(self.Record, req.URL.String())
-	return self.Transport.RoundTrip(req)
+// RoundTrip implenets http.RoundTripper interface
+func (rt *RecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.Record = append(rt.Record, req.URL.String())
+	return rt.Transport.RoundTrip(req)
 }
 
-func (self *RecordingTransport) String() string {
-	return fmt.Sprintf("RecordingTransport named %v: %v", self.Name, self.Record)
+// String implements Stringer interface
+func (rt *RecordingTransport) String() string {
+	return fmt.Sprintf("RecordingTransport named %v: %v", rt.Name, rt.Record)
 }
 
+// GetRecordingTransport returns a RecordingTransport with name set to name.
 func GetRecordingTransport(name string) *RecordingTransport {
 	r := &RecordingTransport{
 		Transport: http.Transport{
@@ -86,21 +89,22 @@ func GetRecordingTransport(name string) *RecordingTransport {
 }
 
 //
-// http.Transport that tracks which requests where canceled.
+// CancelTrackingTransport isa http.Transport that tracks which requests where canceled.
 //
 type CancelTrackingTransport struct {
 	http.Transport
 	Canceled map[string]int
 }
 
-func (self *CancelTrackingTransport) CancelRequest(req *http.Request) {
+// CancelRequest will be called in the http stack to cancel this request.
+func (ctt *CancelTrackingTransport) CancelRequest(req *http.Request) {
 	key := req.URL.String()
 	count := 0
-	if c, cok := self.Canceled[key]; cok {
+	if c, cok := ctt.Canceled[key]; cok {
 		count = c
 	}
-	self.Canceled[key] = count + 1
-	self.Transport.CancelRequest(req)
+	ctt.Canceled[key] = count + 1
+	ctt.Transport.CancelRequest(req)
 }
 
 //
@@ -110,16 +114,19 @@ type wontConnectDial struct {
 	quit chan struct{}
 }
 
-func (self *wontConnectDial) Close() error {
-	close(self.quit)
+// Close allows usert to close the wontConnectDial
+func (wcd *wontConnectDial) Close() error {
+	close(wcd.quit)
 	return nil
 }
 
-func (self *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
-	<-self.quit
+// Dial function won't return until quit is closed.
+func (wcd *wontConnectDial) Dial(network, addr string) (net.Conn, error) {
+	<-wcd.quit
 	return nil, fmt.Errorf("I'll never connect!!")
 }
 
+// GetWontConnectTransport produces a CancelTrackingTransport instance with a closer to close down the faux-connection.
 func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &wontConnectDial{make(chan struct{})}
 	trans := &CancelTrackingTransport{
@@ -139,11 +146,11 @@ func GetWontConnectTransport() (*CancelTrackingTransport, io.Closer) {
 //
 type emptyAddr struct{}
 
-func (self *emptyAddr) Network() string {
+func (ea *emptyAddr) Network() string {
 	return ""
 }
 
-func (self *emptyAddr) String() string {
+func (ea *emptyAddr) String() string {
 	return ""
 
 }
@@ -156,41 +163,41 @@ type stallingConn struct {
 	quit   chan struct{}
 }
 
-func (self *stallingConn) Read(b []byte) (int, error) {
-	<-self.quit
+func (sc *stallingConn) Read(b []byte) (int, error) {
+	<-sc.quit
 	return 0, fmt.Errorf("Staling Read")
 }
 
-func (self *stallingConn) Write(b []byte) (int, error) {
-	<-self.quit
+func (sc *stallingConn) Write(b []byte) (int, error) {
+	<-sc.quit
 	return 0, fmt.Errorf("Staling Write")
 }
 
-func (self *stallingConn) Close() error {
-	if !self.closed {
-		close(self.quit)
+func (sc *stallingConn) Close() error {
+	if !sc.closed {
+		close(sc.quit)
 	}
-	self.closed = true
+	sc.closed = true
 	return nil
 }
 
-func (self *stallingConn) LocalAddr() net.Addr {
+func (sc *stallingConn) LocalAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingConn) RemoteAddr() net.Addr {
+func (sc *stallingConn) RemoteAddr() net.Addr {
 	return &emptyAddr{}
 }
 
-func (self *stallingConn) SetDeadline(t time.Time) error {
+func (sc *stallingConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingConn) SetReadDeadline(t time.Time) error {
+func (sc *stallingConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *stallingConn) SetWriteDeadline(t time.Time) error {
+func (sc *stallingConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
@@ -201,23 +208,24 @@ type stallCloser struct {
 	stalls map[*stallingConn]bool
 }
 
-func (self *stallCloser) Close() error {
-	for conn := range self.stalls {
+func (sc *stallCloser) Close() error {
+	for conn := range sc.stalls {
 		conn.Close()
 	}
 	return nil
 }
 
-func (self *stallCloser) newConn() *stallingConn {
+func (sc *stallCloser) newConn() *stallingConn {
 	x := &stallingConn{quit: make(chan struct{})}
-	self.stalls[x] = true
+	sc.stalls[x] = true
 	return x
 }
 
-func (self *stallCloser) Dial(network, addr string) (net.Conn, error) {
-	return self.newConn(), nil
+func (sc *stallCloser) Dial(network, addr string) (net.Conn, error) {
+	return sc.newConn(), nil
 }
 
+// GetStallingReadTransport returns a CancelTrackingTransport with a closer.
 func GetStallingReadTransport() (*CancelTrackingTransport, io.Closer) {
 	dialer := &stallCloser{make(map[*stallingConn]bool)}
 	trans := &CancelTrackingTransport{
@@ -241,14 +249,14 @@ func Parse(ref string) *walker.URL {
 	return u
 }
 
-// UrlParse is similar to `parse` but gives a Go builtin URL type (not a walker
+// URLParse is similar to `parse` but gives a Go builtin URL type (not a walker
 // URL)
-func UrlParse(ref string) *url.URL {
+func URLParse(ref string) *url.URL {
 	u := Parse(ref)
 	return u.URL
 }
 
-func Response404() *http.Response {
+func response404() *http.Response {
 	return &http.Response{
 		Status:        "404",
 		StatusCode:    404,
@@ -261,6 +269,7 @@ func Response404() *http.Response {
 	}
 }
 
+// Response307 is a helpers that creates an http.Response object that is a 307 response
 func Response307(link string) *http.Response {
 	return &http.Response{
 		Status:        "307",
@@ -274,6 +283,7 @@ func Response307(link string) *http.Response {
 	}
 }
 
+// Response200 is a helper that creates an http.Response that is a 200 response.
 func Response200() *http.Response {
 	return &http.Response{
 		Status:     "200 OK",
@@ -301,15 +311,16 @@ type MapRoundTrip struct {
 	Responses map[string]*http.Response
 }
 
+// RoundTrip implements the http.RoundTripper interface
 func (mrt *MapRoundTrip) RoundTrip(req *http.Request) (*http.Response, error) {
 	res, resOk := mrt.Responses[req.URL.String()]
 	if !resOk {
-		return Response404(), nil
+		return response404(), nil
 	}
 	return res, nil
 }
 
-// This allows the MapRoundTrip to be canceled. Which is needed to prevent
+// CancelRequest allows the MapRoundTrip to be canceled. Which is needed to prevent
 // errant robots.txt GET's to break TestRedirects.
-func (self *MapRoundTrip) CancelRequest(req *http.Request) {
+func (mrt *MapRoundTrip) CancelRequest(req *http.Request) {
 }

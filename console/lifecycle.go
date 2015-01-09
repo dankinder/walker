@@ -40,8 +40,8 @@ func newStopableListner(l net.Listener) (*stoppableListener, error) {
 	return retval, nil
 }
 
-var stoppedErrorMark = fmt.Errorf("Listener stopped")
-var stopingPollTime time.Duration = 1 * time.Second
+var errStopMark = fmt.Errorf("Listener stopped")
+var stopingPollTime = 1 * time.Second
 
 func (sl *stoppableListener) Accept() (net.Conn, error) {
 
@@ -53,7 +53,7 @@ func (sl *stoppableListener) Accept() (net.Conn, error) {
 		//Check for the channel being closed
 		select {
 		case <-sl.stopchan:
-			return nil, stoppedErrorMark
+			return nil, errStopMark
 		default:
 			//If the channel is still open, continue as normal
 		}
