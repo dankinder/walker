@@ -54,6 +54,10 @@ type Dispatcher struct {
 
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
+
+	// If true, this field signals that this dispatcher run should quit as soon as all
+	// available work is done.
+	enableOneShot bool
 }
 
 // StartDispatcher starts the dispatcher
@@ -96,6 +100,17 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.domainIterator()
 	return nil
+}
+
+func (d *Dispatcher) oneShot() error {
+	d.enableOneShot = true
+	err := d.StartDispatcher()
+	if err != nil {
+		d.StopDispatcher()
+		return err
+	}
+
+	return d.StopDispatcher()
 }
 
 // StopDispatcher stops the dispatcher.
@@ -211,7 +226,11 @@ func (d *Dispatcher) domainIterator() {
 			if !dispatched && !excluded {
 				d.domains <- domain
 			} else if !d.fetcherIsAlive(claimTok) {
-				go d.cleanStrandedClaims(claimTok)
+				if !d.enableOneShot {
+					go d.cleanStrandedClaims(claimTok)
+				} else {
+					d.cleanStrandedClaims(claimTok)
+				}
 			}
 		}
 
@@ -223,7 +242,7 @@ func (d *Dispatcher) domainIterator() {
 		// Check for quit signal right away, otherwise if there are no domains
 		// to claim and the dispatchInterval is 0, then the dispatcher will
 		// never quit
-		if d.quitSignaled() {
+		if d.enableOneShot || d.quitSignaled() {
 			close(d.domains)
 			return
 		}

@@ -385,6 +385,14 @@ var DispatcherTests = []DispatcherTest{
 	},
 }
 
+func runDispatcher(t *testing.T) {
+	d := &Dispatcher{}
+	err := d.oneShot()
+	if err != nil {
+		t.Fatalf("Failed to run dispatcher: %v", err)
+	}
+}
+
 func TestDispatcherBasic(t *testing.T) {
 	// These config settings MUST be here. The results of the test
 	// change if these are changed.
@@ -442,10 +450,7 @@ func TestDispatcherBasic(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 150)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		expectedResults := map[url.URL]bool{}
 		for _, esl := range dt.ExpectedSegmentLinks {
@@ -490,12 +495,7 @@ func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 		t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 	}
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	// Pete says this time used to be 10 millis, but I was observing spurious nil channel
-	// panics. Increased it to 100 to see if that would help.
-	time.Sleep(time.Millisecond * 100)
-	d.StopDispatcher()
+	runDispatcher(t)
 
 	q = db.Query(`SELECT dispatched FROM domain_info WHERE dom = ?`, "test.com")
 	var dispatched bool
@@ -588,10 +588,7 @@ func TestMinLinkRefreshTime(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 300)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		expectedResults := map[url.URL]bool{}
 		for _, esl := range dt.ExpectedSegmentLinks {
@@ -725,10 +722,11 @@ func TestAutoUnclaim(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(1500 * time.Millisecond)
-		d.StopDispatcher()
+		// Yes, you DO need to run the dispatcher twice here. The first run
+		// will queue the domains, the second will call fetcherIsAlive and
+		// cleanStrandedClaims
+		runDispatcher(t)
+		runDispatcher(t)
 
 		// Test that the UUID of dead.com has been cleared
 		expectedTok := map[string]gocql.UUID{
@@ -919,10 +917,7 @@ func TestURLCorrection(t *testing.T) {
 		}
 	}
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	time.Sleep(1500 * time.Millisecond)
-	d.StopDispatcher()
+	runDispatcher(t)
 
 	//
 	// Verify that the links have been changed correctly
@@ -1042,10 +1037,7 @@ func TestDomainInfoStats(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 300)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		var linksCount, uncrawledLinksCount, queuedLinksCount int
 		err := db.Query(`SELECT tot_links, uncrawled_links, queued_links 
