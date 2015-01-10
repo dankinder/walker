@@ -387,7 +387,7 @@ var DispatcherTests = []DispatcherTest{
 
 func runDispatcher(t *testing.T) {
 	d := &Dispatcher{}
-	err := d.oneShot()
+	err := d.oneShot(1)
 	if err != nil {
 		t.Fatalf("Failed to run dispatcher: %v", err)
 	}
@@ -722,11 +722,14 @@ func TestAutoUnclaim(t *testing.T) {
 			}
 		}
 
-		// Yes, you DO need to run the dispatcher twice here. The first run
+		// Yes, you DO need to run the dispatcher for two iterations. The first run
 		// will queue the domains, the second will call fetcherIsAlive and
 		// cleanStrandedClaims
-		runDispatcher(t)
-		runDispatcher(t)
+		d := &Dispatcher{}
+		err := d.oneShot(2)
+		if err != nil {
+			t.Fatalf("Failed to run dispatcher: %v", err)
+		}
 
 		// Test that the UUID of dead.com has been cleared
 		expectedTok := map[string]gocql.UUID{
@@ -745,7 +748,7 @@ func TestAutoUnclaim(t *testing.T) {
 				t.Errorf("claim_tok mismatch for domain %v: got %v, expected %v", dom, claim_tok, exp)
 			}
 		}
-		err := iter.Close()
+		err = iter.Close()
 		if err != nil {
 			t.Fatalf("Failed select read: %v", err)
 		}
@@ -794,32 +797,52 @@ func TestDispatchInterval(t *testing.T) {
 	defer func() {
 		walker.Config.Dispatcher.DispatchInterval = origDispatchInterval
 	}()
-	walker.Config.Dispatcher.DispatchInterval = "500ms"
+	walker.Config.Dispatcher.DispatchInterval = "600ms"
 
-	GetTestDB() // Clear the database
-	ds := getDS(t)
-	p := walker.MustParse("http://test.com/")
+	completedTest := false
+	for _ = range []int{0, 1, 2} {
+		GetTestDB() // Clear the database
+		ds := getDS(t)
+		p := walker.MustParse("http://test.com/")
 
-	ds.InsertLink(p.String(), "")
+		ds.InsertLink(p.String(), "")
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	time.Sleep(time.Millisecond * 200)
+		start := time.Now()
 
-	// By now the link should have been dispatched. Pretend we crawled it.
-	host := ds.ClaimNewHost()
-	for _ = range ds.LinksForHost(host) {
+		d := &Dispatcher{}
+		go d.StartDispatcher()
+		time.Sleep(time.Millisecond * 200)
+
+		// By now the link should have been dispatched. Pretend we crawled it.
+		host := ds.ClaimNewHost()
+		for _ = range ds.LinksForHost(host) {
+		}
+		ds.UnclaimHost(host)
+
+		// Give it time to dispatch again; it should not do it due to 600ms interval
+		time.Sleep(time.Millisecond * 200)
+		d.StopDispatcher()
+
+		// For any typical run the variable duration should be << tolerance. But in order to make the
+		// test deterministic, in the (very) unlikely event that duration is pathologically long, we accept the
+		// test but warn. We include this contingency for hardware that is very resource starved (like Travis)
+		duration := time.Since(start)
+		tolerance, _ := time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
+		if duration > tolerance {
+			t.Logf("WARNING: TestDispatchInterval found unusually long  duration: %v", duration)
+			continue // retry
+		}
+
+		host = ds.ClaimNewHost()
+		if duration <= tolerance && host != "" {
+			t.Error("Expected host not to be dispatched again due to dispatch interval")
+		}
+
+		completedTest = true
+		break
 	}
-	ds.UnclaimHost(host)
-
-	// Give it time to dispatch again; it should not do it due to 500ms interval
-	time.Sleep(time.Millisecond * 200)
-
-	d.StopDispatcher()
-
-	host = ds.ClaimNewHost()
-	if host != "" {
-		t.Error("Expected host not to be dispatched again due to dispatch interval")
+	if !completedTest {
+		t.Fatalf("Failed to complete test")
 	}
 }
 
