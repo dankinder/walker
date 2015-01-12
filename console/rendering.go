@@ -121,9 +121,10 @@ var sessionManager = sessions.NewCookieStore([]byte("012345678901234567890123456
 
 // Session object manages all controller sessions
 type Session struct {
-	req  *http.Request
-	w    http.ResponseWriter
-	sess *sessions.Session
+	req           *http.Request
+	w             http.ResponseWriter
+	sess          *sessions.Session
+	lastSaveError error
 }
 
 // GetSession returns a session object
@@ -135,9 +136,8 @@ func GetSession(w http.ResponseWriter, req *http.Request) (*Session, error) {
 	return &Session{req: req, w: w, sess: sess}, nil
 }
 
-// Save saves the session
-func (sess *Session) Save() error {
-	return sess.sess.Save(sess.req, sess.w)
+func (sess *Session) save() {
+	sess.lastSaveError = sess.sess.Save(sess.req, sess.w)
 }
 
 // ListPageWindowLength returns page length for /list page
@@ -154,9 +154,9 @@ func (sess *Session) ListPageWindowLength() int {
 	return pwl
 }
 
-// SetListPageWindowLength sets page length for /list page
 func (sess *Session) SetListPageWindowLength(plen int) {
 	sess.sess.Values["pwl"] = plen
+	sess.save()
 }
 
 // LinksPageWindowLength returns the page length for /links page
@@ -173,7 +173,35 @@ func (sess *Session) LinksPageWindowLength() int {
 	return pwl
 }
 
-// SetLinksPageWindowLength sets page length for /links page
 func (sess *Session) SetLinksPageWindowLength(plen int) {
 	sess.sess.Values["lpwl"] = plen
+	sess.save()
+}
+
+func (sess *Session) AddInfoFlash(message string) {
+	sess.sess.AddFlash("I" + message)
+	sess.save()
+}
+
+func (sess *Session) AddErrorFlash(message string) {
+	sess.sess.AddFlash("E" + message)
+	sess.save()
+}
+
+func (sess *Session) Flashes() (infos []string, errors []string) {
+	for _, flash := range sess.sess.Flashes() {
+		s, sok := flash.(string)
+		if !sok || len(s) < 1 {
+			continue
+		}
+
+		if s[0] == 'I' {
+			infos = append(infos, s[1:])
+		} else if s[0] == 'E' {
+			errors = append(errors, s[1:])
+		}
+	}
+
+	sess.save()
+	return
 }

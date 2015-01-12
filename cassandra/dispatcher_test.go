@@ -38,6 +38,8 @@ type ExistingLink struct {
 	GetNow bool
 }
 
+var MaxPriority = 10
+
 var DispatcherTests = []DispatcherTest{
 	DispatcherTest{
 		Tag: "BasicTest",

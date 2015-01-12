@@ -461,12 +461,23 @@ func TestListLinksWeb(t *testing.T) {
 	}
 
 	// Priority button
-	sub = doc.Find("button").FilterFunction(func(index int, sel *goquery.Selection) bool {
-		return strings.Contains(sel.Text(), "Set Priority")
-	})
+	sub = doc.Find("#prioForm")
 
 	if sub.Size() != 1 {
-		t.Fatalf("[button with text 'Set Priority'] Failed to find Priority button")
+		t.Fatalf("[#prioForm] Failed to find Priority form")
+	}
+	foundPrio := false
+	sub.Find("input").Each(func(index int, sel *goquery.Selection) {
+		_, tok := sel.Attr("type")
+		if tok {
+			name, nameOk := sel.Attr("name")
+			if nameOk && name == "priority" {
+				foundPrio = true
+			}
+		}
+	})
+	if !foundPrio {
+		t.Fatalf("[#prioForm] Failed to find priority input element")
 	}
 
 	// Page length button
@@ -1181,8 +1192,8 @@ func TestChangePriority(t *testing.T) {
 	//
 	// Now set a new priority
 	//
-	doc, body, status = callController("http://localhost:3000/changePriority/t1.com/4", "",
-		"/changePriority/{domain}/{priority}",
+	rawBody := "domain=t1.com&priority=4"
+	doc, body, status = callController("http://localhost:3000/changePriority", rawBody, "/changePriority",
 		console.ChangePriorityController)
 	if status != http.StatusFound {
 		t.Errorf("TestChangePriority bad status code got %d, expected %d", status, http.StatusFound)
