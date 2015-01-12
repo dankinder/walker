@@ -49,6 +49,25 @@ type Datastore struct {
 	// be restarted, but that left us vulnerable to the (unlikely) event that
 	// the empty string was stored in domain_infos.
 	restartCursor bool
+
+	// The time stamp, after which, max_priority should be re-read
+	maxPrioNeedFetch time.Time
+
+	// The value in this variable is the last recorded value of max_priority, if a
+	// value was recorded. Otherwise, if max_priority hasn't been read successfully
+	// it equals Config.Cassandra.DefaultDomainPriority. In either case maxPrio is the
+	// best max_priority value available.
+	maxPrio int
+}
+
+var MaxPriorityPeriod time.Duration
+
+func init() {
+	var err error
+	MaxPriorityPeriod, err = time.ParseDuration("60s")
+	if err != nil {
+		panic(err)
+	}
 }
 
 // NewDatastore creates a Cassandra session and initializes a Datastore
@@ -79,6 +98,8 @@ func NewDatastore() (*Datastore, error) {
 	ds.activeFetchersTTL = int(durr / time.Second)
 
 	ds.restartCursor = true
+	ds.maxPrioNeedFetch = time.Now().AddDate(-1, 0, 0)
+	ds.maxPrio = walker.Config.Cassandra.DefaultDomainPriority
 
 	return ds, nil
 }
@@ -95,10 +116,6 @@ func (ds *Datastore) Close() {
 // limitPerClaimCycle is the target number of domains to put in the
 // Datastore.domains per population.
 var limitPerClaimCycle = 50
-
-// The allowed values of the priority in the domain_info table
-var AllowedPriorities = []int{10, 9, 8, 7, 6, 5, 4, 3, 2, 1} //order matters here
-var MaxPriority = AllowedPriorities[0]
 
 // ClaimNewHost is documented on the walker.Datastore interface.
 func (ds *Datastore) ClaimNewHost() string {
@@ -146,7 +163,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 		return false
 	}
 
-	if cnt >= MaxPriority {
+	if cnt >= ds.MaxPriority() {
 		return true
 	}
 
@@ -155,7 +172,7 @@ func (ds *Datastore) domainPriorityTry(dom string, domPriority int) bool {
 
 // This method sets the domain_counters table correctly after a domain has been claimed.
 func (ds *Datastore) domainPriorityClaim(dom string) bool {
-	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", MaxPriority, dom).Exec()
+	err := ds.db.Query("UPDATE domain_counters SET next_crawl = next_crawl-? WHERE dom = ?", ds.MaxPriority(), dom).Exec()
 	if err != nil {
 		log4go.Error("domainPrioritySet failed to clear domain_counters: %v", err)
 		return false
@@ -514,6 +531,20 @@ func (ds *Datastore) addDomainWithExcludeReason(dom string, reason string) error
 
 	ds.domainCache.Add(dom, true)
 	return nil
+}
+
+func (ds *Datastore) MaxPriority() int {
+	if time.Now().After(ds.maxPrioNeedFetch) {
+		var prio int
+		err := ds.db.Query("SELECT val FROM walker_globals WHERE key = ?", "max_priority").Scan(&prio)
+		if err != nil {
+			log4go.Error("MaxPriority failed to read max_priority: %v", err)
+		} else {
+			ds.maxPrio = prio
+		}
+		ds.maxPrioNeedFetch = time.Now().Add(MaxPriorityPeriod)
+	}
+	return ds.maxPrio
 }
 
 //

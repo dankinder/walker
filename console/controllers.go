@@ -45,7 +45,7 @@ func Routes() []Route {
 		Route{Path: "/findLinks", Controller: FindLinksController},
 		Route{Path: "/filterLinks", Controller: FilterLinksController},
 		Route{Path: "/excludeToggle/{domain}/{direction}", Controller: ExcludeToggleController},
-		Route{Path: "/changePriority/{domain}/{priority}", Controller: ChangePriorityController},
+		Route{Path: "/changePriority", Controller: ChangePriorityController},
 	}
 }
 
@@ -109,7 +109,6 @@ func processHiddenForm(req *http.Request, sess *Session, isLinks bool) (string, 
 		} else {
 			sess.SetListPageWindowLength(length)
 		}
-		sess.Save()
 		isWindowResize = true
 	}
 
@@ -547,15 +546,6 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		excludeLink = fmt.Sprintf("/excludeToggle/%s/un", domain)
 	}
 
-	// set up priority dropdown
-	prio := []dropdownElement{}
-	for _, p := range cassandra.AllowedPriorities {
-		prio = append(prio, dropdownElement{
-			Link: fmt.Sprintf("/changePriority/%s/%d", domain, p),
-			Text: fmt.Sprintf("%d", p),
-		})
-	}
-
 	// set up page length dropdown
 	pageLenDropdown := []dropdownElement{}
 	for _, ln := range PageWindowLengthChoices {
@@ -563,6 +553,14 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 			Text: fmt.Sprintf("%d", ln),
 		})
 	}
+
+	maxAllowedPrio := ""
+	if walker.Config.Console.MaxAllowedDomainPriority > 0 {
+		maxAllowedPrio = fmt.Sprintf("(max %d)", walker.Config.Console.MaxAllowedDomainPriority)
+	}
+
+	// grab any info in the flash
+	infos, errors := session.Flashes()
 
 	//
 	// Lets render
@@ -585,11 +583,16 @@ func LinksController(w http.ResponseWriter, req *http.Request) {
 		"ExcludeColor": excludeColor,
 		"ExcludeLink":  excludeLink,
 
-		"PriorityLinks": prio,
-
 		"Prev":            prevLink,
 		"PrevList":        prevList,
 		"PageLengthLinks": pageLenDropdown,
+
+		"MaxAllowedPrio": maxAllowedPrio,
+
+		"HasInfoMessage":  len(infos) > 0,
+		"InfoMessage":     infos,
+		"HasErrorMessage": len(errors) > 0,
+		"ErrorMessage":    errors,
 	}
 	Render.HTML(w, http.StatusOK, "links", mp)
 	return
@@ -760,24 +763,51 @@ func ExcludeToggleController(w http.ResponseWriter, req *http.Request) {
 
 // ChangePriorityController handles web-based priority changes.
 func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
-	vars := mux.Vars(req)
-	domain := vars["domain"]
-	priorityStr := vars["priority"]
-	priority, err := strconv.Atoi(priorityStr)
+	err := req.ParseForm()
 	if err != nil {
 		replyServerError(w, err)
 		return
 	}
 
-	foundP := false
-	for _, p := range cassandra.AllowedPriorities {
-		if p == priority {
-			foundP = true
-			break
-		}
+	session, err := GetSession(w, req)
+	if err != nil {
+		replyServerError(w, fmt.Errorf("GetSession failed: %v", err))
+		return
 	}
-	if !foundP {
-		replyServerError(w, fmt.Errorf("Priority value not found in AllowedPriority"))
+
+	domain := req.Form.Get("domain")
+	if domain == "" {
+		replyServerError(w, fmt.Errorf("domain inexplicably is NOT in the hidden form"))
+		return
+	}
+	redirect := func() {
+		http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+	}
+
+	priorityStr := req.Form.Get("priority")
+	if priorityStr == "" {
+		session.AddErrorFlash(fmt.Sprintf("Failed to specify priority"))
+		redirect()
+		return
+	}
+
+	priority, err := strconv.Atoi(priorityStr)
+	if err != nil {
+		session.AddErrorFlash(fmt.Sprintf("Failed to parse priority %q", priorityStr))
+		redirect()
+		return
+	}
+
+	if priority <= 0 {
+		session.AddErrorFlash(fmt.Sprintf("Priority must be greater than zero, not %q", priorityStr))
+		redirect()
+		return
+	}
+
+	mADP := walker.Config.Console.MaxAllowedDomainPriority
+	if mADP > 0 && priority > mADP {
+		session.AddErrorFlash(fmt.Sprintf("Priority must be less than max of %d, not %d", mADP, priority))
+		redirect()
 		return
 	}
 
@@ -790,7 +820,7 @@ func ChangePriorityController(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	http.Redirect(w, req, fmt.Sprintf("/links/%s", domain), http.StatusFound)
+	redirect()
 	return
 }
 

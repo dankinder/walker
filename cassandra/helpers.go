@@ -258,7 +258,11 @@ CREATE TABLE {{.Keyspace}}.domain_counters (
 	PRIMARY KEY (dom)
 );
 
-`
+CREATE TABLE {{.Keyspace}}.walker_globals (
+	key text,
+	val int,
+	PRIMARY KEY (key)
+);`
 
 // initdb ensures we only try to create the cassandra schema once in testing
 var initdb sync.Once

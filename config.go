@@ -103,9 +103,10 @@ type ConfigStruct struct {
 	} `yaml:"cassandra"`
 
 	Console struct {
-		Port              int    `yaml:"port"`
-		TemplateDirectory string `yaml:"template_directory"`
-		PublicFolder      string `yaml:"public_folder"`
+		Port                     int    `yaml:"port"`
+		TemplateDirectory        string `yaml:"template_directory"`
+		PublicFolder             string `yaml:"public_folder"`
+		MaxAllowedDomainPriority int    `yaml:"max_allowed_domain_priority"`
 	} `yaml:"console"`
 }
 
@@ -172,6 +173,7 @@ func SetDefaultConfig() {
 	Config.Console.Port = 3000
 	Config.Console.TemplateDirectory = "console/templates"
 	Config.Console.PublicFolder = "console/public"
+	Config.Console.MaxAllowedDomainPriority = 100
 }
 
 // ReadConfigFile sets a new path to find the walker yaml config file and
@@ -259,9 +261,13 @@ func assertConfigInvariants() error {
 		errs = append(errs, fmt.Sprintf("Fetcher.HTTPKeepAliveThreshold failed to parse: %v", err))
 	}
 
-	_, err = time.ParseDuration(Config.Cassandra.Timeout)
+	cas := &Config.Cassandra
+	_, err = time.ParseDuration(cas.Timeout)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Cassandra.Timeout failed to parse: %v", err))
+	}
+	if cas.DefaultDomainPriority < 1 {
+		errs = append(errs, fmt.Sprintf("Cassandra.DefaultDomainPriority must be >= 1"))
 	}
 
 	keeprat := Config.Fetcher.ActiveFetchersKeepratio
