@@ -94,6 +94,12 @@ func (d *Dispatcher) StartDispatcher() error {
 		}()
 	}
 
+	d.finishWG.Add(1)
+	go func() {
+		d.pollMaxPriority()
+		d.finishWG.Done()
+	}()
+
 	d.domainIterator()
 	return nil
 }
@@ -105,6 +111,70 @@ func (d *Dispatcher) StopDispatcher() error {
 	d.finishWG.Wait()
 	d.db.Close()
 	return nil
+}
+
+func (d *Dispatcher) pollMaxPriority() {
+	// Set the loop interval
+	loopPeriod, err := time.ParseDuration("60s")
+	if err != nil {
+		panic(err)
+	}
+
+	dispatch_interval, err := time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
+	if err != nil {
+		panic(err)
+	}
+	if loopPeriod < dispatch_interval {
+		loopPeriod = dispatch_interval
+	}
+
+	// Loop forever
+	timer := time.NewTimer(loopPeriod)
+	max_priority := "max_priority"
+	for {
+		var err error
+		start := time.Now()
+		iter := d.db.Query(`SELECT priority FROM domain_info`).Iter()
+		max := -1
+		prio := 0
+		scansPerQuit := 10
+		count := 0
+		for iter.Scan(&prio) {
+			if prio > max {
+				max = prio
+			}
+			count++
+			if (count % scansPerQuit) == 0 {
+				select {
+				case <-d.quit:
+					goto LOOP
+				default:
+				}
+			}
+		}
+		err = iter.Close()
+		if err != nil {
+			log4go.Error("pollMaxPriority failed to fetch all priorities: %v", err)
+			goto LOOP
+		}
+		if max < 0 {
+			goto LOOP
+		}
+
+		err = d.db.Query("INSERT INTO walker_globals (key, val) VALUES (?, ?)", max_priority, max).Exec()
+		if err != nil {
+			log4go.Error("pollMaxPriority failed to insert into walker_globals: %v", err)
+			goto LOOP
+		}
+
+	LOOP:
+		timer.Reset(loopPeriod - time.Since(start))
+		select {
+		case <-d.quit:
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 func (d *Dispatcher) cleanStrandedClaims(tok gocql.UUID) {
