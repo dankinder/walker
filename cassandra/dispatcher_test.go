@@ -387,6 +387,14 @@ var DispatcherTests = []DispatcherTest{
 	},
 }
 
+func runDispatcher(t *testing.T) {
+	d := &Dispatcher{}
+	err := d.oneShot(1)
+	if err != nil {
+		t.Fatalf("Failed to run dispatcher: %v", err)
+	}
+}
+
 func TestDispatcherBasic(t *testing.T) {
 	// These config settings MUST be here. The results of the test
 	// change if these are changed.
@@ -444,10 +452,7 @@ func TestDispatcherBasic(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 150)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		expectedResults := map[url.URL]bool{}
 		for _, esl := range dt.ExpectedSegmentLinks {
@@ -492,12 +497,7 @@ func TestDispatcherDispatchedFalseIfNoLinks(t *testing.T) {
 		t.Fatalf("Failed to insert test domain info: %v\nQuery: %v", err, q)
 	}
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	// Pete says this time used to be 10 millis, but I was observing spurious nil channel
-	// panics. Increased it to 100 to see if that would help.
-	time.Sleep(time.Millisecond * 100)
-	d.StopDispatcher()
+	runDispatcher(t)
 
 	q = db.Query(`SELECT dispatched FROM domain_info WHERE dom = ?`, "test.com")
 	var dispatched bool
@@ -590,10 +590,7 @@ func TestMinLinkRefreshTime(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 300)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		expectedResults := map[url.URL]bool{}
 		for _, esl := range dt.ExpectedSegmentLinks {
@@ -727,10 +724,14 @@ func TestAutoUnclaim(t *testing.T) {
 			}
 		}
 
+		// Yes, you DO need to run the dispatcher for two iterations. The first run
+		// will queue the domains, the second will call fetcherIsAlive and
+		// cleanStrandedClaims
 		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(1500 * time.Millisecond)
-		d.StopDispatcher()
+		err := d.oneShot(2)
+		if err != nil {
+			t.Fatalf("Failed to run dispatcher: %v", err)
+		}
 
 		// Test that the UUID of dead.com has been cleared
 		expectedTok := map[string]gocql.UUID{
@@ -749,7 +750,7 @@ func TestAutoUnclaim(t *testing.T) {
 				t.Errorf("claim_tok mismatch for domain %v: got %v, expected %v", dom, claim_tok, exp)
 			}
 		}
-		err := iter.Close()
+		err = iter.Close()
 		if err != nil {
 			t.Fatalf("Failed select read: %v", err)
 		}
@@ -798,32 +799,52 @@ func TestDispatchInterval(t *testing.T) {
 	defer func() {
 		walker.Config.Dispatcher.DispatchInterval = origDispatchInterval
 	}()
-	walker.Config.Dispatcher.DispatchInterval = "500ms"
+	walker.Config.Dispatcher.DispatchInterval = "600ms"
 
-	GetTestDB() // Clear the database
-	ds := getDS(t)
-	p := walker.MustParse("http://test.com/")
+	completedTest := false
+	for _ = range []int{0, 1, 2} {
+		GetTestDB() // Clear the database
+		ds := getDS(t)
+		p := walker.MustParse("http://test.com/")
 
-	ds.InsertLink(p.String(), "")
+		ds.InsertLink(p.String(), "")
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	time.Sleep(time.Millisecond * 200)
+		start := time.Now()
 
-	// By now the link should have been dispatched. Pretend we crawled it.
-	host := ds.ClaimNewHost()
-	for _ = range ds.LinksForHost(host) {
+		d := &Dispatcher{}
+		go d.StartDispatcher()
+		time.Sleep(time.Millisecond * 200)
+
+		// By now the link should have been dispatched. Pretend we crawled it.
+		host := ds.ClaimNewHost()
+		for _ = range ds.LinksForHost(host) {
+		}
+		ds.UnclaimHost(host)
+
+		// Give it time to dispatch again; it should not do it due to 600ms interval
+		time.Sleep(time.Millisecond * 200)
+		d.StopDispatcher()
+
+		// For any typical run the variable duration should be << tolerance. But in order to make the
+		// test deterministic, in the (very) unlikely event that duration is pathologically long, we accept the
+		// test but warn. We include this contingency for hardware that is very resource starved (like Travis)
+		duration := time.Since(start)
+		tolerance, _ := time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
+		if duration > tolerance {
+			t.Logf("WARNING: TestDispatchInterval found unusually long  duration: %v", duration)
+			continue // retry
+		}
+
+		host = ds.ClaimNewHost()
+		if duration <= tolerance && host != "" {
+			t.Error("Expected host not to be dispatched again due to dispatch interval")
+		}
+
+		completedTest = true
+		break
 	}
-	ds.UnclaimHost(host)
-
-	// Give it time to dispatch again; it should not do it due to 500ms interval
-	time.Sleep(time.Millisecond * 200)
-
-	d.StopDispatcher()
-
-	host = ds.ClaimNewHost()
-	if host != "" {
-		t.Error("Expected host not to be dispatched again due to dispatch interval")
+	if !completedTest {
+		t.Fatalf("Failed to complete test")
 	}
 }
 
@@ -921,10 +942,7 @@ func TestURLCorrection(t *testing.T) {
 		}
 	}
 
-	d := &Dispatcher{}
-	go d.StartDispatcher()
-	time.Sleep(1500 * time.Millisecond)
-	d.StopDispatcher()
+	runDispatcher(t)
 
 	//
 	// Verify that the links have been changed correctly
@@ -1044,10 +1062,7 @@ func TestDomainInfoStats(t *testing.T) {
 			}
 		}
 
-		d := &Dispatcher{}
-		go d.StartDispatcher()
-		time.Sleep(time.Millisecond * 300)
-		d.StopDispatcher()
+		runDispatcher(t)
 
 		var linksCount, uncrawledLinksCount, queuedLinksCount int
 		err := db.Query(`SELECT tot_links, uncrawled_links, queued_links 

@@ -54,6 +54,10 @@ type Dispatcher struct {
 
 	// map of active UUIDs -- i.e. fetchers that are still alive
 	activeToks map[gocql.UUID]time.Time
+
+	// If true, this field signals that this dispatcher run should quit as soon as all
+	// available work is done.
+	oneShotIterations int
 }
 
 // StartDispatcher starts the dispatcher
@@ -102,6 +106,20 @@ func (d *Dispatcher) StartDispatcher() error {
 
 	d.domainIterator()
 	return nil
+}
+
+func (d *Dispatcher) oneShot(iterations int) error {
+	if iterations <= 0 {
+		return fmt.Errorf("Argument to oneShot must be > 0")
+	}
+	d.oneShotIterations = iterations
+	err := d.StartDispatcher()
+	if err != nil {
+		d.StopDispatcher()
+		return err
+	}
+
+	return d.StopDispatcher()
 }
 
 // StopDispatcher stops the dispatcher.
@@ -264,7 +282,9 @@ func (d *Dispatcher) fetcherIsAlive(claimTok gocql.UUID) bool {
 }
 
 func (d *Dispatcher) domainIterator() {
+	iteration := 0
 	for {
+		iteration++
 		log4go.Debug("Starting new domain iteration")
 		domainiter := d.db.Query(`SELECT dom, dispatched, claim_tok, excluded FROM domain_info`).Iter()
 
@@ -281,7 +301,11 @@ func (d *Dispatcher) domainIterator() {
 			if !dispatched && !excluded {
 				d.domains <- domain
 			} else if !d.fetcherIsAlive(claimTok) {
-				go d.cleanStrandedClaims(claimTok)
+				if d.oneShotIterations == 0 {
+					go d.cleanStrandedClaims(claimTok)
+				} else {
+					d.cleanStrandedClaims(claimTok)
+				}
 			}
 		}
 
@@ -293,7 +317,8 @@ func (d *Dispatcher) domainIterator() {
 		// Check for quit signal right away, otherwise if there are no domains
 		// to claim and the dispatchInterval is 0, then the dispatcher will
 		// never quit
-		if d.quitSignaled() {
+		osi := d.oneShotIterations
+		if (osi > 0 && iteration >= osi) || d.quitSignaled() {
 			close(d.domains)
 			return
 		}
