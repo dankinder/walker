@@ -188,10 +188,12 @@ func singleLinkDomainSpecArr(link string, response *MockResponse) []DomainSpec {
 // runFetcher/runFetcherTimed interprets a TestSpec and runs a FetchManager in accordance with
 // that specification.
 //
-func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults {
+func runFetcher(test TestSpec, t *testing.T) TestResults {
 	return runFetcherTimed(test, 0*time.Second, t)
 }
 
+// If you run runFetcherTimed with a zero duration, it will call FetchManger.oneShot rather than
+// having a timed-out FetchManger.Start()/FetchManager.Stop() pair.
 func runFetcherTimed(test TestSpec, duration time.Duration, t *testing.T) TestResults {
 
 	//
@@ -278,10 +280,8 @@ func runFetcherTimed(test TestSpec, duration time.Duration, t *testing.T) TestRe
 
 	zeroDur := 0 * time.Second
 	if duration == zeroDur {
-		t.Logf("PETE run oneShot")
 		manager.oneShot()
 	} else {
-		t.Logf("PETE run timed")
 		go manager.Start()
 		time.Sleep(duration)
 		manager.Stop()
@@ -408,7 +408,7 @@ func TestBasicNoRobots(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, 1*time.Second, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Make sure KeepAlive was called
@@ -483,7 +483,7 @@ func TestBasicRobots(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, 3*time.Second, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Make sure expected results are there
@@ -543,7 +543,7 @@ func TestBasicRobotsDisallow(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Make sure expected results are there
@@ -626,7 +626,7 @@ func TestBasicMimeType(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, 3*time.Second, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Make sure expected results are there
@@ -714,7 +714,7 @@ func TestBasicLinkTest(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Make sure expected results are there
@@ -771,7 +771,7 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	if len(results.handlerCalls()) != 0 || len(results.dsStoreURLFetchResultsCalls()) != 0 {
 		t.Error("Did not expect any handler calls due to host resolving to private IP")
@@ -792,7 +792,7 @@ func TestcherCreatesTransport(t *testing.T) {
 		hosts:             singleLinkDomainSpecArr("http://localhost.localdomain/", &MockResponse{Status: 404}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	if results.manager.Transport == nil {
 		t.Fatalf("Expected Transport to get set")
@@ -827,7 +827,7 @@ func TestRedirects(t *testing.T) {
 		hosts:          singleLinkDomainSpecArr(link(1), nil),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	frs := results.handlerCalls()
 	if len(frs) < 1 {
@@ -879,7 +879,7 @@ func TestHrefWithSpace(t *testing.T) {
 		}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	foundTCom := false
 	for _, fr := range results.handlerCalls() {
@@ -948,7 +948,7 @@ func TestHTTPTimeout(t *testing.T) {
 			},
 		}
 
-		results := runFetcher(tests, 2000*time.Millisecond, t)
+		results := runFetcher(tests, t)
 		closer.Close()
 
 		canceled := map[string]bool{}
@@ -1056,7 +1056,7 @@ func TestMetaNos(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	// Did the fetcher honor noindex (if noindex is set
 	// the handler shouldn't be called)
@@ -1110,7 +1110,7 @@ func TestchManagerFastShutdown(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, 250*time.Millisecond, t) //compare duration here with Crawl-delay
+	results := runFetcher(tests, t) //compare duration here with Crawl-delay
 
 	expectedCall := false
 	for _, fr := range results.dsStoreURLFetchResultsCalls() {
@@ -1162,7 +1162,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
-	results := runFetcher(tests, 250*time.Millisecond, t)
+	results := runFetcher(tests, t)
 
 	expectedStores := map[string]bool{
 		"http://t1.com/object_data/page.html":   true,
@@ -1219,7 +1219,7 @@ func TestPathInclusion(t *testing.T) {
 		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	expectedPaths := map[string]bool{
 		"/foo/bar.html":      true,
@@ -1284,7 +1284,7 @@ func TestMaxCrawlDelay(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, time.Second, t)
+	results := runFetcher(tests, t)
 
 	expectedPages := map[string]bool{
 		"/page1.html": true,
@@ -1330,7 +1330,7 @@ func TestFnvFingerprint(t *testing.T) {
 		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	fnv := fnv.New64()
 	fnv.Write([]byte(html))
@@ -1379,7 +1379,7 @@ func TestIfModifiedSince(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Did the server see the header
@@ -1474,7 +1474,7 @@ func TestNestedRobots(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	//
 	// Now check that the correct requests where made
@@ -1548,7 +1548,7 @@ func TestMaxContentSize(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, 3*defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	hcalls := results.handlerCalls()
 	if len(hcalls) != 0 {
@@ -1628,7 +1628,7 @@ func TestStoreBody(t *testing.T) {
 	//
 	// Run the fetcher
 	//
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	stores := results.dsStoreURLFetchResultsCalls()
 	if len(stores) != 1 {
@@ -1701,7 +1701,7 @@ func TestKeepAliveThreshold(t *testing.T) {
 		},
 	}
 
-	runFetcher(tests, 2*defaultSleep, t)
+	runFetcher(tests, t)
 
 	expectInTransport := map[string]bool{
 		"http://a.com/page1.html": true,
@@ -1765,7 +1765,7 @@ func TestMaxPathLength(t *testing.T) {
 		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	expected := map[string]bool{
 		"http://t1.com/01234": true,
@@ -1804,7 +1804,7 @@ Some text here.
 		hosts:          singleLinkDomainSpecArr("http://t1.com/target.html", &MockResponse{Body: html}),
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 
 	expected := map[string]bool{
 		"http://a.com/page1.html": true,
@@ -1853,7 +1853,7 @@ func TestBugTrn210(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, defaultSleep, t)
+	results := runFetcher(tests, t)
 	stores := results.dsStoreURLFetchResultsCalls()
 
 	expected := map[string]bool{
