@@ -102,7 +102,7 @@ type FetchManager struct {
 	// Parsed duration of the string Config.Fetcher.HTTPKeepAliveThreshold
 	KeepAliveThreshold time.Duration
 
-	fetchWait sync.WaitGroup
+	activeThreadsWait sync.WaitGroup
 
 	// used to match Content-Type headers
 	acceptFormats *mimetools.Matcher
@@ -120,6 +120,9 @@ type FetchManager struct {
 	mu        sync.Mutex
 	_started  bool
 	_fetchers []*fetcher
+
+	// If this flag is set, oneShot is set on each child fetcher
+	oneShot bool
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -127,7 +130,7 @@ type FetchManager struct {
 // other things)
 //
 // You cannot change the datastore or handlers after starting.
-func (fm *FetchManager) Start() {
+func (fm *FetchManager) run() {
 	log4go.Info("Starting FetchManager")
 	if fm.Datastore == nil {
 		panic("Cannot start a FetchManager without a datastore")
@@ -173,12 +176,12 @@ func (fm *FetchManager) Start() {
 
 	// Create keep-alive thread
 	fm.keepAliveQuit = make(chan struct{})
-	fm.fetchWait.Add(1)
+	fm.activeThreadsWait.Add(1)
 	go func() {
 		for {
 			select {
 			case <-fm.keepAliveQuit:
-				fm.fetchWait.Done()
+				fm.activeThreadsWait.Done()
 				return
 			case <-time.After(fm.activeFetcherHeartbeat):
 			}
@@ -260,20 +263,46 @@ func (fm *FetchManager) Start() {
 
 	numFetchers := Config.Fetcher.NumSimultaneousFetchers
 	fetchers := make([]*fetcher, numFetchers)
-
+	var fetchWait sync.WaitGroup
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
+		f.oneShot = fm.oneShot
 		fetchers[i] = f
-		fm.fetchWait.Add(1)
+		fm.activeThreadsWait.Add(1)
+		fetchWait.Add(1)
 		go func() {
 			f.start()
-			fm.fetchWait.Done()
+			fetchWait.Done()
+			fm.activeThreadsWait.Done()
 		}()
 	}
 	fm.setFetchers(fetchers)
 	fm.setStarted(true)
 
-	fm.fetchWait.Wait()
+	fetchWait.Wait()
+	if fm.oneShot {
+		// In one shot mode, the fetchers decide when they're done. So if we get here, then the fetchers are done
+		// (and called fetchWait.Done()), and we clean up the last (keepAlive) thread.
+		close(fm.keepAliveQuit)
+	}
+}
+
+// NOTE on lifecycle: in normal operation the users calls FetchManager.Start() on a separate goroutine. Then later, when
+// the user wants to stop the FetchManager, they call Stop(). Start()/Stop() should always be paired. The other mode
+// of operation is used for testing, and goes through the oneShotRun() method. Users should just call oneShotRun()
+// synchronously, and when it returns all the available work is complete and the FetchManager is done.
+
+// Start starts a FetchManager. Always pair go Start() with a Stop()
+func (fm *FetchManager) Start() {
+	fm.oneShot = false
+	fm.run()
+}
+
+// oneShot starts a FetchManager in synchronous (testing) mode
+func (fm *FetchManager) oneShotRun() {
+	fm.oneShot = true
+	fm.run()
+	fm.activeThreadsWait.Wait()
 }
 
 // Stop notifies the fetchers to finish their current requests. It blocks until
@@ -287,7 +316,7 @@ func (fm *FetchManager) Stop() {
 		go f.stop()
 	}
 	close(fm.keepAliveQuit)
-	fm.fetchWait.Wait()
+	fm.activeThreadsWait.Wait()
 }
 
 func (fm *FetchManager) started() bool {
@@ -343,6 +372,9 @@ type fetcher struct {
 
 	// Where to read content pages into
 	readBuffer bytes.Buffer
+
+	// Should this fetcher stop as soon as the datastore has no more work to processes
+	oneShot bool
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -416,7 +448,13 @@ func (f *fetcher) start() {
 		// Crawl until told to stop...
 	}
 	log4go.Debug("Stopping fetcher")
-	f.done <- struct{}{}
+	close(f.done)
+}
+
+// stop signals a fetcher to stop and waits until completion.
+func (f *fetcher) stop() {
+	close(f.quit)
+	<-f.done
 }
 
 // crawlNewHost host crawls a single host, or delays and returns if there was
@@ -431,6 +469,10 @@ func (f *fetcher) crawlNewHost() bool {
 
 	f.host = f.fm.Datastore.ClaimNewHost()
 	if f.host == "" {
+		if f.oneShot {
+			close(f.quit)
+			return false // Signals to start() that this fetcher is done with all it's work
+		}
 		time.Sleep(time.Second)
 		return true
 	}
@@ -587,12 +629,6 @@ func (f *fetcher) fillReadBuffer(reader io.Reader, headers http.Header) error {
 	}
 
 	return nil
-}
-
-// stop signals a fetcher to stop and waits until completion.
-func (f *fetcher) stop() {
-	f.quit <- struct{}{}
-	<-f.done
 }
 
 func (f *fetcher) resetTransport() {
