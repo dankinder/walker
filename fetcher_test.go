@@ -192,7 +192,7 @@ func runFetcher(test TestSpec, t *testing.T) TestResults {
 	return runFetcherTimed(test, 0*time.Second, t)
 }
 
-// If you run runFetcherTimed with a zero duration, it will call FetchManger.oneShot rather than
+// If you run runFetcherTimed with a zero duration, it will call FetchManger.oneShotRun rather than
 // having a timed-out FetchManger.Start()/FetchManager.Stop() pair.
 func runFetcherTimed(test TestSpec, duration time.Duration, t *testing.T) TestResults {
 
@@ -280,7 +280,7 @@ func runFetcherTimed(test TestSpec, duration time.Duration, t *testing.T) TestRe
 
 	zeroDur := 0 * time.Second
 	if duration == zeroDur {
-		manager.oneShot()
+		manager.oneShotRun()
 	} else {
 		go manager.Start()
 		time.Sleep(duration)
@@ -781,7 +781,7 @@ func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
 	results.datastore.AssertNotCalled(t, "LinksForHost", "private.com")
 }
 
-func TestcherCreatesTransport(t *testing.T) {
+func TestFetcherCreatesTransport(t *testing.T) {
 	orig := Config.Fetcher.BlacklistPrivateIPs
 	defer func() { Config.Fetcher.BlacklistPrivateIPs = orig }()
 	Config.Fetcher.BlacklistPrivateIPs = false
@@ -1083,7 +1083,7 @@ func TestMetaNos(t *testing.T) {
 	}
 }
 
-func TestchManagerFastShutdown(t *testing.T) {
+func TestFetchManagerFastShutdown(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		hosts: []DomainSpec{
@@ -1110,7 +1110,7 @@ func TestchManagerFastShutdown(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, t) //compare duration here with Crawl-delay
+	results := runFetcherTimed(tests, 250*time.Millisecond, t) //compare duration here with Crawl-delay
 
 	expectedCall := false
 	for _, fr := range results.dsStoreURLFetchResultsCalls() {
@@ -1284,7 +1284,7 @@ func TestMaxCrawlDelay(t *testing.T) {
 		},
 	}
 
-	results := runFetcher(tests, t)
+	results := runFetcherTimed(tests, time.Second, t)
 
 	expectedPages := map[string]bool{
 		"/page1.html": true,
@@ -1701,7 +1701,7 @@ func TestKeepAliveThreshold(t *testing.T) {
 		},
 	}
 
-	runFetcher(tests, t)
+	runFetcherTimed(tests, 2*defaultSleep, t)
 
 	expectInTransport := map[string]bool{
 		"http://a.com/page1.html": true,

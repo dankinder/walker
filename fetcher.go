@@ -119,7 +119,7 @@ type FetchManager struct {
 	keepAliveQuit chan struct{}
 
 	// If this flag is set, oneShot is set on each child fetcher
-	oneShotFlag bool
+	oneShot bool
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -265,20 +265,18 @@ func (fm *FetchManager) run() {
 	var fetchWait sync.WaitGroup
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
-		if fm.oneShotFlag {
-			f.oneShot = true
-		}
+		f.oneShot = fm.oneShot
 		fm.fetchers[i] = f
 		fm.activeThreadsWait.Add(1)
 		fetchWait.Add(1)
-		go func(i int) {
+		go func() {
 			f.start()
 			fetchWait.Done()
 			fm.activeThreadsWait.Done()
-		}(i)
+		}()
 	}
 	fetchWait.Wait()
-	if fm.oneShotFlag {
+	if fm.oneShot {
 		// In one shot mode, the fetchers decide when they're done. So if we get here, then the fetchers are done
 		// (and called fetchWait.Done()), and we clean up the last (keepAlive) thread.
 		close(fm.keepAliveQuit)
@@ -287,18 +285,18 @@ func (fm *FetchManager) run() {
 
 // NOTE on lifecycle: in normal operation the users calls FetchManager.Start() on a separate goroutine. Then later, when
 // the user wants to stop the FetchManager, they call Stop(). Start()/Stop() should always be paired. The other mode
-// of operation is used for testing, and goes through the oneShot() method: user should just call oneShot()
-// synchronously when it returns, all the available work is complete and the FetchManager is done.
+// of operation is used for testing, and goes through the oneShotRun() method. Users should just call oneShotRun()
+// synchronously, and when it returns all the available work is complete and the FetchManager is done.
 
 // Start starts a FetchManager. Always pair go Start() with a Stop()
 func (fm *FetchManager) Start() {
-	fm.oneShotFlag = false
+	fm.oneShot = false
 	fm.run()
 }
 
 // oneShot starts a FetchManager in synchronous (testing) mode
-func (fm *FetchManager) oneShot() {
-	fm.oneShotFlag = true
+func (fm *FetchManager) oneShotRun() {
+	fm.oneShot = true
 	fm.run()
 	fm.activeThreadsWait.Wait()
 }
