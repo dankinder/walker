@@ -948,7 +948,7 @@ func TestHTTPTimeout(t *testing.T) {
 			},
 		}
 
-		results := runFetcher(tests, t)
+		results := runFetcherTimed(tests, 2000*time.Millisecond, t)
 		closer.Close()
 
 		canceled := map[string]bool{}
