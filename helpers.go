@@ -177,10 +177,11 @@ func (sc *stallingConn) Write(b []byte) (int, error) {
 }
 
 func (sc *stallingConn) Close() error {
-	if !sc.closed {
+	select {
+	case <-sc.quit:
+	default:
 		close(sc.quit)
 	}
-	sc.closed = true
 	return nil
 }
 

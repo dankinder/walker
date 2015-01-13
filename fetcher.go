@@ -102,9 +102,7 @@ type FetchManager struct {
 	// Parsed duration of the string Config.Fetcher.HTTPKeepAliveThreshold
 	KeepAliveThreshold time.Duration
 
-	fetchers  []*fetcher
 	fetchWait sync.WaitGroup
-	started   bool
 
 	// used to match Content-Type headers
 	acceptFormats *mimetools.Matcher
@@ -117,6 +115,11 @@ type FetchManager struct {
 
 	// close this channel to kill the keep-alive thread
 	keepAliveQuit chan struct{}
+
+	// These variables explicitly synchornized. See started() and fetchers()
+	mu        sync.Mutex
+	_started  bool
+	_fetchers []*fetcher
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -132,7 +135,7 @@ func (fm *FetchManager) Start() {
 	if fm.Handler == nil {
 		panic("Cannot start a FetchManager without a handler")
 	}
-	if fm.started {
+	if fm.started() {
 		panic("Cannot start a FetchManager multiple times")
 	}
 
@@ -186,8 +189,6 @@ func (fm *FetchManager) Start() {
 			}
 		}
 	}()
-
-	fm.started = true
 
 	timeout, err := time.ParseDuration(Config.Fetcher.HTTPTimeout)
 	if err != nil {
@@ -258,16 +259,20 @@ func (fm *FetchManager) Start() {
 	}
 
 	numFetchers := Config.Fetcher.NumSimultaneousFetchers
-	fm.fetchers = make([]*fetcher, numFetchers)
+	fetchers := make([]*fetcher, numFetchers)
+
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
-		fm.fetchers[i] = f
+		fetchers[i] = f
 		fm.fetchWait.Add(1)
 		go func() {
 			f.start()
 			fm.fetchWait.Done()
 		}()
 	}
+	fm.setFetchers(fetchers)
+	fm.setStarted(true)
+
 	fm.fetchWait.Wait()
 }
 
@@ -275,14 +280,38 @@ func (fm *FetchManager) Start() {
 // all fetchers have finished.
 func (fm *FetchManager) Stop() {
 	log4go.Info("Stopping FetchManager")
-	if !fm.started {
+	if !fm.started() {
 		panic("Cannot stop a FetchManager that has not been started")
 	}
-	for _, f := range fm.fetchers {
+	for _, f := range fm.fetchers() {
 		go f.stop()
 	}
 	close(fm.keepAliveQuit)
 	fm.fetchWait.Wait()
+}
+
+func (fm *FetchManager) started() bool {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	return fm._started
+}
+
+func (fm *FetchManager) setStarted(started bool) {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	fm._started = started
+}
+
+func (fm *FetchManager) fetchers() []*fetcher {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	return fm._fetchers
+}
+
+func (fm *FetchManager) setFetchers(fetchers []*fetcher) {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	fm._fetchers = fetchers
 }
 
 // fetcher encompasses one of potentially many fetchers the FetchManager may
