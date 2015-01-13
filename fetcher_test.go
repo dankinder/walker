@@ -185,10 +185,14 @@ func singleLinkDomainSpecArr(link string, response *MockResponse) []DomainSpec {
 }
 
 //
-// runFetcher interprets a TestSpec and runs a FetchManager in accordance with
+// runFetcher/runFetcherTimed interprets a TestSpec and runs a FetchManager in accordance with
 // that specification.
 //
 func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults {
+	return runFetcherTimed(test, 0*time.Second, t)
+}
+
+func runFetcherTimed(test TestSpec, duration time.Duration, t *testing.T) TestResults {
 
 	//
 	// Build mocks
@@ -272,11 +276,16 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		manager.TransNoKeepAlive = test.transNoKeepAlive
 	}
 
-	manager.oneShot()
-
-	// go manager.Start()
-	// time.Sleep(duration)
-	// manager.Stop()
+	zeroDur := 0 * time.Second
+	if duration == zeroDur {
+		t.Logf("PETE run oneShot")
+		manager.oneShot()
+	} else {
+		t.Logf("PETE run timed")
+		go manager.Start()
+		time.Sleep(duration)
+		manager.Stop()
+	}
 
 	if !test.suppressMockServer {
 		rs.Stop()
@@ -1573,24 +1582,24 @@ func TestMaxContentSize(t *testing.T) {
 	}
 }
 
-// func TestKeepAlive(t *testing.T) {
-// 	orig := Config.Fetcher.ActiveFetchersTTL
-// 	defer func() {
-// 		Config.Fetcher.ActiveFetchersTTL = orig
-// 	}()
-// 	Config.Fetcher.ActiveFetchersTTL = "1s"
+func TestKeepAlive(t *testing.T) {
+	orig := Config.Fetcher.ActiveFetchersTTL
+	defer func() {
+		Config.Fetcher.ActiveFetchersTTL = orig
+	}()
+	Config.Fetcher.ActiveFetchersTTL = "1s"
 
-// 	tests := TestSpec{
-// 		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),
-// 	}
+	tests := TestSpec{
+		hosts: singleLinkDomainSpecArr("http://t1.com/page1.html", nil),
+	}
 
-// 	results := runFetcher(tests, 3*time.Second, t)
+	results := runFetcherTimed(tests, 3*time.Second, t)
 
-// 	kacount := results.dsCountKeepAliveCalls()
-// 	if kacount < 2 {
-// 		t.Errorf("Expected two calls to keep alive, found only %d calls", kacount)
-// 	}
-// }
+	kacount := results.dsCountKeepAliveCalls()
+	if kacount < 2 {
+		t.Errorf("Expected two calls to keep alive, found only %d calls", kacount)
+	}
+}
 
 func TestStoreBody(t *testing.T) {
 	orig := Config.Cassandra.StoreResponseBody
