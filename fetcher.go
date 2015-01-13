@@ -117,6 +117,9 @@ type FetchManager struct {
 
 	// close this channel to kill the keep-alive thread
 	keepAliveQuit chan struct{}
+
+	// If this flag is set, oneShot is set on each child fetcher
+	oneShotFlag bool
 }
 
 // Start begins processing assuming that the datastore and any handlers have
@@ -261,6 +264,9 @@ func (fm *FetchManager) Start() {
 	fm.fetchers = make([]*fetcher, numFetchers)
 	for i := 0; i < numFetchers; i++ {
 		f := newFetcher(fm)
+		if fm.oneShotFlag {
+			f.oneShot = true
+		}
 		fm.fetchers[i] = f
 		fm.fetchWait.Add(1)
 		go func() {
@@ -283,6 +289,12 @@ func (fm *FetchManager) Stop() {
 	}
 	close(fm.keepAliveQuit)
 	fm.fetchWait.Wait()
+}
+
+func (fm *FetchManager) oneShot() {
+	fm.oneShotFlag = true
+	fm.Start()
+	fm.Stop()
 }
 
 // fetcher encompasses one of potentially many fetchers the FetchManager may
@@ -314,6 +326,9 @@ type fetcher struct {
 
 	// Where to read content pages into
 	readBuffer bytes.Buffer
+
+	// Should this fetcher stop as soon as the datastore has no more work to processes
+	oneShot bool
 }
 
 func aggregateRegex(list []string, sourceName string) (*regexp.Regexp, error) {
@@ -402,6 +417,9 @@ func (f *fetcher) crawlNewHost() bool {
 
 	f.host = f.fm.Datastore.ClaimNewHost()
 	if f.host == "" {
+		if f.oneShot {
+			return false // Signals to start() that this fetcher is done with all it's work
+		}
 		time.Sleep(time.Second)
 		return true
 	}

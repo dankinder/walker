@@ -272,9 +272,12 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 		manager.TransNoKeepAlive = test.transNoKeepAlive
 	}
 
-	go manager.Start()
-	time.Sleep(duration)
-	manager.Stop()
+	manager.oneShot()
+
+	// go manager.Start()
+	// time.Sleep(duration)
+	// manager.Stop()
+
 	if !test.suppressMockServer {
 		rs.Stop()
 	}
@@ -290,7 +293,7 @@ func runFetcher(test TestSpec, duration time.Duration, t *testing.T) TestResults
 	}
 }
 
-func TestUrlParsing(t *testing.T) {
+func TestFetUrlParsing(t *testing.T) {
 	orig := Config.Fetcher.PurgeSidList
 	defer func() {
 		Config.Fetcher.PurgeSidList = orig
@@ -352,7 +355,7 @@ func TestUrlParsing(t *testing.T) {
 		}
 	}
 }
-func TestBasicNoRobots(t *testing.T) {
+func TestFetBasicNoRobots(t *testing.T) {
 	const html_body string = `<!DOCTYPE html>
 <html>
 <head>
@@ -441,7 +444,7 @@ func TestBasicNoRobots(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestBasicRobots(t *testing.T) {
+func TestFetBasicRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		hosts: []DomainSpec{
@@ -501,7 +504,7 @@ func TestBasicRobots(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestBasicRobotsDisallow(t *testing.T) {
+func TestFetBasicRobotsDisallow(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		hosts: []DomainSpec{
@@ -559,7 +562,7 @@ func TestBasicRobotsDisallow(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestBasicMimeType(t *testing.T) {
+func TestFetBasicMimeType(t *testing.T) {
 	orig := Config.Fetcher.AcceptFormats
 	defer func() {
 		Config.Fetcher.AcceptFormats = orig
@@ -664,7 +667,7 @@ func TestBasicMimeType(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestBasicLinkTest(t *testing.T) {
+func TestFetBasicLinkTest(t *testing.T) {
 	orig := Config.Fetcher.AcceptFormats
 	defer func() {
 		Config.Fetcher.AcceptFormats = orig
@@ -746,7 +749,7 @@ func TestBasicLinkTest(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestStillCrawlWhenDomainUnreachable(t *testing.T) {
+func TestFetStillCrawlWhenDomainUnreachable(t *testing.T) {
 	orig := Config.Fetcher.BlacklistPrivateIPs
 	defer func() { Config.Fetcher.BlacklistPrivateIPs = orig }()
 	Config.Fetcher.BlacklistPrivateIPs = true
@@ -796,7 +799,7 @@ func TestFetcherCreatesTransport(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestRedirects(t *testing.T) {
+func TestFetRedirects(t *testing.T) {
 	link := func(index int) string {
 		return fmt.Sprintf("http://sub.dom.com/page%d.html", index)
 	}
@@ -840,7 +843,7 @@ func TestRedirects(t *testing.T) {
 
 }
 
-func TestHrefWithSpace(t *testing.T) {
+func TestFetHrefWithSpace(t *testing.T) {
 	testPage := "http://t.com/page1.html"
 	const html_with_href_space = `<!DOCTYPE html>
 <html>
@@ -909,7 +912,7 @@ func TestHrefWithSpace(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestHTTPTimeout(t *testing.T) {
+func TestFetHTTPTimeout(t *testing.T) {
 	origTimeout := Config.Fetcher.HTTPTimeout
 	defer func() {
 		Config.Fetcher.HTTPTimeout = origTimeout
@@ -962,7 +965,7 @@ func TestHTTPTimeout(t *testing.T) {
 	}
 }
 
-func TestMetaNos(t *testing.T) {
+func TestFetMetaNos(t *testing.T) {
 	origHonorNoindex := Config.Fetcher.HonorMetaNoindex
 	origHonorNofollow := Config.Fetcher.HonorMetaNofollow
 	defer func() {
@@ -1117,7 +1120,7 @@ func TestFetchManagerFastShutdown(t *testing.T) {
 	results.assertExpectations(t)
 }
 
-func TestObjectEmbedIframeTags(t *testing.T) {
+func TestFetObjectEmbedIframeTags(t *testing.T) {
 	origHonorNoindex := Config.Fetcher.HonorMetaNoindex
 	origHonorNofollow := Config.Fetcher.HonorMetaNofollow
 	defer func() {
@@ -1171,7 +1174,7 @@ func TestObjectEmbedIframeTags(t *testing.T) {
 	}
 }
 
-func TestPathInclusion(t *testing.T) {
+func TestFetPathInclusion(t *testing.T) {
 	origHonorNoindex := Config.Fetcher.ExcludeLinkPatterns
 	origHonorNofollow := Config.Fetcher.IncludeLinkPatterns
 	defer func() {
@@ -1231,7 +1234,7 @@ func TestPathInclusion(t *testing.T) {
 
 }
 
-func TestMaxCrawlDelay(t *testing.T) {
+func TestFetMaxCrawlDelay(t *testing.T) {
 	// The approach to this test is simple. Set a very high Crawl-delay from
 	// the host, and set a small MaxCrawlDelay in config. Then only allow the
 	// fetcher to run long enough to get all the links IF the fetcher is honoring
@@ -1302,7 +1305,7 @@ func TestMaxCrawlDelay(t *testing.T) {
 
 }
 
-func TestFnvFingerprint(t *testing.T) {
+func TestFetFnvFingerprint(t *testing.T) {
 	html := `<!DOCTYPE html>
 <html>
 <head>
@@ -1348,7 +1351,7 @@ func TestFnvFingerprint(t *testing.T) {
 	}
 }
 
-func TestIfModifiedSince(t *testing.T) {
+func TestFetIfModifiedSince(t *testing.T) {
 	link := "http://a.com/page1.html"
 	lastCrawled := time.Now()
 	tests := TestSpec{
@@ -1418,7 +1421,7 @@ func TestIfModifiedSince(t *testing.T) {
 	}
 }
 
-func TestNestedRobots(t *testing.T) {
+func TestFetNestedRobots(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: true,
 		hosts: []DomainSpec{
@@ -1492,7 +1495,7 @@ func TestNestedRobots(t *testing.T) {
 	}
 }
 
-func TestMaxContentSize(t *testing.T) {
+func TestFetMaxContentSize(t *testing.T) {
 	orig := Config.Fetcher.MaxHTTPContentSizeBytes
 	defer func() {
 		Config.Fetcher.MaxHTTPContentSizeBytes = orig
@@ -1570,7 +1573,7 @@ func TestMaxContentSize(t *testing.T) {
 	}
 }
 
-func TestKeepAlive(t *testing.T) {
+func TestFetKeepAlive(t *testing.T) {
 	orig := Config.Fetcher.ActiveFetchersTTL
 	defer func() {
 		Config.Fetcher.ActiveFetchersTTL = orig
@@ -1589,7 +1592,7 @@ func TestKeepAlive(t *testing.T) {
 	}
 }
 
-func TestStoreBody(t *testing.T) {
+func TestFetStoreBody(t *testing.T) {
 	orig := Config.Cassandra.StoreResponseBody
 	defer func() {
 		Config.Cassandra.StoreResponseBody = orig
@@ -1628,7 +1631,7 @@ func TestStoreBody(t *testing.T) {
 	}
 }
 
-func TestKeepAliveThreshold(t *testing.T) {
+func TestFetKeepAliveThreshold(t *testing.T) {
 	origKeepAlive := Config.Fetcher.HTTPKeepAlive
 	origThreshold := Config.Fetcher.HTTPKeepAliveThreshold
 	origSimul := Config.Fetcher.NumSimultaneousFetchers
@@ -1725,7 +1728,7 @@ func TestKeepAliveThreshold(t *testing.T) {
 	}
 }
 
-func TestMaxPathLength(t *testing.T) {
+func TestFetMaxPathLength(t *testing.T) {
 	orig := Config.Fetcher.MaxPathLength
 	defer func() {
 		Config.Fetcher.MaxPathLength = orig
@@ -1775,7 +1778,7 @@ func TestMaxPathLength(t *testing.T) {
 	}
 }
 
-func TestParseHttpEquiv(t *testing.T) {
+func TestFetParseHttpEquiv(t *testing.T) {
 	const html string = `<!DOCTYPE html>
 <html>
 <head>
@@ -1813,7 +1816,7 @@ Some text here.
 	}
 }
 
-func TestBugTrn210(t *testing.T) {
+func TestFetBugTrn210(t *testing.T) {
 	tests := TestSpec{
 		hasParsedLinks: false,
 		hosts: []DomainSpec{
