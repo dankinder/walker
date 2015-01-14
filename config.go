@@ -64,12 +64,13 @@ type ConfigStruct struct {
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
-		MaxLinksPerSegment       int     `yaml:"num_links_per_segment"`
-		RefreshPercentage        float64 `yaml:"refresh_percentage"`
-		NumConcurrentDomains     int     `yaml:"num_concurrent_domains"`
-		MinLinkRefreshTime       string  `yaml:"min_link_refresh_time"`
-		DispatchInterval         string  `yaml:"dispatch_interval"`
-		CorrectLinkNormalization bool    `yaml:"correct_link_normalization"`
+		MaxLinksPerSegment         int     `yaml:"num_links_per_segment"`
+		RefreshPercentage          float64 `yaml:"refresh_percentage"`
+		NumConcurrentDomains       int     `yaml:"num_concurrent_domains"`
+		MinLinkRefreshTime         string  `yaml:"min_link_refresh_time"`
+		DispatchInterval           string  `yaml:"dispatch_interval"`
+		CorrectLinkNormalization   bool    `yaml:"correct_link_normalization"`
+		EmptyDispatchRetryInterval string  `yaml:"empty_dispatch_retry_interval"`
 	} `yaml:"dispatcher"`
 
 	Cassandra struct {
@@ -149,6 +150,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
 	Config.Dispatcher.DispatchInterval = "10s"
 	Config.Dispatcher.CorrectLinkNormalization = false
+	Config.Dispatcher.EmptyDispatchRetryInterval = "0s"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
@@ -210,6 +212,10 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(dis.DispatchInterval)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.DispatchInterval failed to parse: %v", err))
+	}
+	_, err = time.ParseDuration(dis.EmptyDispatchRetryInterval)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.EmptyDispatchRetryInterval failed to parse: %v", err))
 	}
 
 	fet := &Config.Fetcher
