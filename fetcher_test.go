@@ -1374,6 +1374,38 @@ func TestFnvFingerprint(t *testing.T) {
 	}
 }
 
+func TestTagsIgnoredInPageTextFingerprint(t *testing.T) {
+	html := `<!DOCTYPE html><html><head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Bit of content</title></head>
+<div>Real text here</div>
+<script type="text/javascript">this = stuff.shouldBeIgnored()</script>
+This is okay
+<style>
+h1 {so: should-this;}
+	<div>Even in a sub-tag</div>
+</style>
+</html>`
+	text := "Bit of content\n\nReal text here\n\nThis is okay"
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
+	}
+
+	results := runFetcher(tests, t)
+
+	f := fnv.New64()
+	f.Write([]byte(text))
+	expectedTextFP := int64(f.Sum64())
+
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		if expectedTextFP != fr.FnvTextFingerprint {
+			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvTextFingerprint, expectedTextFP)
+		}
+	}
+}
+
 func TestIfModifiedSince(t *testing.T) {
 	link := "http://a.com/page1.html"
 	lastCrawled := time.Now()

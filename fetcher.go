@@ -743,7 +743,6 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 		}
 	}
 
-	log4go.Debug("FNV fingerprinting page text:\n%s", p.Text)
 	fnv := fnv.New64()
 	fnv.Write(p.Text)
 	fr.FnvTextFingerprint = int64(fnv.Sum64())

@@ -46,6 +46,9 @@ func (p *HTMLParser) Parse(body []byte) {
 	}
 	tokenizer := html.NewTokenizer(utf8Reader)
 
+	// Maintains the tag names as we hit open tags. Ex. so we can check "are we
+	// currently inside a <script> tag block"
+	parentTags := map[string]int{}
 	tags := getIncludedTags()
 
 	for {
@@ -57,7 +60,13 @@ func (p *HTMLParser) Parse(body []byte) {
 			return
 
 		case html.TextToken:
-			//TODO: do not store text from script/style tags
+			// Do not store text from inside script/style tags
+			_, inScriptTag := parentTags["script"]
+			_, inStyleTag := parentTags["style"]
+			if inScriptTag || inStyleTag {
+				continue
+			}
+
 			txt := bytes.TrimSpace(tokenizer.Text())
 			if len(txt) > 0 {
 				if len(p.Text) > 0 {
@@ -69,6 +78,14 @@ func (p *HTMLParser) Parse(body []byte) {
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tagNameB, hasAttrs := tokenizer.TagName()
 			tagName := string(tagNameB)
+			if tokenType == html.StartTagToken {
+				num, ok := parentTags[tagName]
+				if ok {
+					parentTags[tagName] = num + 1
+				} else {
+					parentTags[tagName] = 1
+				}
+			}
 			if hasAttrs && tags[tagName] {
 				switch tagName {
 				case "a":
@@ -93,6 +110,20 @@ func (p *HTMLParser) Parse(body []byte) {
 					}
 
 				}
+			}
+
+		case html.EndTagToken:
+			tagNameB, _ := tokenizer.TagName()
+			tagName := string(tagNameB)
+			num, ok := parentTags[tagName]
+
+			if !ok {
+				log4go.Fine("Page seems to have more end tags than start tags, hit extra %s tag",
+					tokenizer.Raw())
+			} else if num > 1 {
+				parentTags[tagName] = num - 1
+			} else {
+				delete(parentTags, tagName)
 			}
 		}
 	}
