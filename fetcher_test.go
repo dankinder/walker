@@ -364,6 +364,7 @@ func TestUrlParsing(t *testing.T) {
 		}
 	}
 }
+
 func TestBasicNoRobots(t *testing.T) {
 	const html_body string = `<!DOCTYPE html>
 <html>
@@ -1325,19 +1326,28 @@ func TestFnvFingerprint(t *testing.T) {
 	Roses are red, violets are blue, golang is the bomb, aint it so true!
 </div>
 </html>`
+	text := "No Links\n\nRoses are red, violets are blue, golang is the bomb, aint it so true!"
+
 	tests := TestSpec{
 		hasParsedLinks: true,
 		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, t)
+	type expectedFP struct {
+		fp    int64
+		fpTxt int64
+	}
 
-	fnv := fnv.New64()
-	fnv.Write([]byte(html))
-	fp := int64(fnv.Sum64())
+	fnv1 := fnv.New64()
+	fnv1.Write([]byte(html))
+	fp := int64(fnv1.Sum64())
+	fnv2 := fnv.New64()
+	fnv2.Write([]byte(text))
+	fpTxt := int64(fnv2.Sum64())
 
-	expectedFps := map[string]int64{
-		"/page1.html": fp,
+	expectedFps := map[string]expectedFP{
+		"/page1.html": expectedFP{fp: fp, fpTxt: fpTxt},
 	}
 
 	for _, fr := range results.dsStoreURLFetchResultsCalls() {
@@ -1348,8 +1358,12 @@ func TestFnvFingerprint(t *testing.T) {
 			continue
 		}
 
-		if expFp != fr.FnvFingerprint {
-			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvFingerprint, expFp)
+		if expFp.fp != fr.FnvFingerprint {
+			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvFingerprint, expFp.fp)
+		}
+
+		if expFp.fpTxt != fr.FnvTextFingerprint {
+			t.Errorf("Text fingerprint mismatch, got %x, expected %x", fr.FnvTextFingerprint, expFp.fp)
 		}
 
 		delete(expectedFps, path)

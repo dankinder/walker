@@ -12,12 +12,16 @@ import (
 )
 
 //TODO(dk): it would be great to move the parser out to it's own package, make
-//it easier to test independently and plug in non-HTML parsers.
+//it easier to test independently and plug in non-HTML parsers. If we do make
+//this more generic (with an interface) we may want Parse to take a io.Reader
+//instead of []byte.
 
 // HTMLParser simply parses html passed from the fetcher. A new struct is
 // intended to have Parse() called on it, which will populate it's member
 // variables for reading.
 type HTMLParser struct {
+	// A concatenation of all text, excluding content from script/style tags
+	Text []byte
 	// A list of links found on the parsed page
 	Links []*URL
 	// true if <meta name="ROBOTS" content="noindex"> was found
@@ -51,6 +55,17 @@ func (p *HTMLParser) Parse(body []byte) {
 			//TODO: should use tokenizer.Err() to see if this is io.EOF
 			//      (meaning success) or an actual error
 			return
+
+		case html.TextToken:
+			//TODO: do not store text from script/style tags
+			txt := bytes.TrimSpace(tokenizer.Text())
+			if len(txt) > 0 {
+				if len(p.Text) > 0 {
+					p.Text = append(p.Text, []byte("\n\n")...)
+				}
+				p.Text = append(p.Text, txt...)
+			}
+
 		case html.StartTagToken, html.SelfClosingTagToken:
 			tagNameB, hasAttrs := tokenizer.TagName()
 			tagName := string(tagNameB)

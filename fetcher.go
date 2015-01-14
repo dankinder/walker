@@ -76,8 +76,13 @@ type FetchResults struct {
 	// The Content-Type of the fetched page.
 	MimeType string
 
-	// Fingerprint computed with fnv algorithm (see hash/fnv in standard library)
+	// Fingerprint of the reponse body computed with fnv algorithm (see
+	// hash/fnv in standard library)
 	FnvFingerprint int64
+
+	// Fingerprint of the text parsed out of the response body, also computed
+	// with fnv
+	FnvTextFingerprint int64
 }
 
 // FetchManager configures and runs the crawl.
@@ -737,6 +742,11 @@ func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
 			f.fm.Datastore.StoreParsedURL(link, fr)
 		}
 	}
+
+	log4go.Debug("FNV fingerprinting page text:\n%s", p.Text)
+	fnv := fnv.New64()
+	fnv.Write(p.Text)
+	fr.FnvTextFingerprint = int64(fnv.Sum64())
 }
 
 // shouldStoreParsedLink returns true if the argument URL should

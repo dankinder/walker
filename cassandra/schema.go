@@ -56,11 +56,14 @@ CREATE TABLE {{.Keyspace}}.links (
 	-- fnv fingerprint, a hash of the page contents for identity comparison
 	fnv bigint,
 
+	-- fnv fingerprint of the text pulled from the body
+	fnv_txt bigint,
+
 	-- body stores the content for this link (if cassandra.store_response_body is true)
 	body text,
 
 	-- headers stores the http headers for this link (if cassandra.store_response_headers is true)
-	headers MAP<text,text>,
+	headers map<text,text>,
 
 	---- Items yet to be added to walker
 
