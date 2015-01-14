@@ -1083,3 +1083,79 @@ func TestDomainInfoStats(t *testing.T) {
 	}
 
 }
+
+func TestDispatchPruning(t *testing.T) {
+	orig := walker.Config.Dispatcher.EmptyDispatchRetryInterval
+	func() {
+		walker.Config.Dispatcher.EmptyDispatchRetryInterval = orig
+	}()
+	walker.Config.Dispatcher.EmptyDispatchRetryInterval = "15m"
+
+	db := GetTestDB() // runs between tests to reset the db
+	delT1, _ := time.ParseDuration("10m")
+	delT2, _ := time.ParseDuration("20m")
+	delT3, _ := time.ParseDuration("30m")
+	time0 := time.Now()
+	time1 := time0.Add(-delT1)
+	time2 := time0.Add(-delT2)
+	time3 := time0.Add(-delT3)
+
+	tests := []struct {
+		dom               string
+		lastDispatch      time.Time
+		lastEmptyDispatch time.Time
+	}{
+		// should dispatch last_dispatch > last_empty_dispatch
+		{"a.com", time0, time1},
+
+		// should NOT dispatch: last_dispatch < last_empty_dispatch
+		// && |now()-last_empty_dispatch| < EmptyDispatchRetryInterval
+		{"b.com", time2, time1},
+
+		// should dispatch: last_dispatch < last_empty_dispatch
+		// && |now()-last_empty_dispatch| > EmptyDispatchRetryInterval
+		{"c.com", time3, time2},
+	}
+
+	insertDomain := `INSERT INTO domain_info (dom, last_dispatch, last_empty_dispatch, dispatched) VALUES (?, ?, ?, false)`
+	insertLink := `INSERT INTO links (dom, subdom, path, proto, time) VALUES (?, ?, ?, ?, ?)`
+	for _, tst := range tests {
+		err := db.Query(insertDomain, tst.dom, tst.lastDispatch, tst.lastEmptyDispatch).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert domain: %v", err)
+		}
+		err = db.Query(insertLink, tst.dom, "", "/page1.html", "http", time0.AddDate(0, 0, -1)).Exec()
+		if err != nil {
+			t.Fatalf("Failed to insert link: %v", err)
+		}
+	}
+
+	d := &Dispatcher{}
+	go d.StartDispatcher()
+	time.Sleep(time.Millisecond * 300)
+	d.StopDispatcher()
+
+	itr := db.Query("SELECT dom FROM segments").Iter()
+	var domain string
+	got := map[string]bool{}
+	for itr.Scan(&domain) {
+		got[domain] = true
+	}
+
+	expected := map[string]bool{
+		"a.com": true,
+		"c.com": true,
+	}
+
+	for dom := range got {
+		if !expected[dom] {
+			t.Errorf("Didn't expect domain %q in segments table", dom)
+		}
+		delete(expected, dom)
+	}
+
+	for dom := range expected {
+		t.Errorf("Failed to find expected domain %q", dom)
+	}
+
+}
