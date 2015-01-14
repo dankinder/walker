@@ -11,6 +11,7 @@ import (
 	"code.google.com/p/log4go"
 	"github.com/gocql/gocql"
 	"github.com/iParadigms/walker"
+	"github.com/iParadigms/walker/semaphore"
 )
 
 // Dispatcher analyzes what we've crawled so far (generally on a per-domain
@@ -35,7 +36,8 @@ type Dispatcher struct {
 
 	// synchronizes generators that are currently working, so we can wait for
 	// them to finish before we start a new domain iteration
-	generatingWG sync.WaitGroup
+	// generatingWG sync.WaitGroup
+	generatingWG *semaphore.Semaphore
 
 	// do not dispatch any link that has been crawled within this amount of
 	// time; set by dispatcher.min_link_refresh_time config parameter
@@ -77,6 +79,7 @@ func (d *Dispatcher) StartDispatcher() error {
 	d.domains = make(chan string)
 	d.removedToks = make(map[gocql.UUID]bool)
 	d.activeToks = make(map[gocql.UUID]time.Time)
+	d.generatingWG = semaphore.New()
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
 	if err != nil {
@@ -307,6 +310,7 @@ func (d *Dispatcher) domainIterator() {
 			}
 
 			if !dispatched && !excluded {
+				d.generatingWG.Add(1)
 				d.domains <- domain
 			} else if !d.fetcherIsAlive(claimTok) {
 				if d.oneShotIterations == 0 {
@@ -356,7 +360,6 @@ func (d *Dispatcher) quitSignaled() bool {
 
 func (d *Dispatcher) generateRoutine() {
 	for domain := range d.domains {
-		d.generatingWG.Add(1)
 		if err := d.generateSegment(domain); err != nil {
 			log4go.Error("error generating segment for %v: %v", domain, err)
 		}
