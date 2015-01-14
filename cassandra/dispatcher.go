@@ -35,7 +35,7 @@ type Dispatcher struct {
 
 	// synchronizes generators that are currently working, so we can wait for
 	// them to finish before we start a new domain iteration
-	generatingWG sync.WaitGroup
+	generatingLock sync.Mutex
 
 	// do not dispatch any link that has been crawled within this amount of
 	// time; set by dispatcher.min_link_refresh_time config parameter
@@ -312,7 +312,10 @@ func (d *Dispatcher) domainIterator() {
 		if err := domainiter.Close(); err != nil {
 			log4go.Error("Error iterating domains from domain_info: %v", err)
 		}
-		d.generatingWG.Wait()
+
+		// Syncronize with generateRoutine()
+		d.generatingLock.Lock()
+		d.generatingLock.Unlock()
 
 		// Check for quit signal right away, otherwise if there are no domains
 		// to claim and the dispatchInterval is 0, then the dispatcher will
@@ -348,11 +351,11 @@ func (d *Dispatcher) quitSignaled() bool {
 
 func (d *Dispatcher) generateRoutine() {
 	for domain := range d.domains {
-		d.generatingWG.Add(1)
+		d.generatingLock.Lock()
 		if err := d.generateSegment(domain); err != nil {
 			log4go.Error("error generating segment for %v: %v", domain, err)
 		}
-		d.generatingWG.Done()
+		d.generatingLock.Unlock()
 	}
 	log4go.Debug("Finishing generateRoutine")
 }
