@@ -117,9 +117,9 @@ type FetchManager struct {
 	keepAliveQuit chan struct{}
 
 	// These variables explicitly synchornized. See started() and fetchers()
-	mu        sync.Mutex
-	_started  bool
-	_fetchers []*fetcher
+	sharedVarMutex sync.Mutex
+	_started       bool
+	_fetchers      []*fetcher
 
 	// If this flag is set, oneShot is set on each child fetcher
 	oneShot bool
@@ -320,26 +320,26 @@ func (fm *FetchManager) Stop() {
 }
 
 func (fm *FetchManager) started() bool {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
+	fm.sharedVarMutex.Lock()
+	defer fm.sharedVarMutex.Unlock()
 	return fm._started
 }
 
 func (fm *FetchManager) setStarted(started bool) {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
+	fm.sharedVarMutex.Lock()
+	defer fm.sharedVarMutex.Unlock()
 	fm._started = started
 }
 
 func (fm *FetchManager) fetchers() []*fetcher {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
+	fm.sharedVarMutex.Lock()
+	defer fm.sharedVarMutex.Unlock()
 	return fm._fetchers
 }
 
 func (fm *FetchManager) setFetchers(fetchers []*fetcher) {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
+	fm.sharedVarMutex.Lock()
+	defer fm.sharedVarMutex.Unlock()
 	fm._fetchers = fetchers
 }
 
