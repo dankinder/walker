@@ -404,43 +404,6 @@ func (c *cell) equivalent(other *cell) bool {
 		c.proto == other.proto
 }
 
-//
-// PriorityURL is a heap of URLs, where the next element Pop'ed off the list
-// points to the oldest (as measured by LastCrawled) element in the list. This
-// class is designed to be used with the container/heap package. This type is
-// currently only used in generateSegments
-//
-type PriorityURL []*walker.URL
-
-// Returns the length of this PriorityURL
-func (pq PriorityURL) Len() int {
-	return len(pq)
-}
-
-// Return logical less-than between two items in this PriorityURL
-func (pq PriorityURL) Less(i, j int) bool {
-	return pq[i].LastCrawled.Before(pq[j].LastCrawled)
-}
-
-// Swap two items in this PriorityURL
-func (pq PriorityURL) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-}
-
-// Push an item onto this PriorityURL
-func (pq *PriorityURL) Push(x interface{}) {
-	*pq = append(*pq, x.(*walker.URL))
-}
-
-// Pop an item onto this PriorityURL
-func (pq *PriorityURL) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	x := old[n-1]
-	*pq = old[0 : n-1]
-	return x
-}
-
 // createInsertAllColumns produces an insert statement that will usable to clone a CQL row. Arguments are:
 //   (a) the table that the cloned rows are coming from
 //   (b) An iterator that points to the set of rows the user plans to copy
@@ -569,21 +532,10 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 // and inserts the domain into domains_to_crawl (assuming a segment is ready to
 // go)
 func (d *Dispatcher) generateSegment(domain string) error {
-	//
-	// If domain is empty, return early
-	//
-	var lastDispatch, lastEmptyDispatch time.Time
-	err := d.db.Query("SELECT last_dispatch, last_empty_dispatch FROM domain_info WHERE dom = ?",
-		domain).Scan(&lastDispatch, &lastEmptyDispatch)
-	if err != nil {
-		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", domain, err)
-		return err
-	}
-	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
+	if d.dispatchedEmptyRecently(domain) {
 		log4go.Debug("generateSegment pruned dispatch of domain %v", domain)
 		return nil
 	}
-
 	log4go.Info("Generating a crawl segment for %v", domain)
 
 	//
@@ -758,7 +710,7 @@ func (d *Dispatcher) generateSegment(domain string) error {
 								   		%s = ?
 								   WHERE dom = ?`, dispatchFieldName)
 
-	err = d.db.Query(updateQuery, dispatched, linksCount, uncrawledLinksCount, len(links), dispatchStamp,
+	err := d.db.Query(updateQuery, dispatched, linksCount, uncrawledLinksCount, len(links), dispatchStamp,
 		domain).Exec()
 	if err != nil {
 		return fmt.Errorf("error inserting %v to domain_info: %v", domain, err)
@@ -766,4 +718,22 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	log4go.Info("Generated segment for %v (%v links)", domain, len(links))
 
 	return nil
+}
+
+// dispatchedEmptyRecently returns true if this given domain was dispatched
+// empty (meaning no links were chosen to be crawled so no segment was
+// generated) within the past dispatch_retry_interval (see walker.yaml). This
+// indicates that should not bother trying to dispatch it again yet.
+func (d *Dispatcher) dispatchedEmptyRecently(domain string) bool {
+	var lastDispatch, lastEmptyDispatch time.Time
+	err := d.db.Query("SELECT last_dispatch, last_empty_dispatch FROM domain_info WHERE dom = ?",
+		domain).Scan(&lastDispatch, &lastEmptyDispatch)
+	if err != nil {
+		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", domain, err)
+		return true
+	}
+	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
+		return true
+	}
+	return false
 }
