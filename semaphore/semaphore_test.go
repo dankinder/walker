@@ -52,7 +52,7 @@ func TestSemaphore(t *testing.T) {
 	}
 
 	// wait for allGood
-	duration = time.Millisecond * 100
+	duration := time.Millisecond * 100
 	select {
 	case <-allDone:
 	case <-time.After(duration):
