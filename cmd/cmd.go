@@ -285,7 +285,10 @@ func init() {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &cassandra.Dispatcher{}
+				commander.Dispatcher, err = cassandra.NewDispatcher()
+				if err != nil {
+					panic(err)
+				}
 			}
 
 			if commander.Handler == nil {
@@ -336,7 +339,10 @@ func init() {
 					fatalf("Failed creating Cassandra datastore: %v", err)
 				}
 				commander.Datastore = ds
-				commander.Dispatcher = &cassandra.Dispatcher{}
+				commander.Dispatcher, err = cassandra.NewDispatcher()
+				if err != nil {
+					panic(err)
+				}
 			}
 
 			if commander.Handler == nil {
@@ -365,7 +371,11 @@ func init() {
 			initCommand()
 
 			if commander.Dispatcher == nil {
-				commander.Dispatcher = &cassandra.Dispatcher{}
+				d, err := cassandra.NewDispatcher()
+				if err != nil {
+					panic(err)
+				}
+				commander.Dispatcher = d
 			}
 
 			go func() {

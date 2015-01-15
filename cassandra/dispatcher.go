@@ -23,6 +23,8 @@ import (
 // fetchmanager. Fetchers and dispatchers claim domains in Cassandra, so the
 // dispatcher can operate on the domains not currently being crawled (and vice
 // versa).
+//
+// Always create a Dispatcher using NewDispatcher()
 type Dispatcher struct {
 	cf *gocql.ClusterConfig
 	db *gocql.Session
@@ -32,11 +34,10 @@ type Dispatcher struct {
 
 	// synchronizes when all generator routines have exited, so
 	// `StopDispatcher()` can wait until all processing is done
-	finishWG sync.WaitGroup
+	finishWG *semaphore.Semaphore
 
 	// synchronizes generators that are currently working, so we can wait for
 	// them to finish before we start a new domain iteration
-	// generatingWG sync.WaitGroup
 	generatingWG *semaphore.Semaphore
 
 	// do not dispatch any link that has been crawled within this amount of
@@ -65,20 +66,21 @@ type Dispatcher struct {
 	emptyDispatchRetryInterval time.Duration
 }
 
-// StartDispatcher starts the dispatcher
-func (d *Dispatcher) StartDispatcher() error {
-	log4go.Info("Starting CassandraDispatcher")
+func NewDispatcher() (*Dispatcher, error) {
+	d := &Dispatcher{}
+
 	d.cf = GetConfig()
 	var err error
 	d.db, err = d.cf.CreateSession()
 	if err != nil {
-		return fmt.Errorf("Failed to create cassandra session: %v", err)
+		return nil, fmt.Errorf("Failed to create cassandra session: %v", err)
 	}
 
 	d.quit = make(chan struct{})
 	d.domains = make(chan string)
 	d.removedToks = make(map[gocql.UUID]bool)
 	d.activeToks = make(map[gocql.UUID]time.Time)
+	d.finishWG = semaphore.New()
 	d.generatingWG = semaphore.New()
 
 	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
@@ -100,6 +102,12 @@ func (d *Dispatcher) StartDispatcher() error {
 	if err != nil {
 		panic(err)
 	}
+
+	return d, nil
+}
+
+func (d *Dispatcher) StartDispatcher() error {
+	log4go.Info("Starting CassandraDispatcher")
 
 	for i := 0; i < walker.Config.Dispatcher.NumConcurrentDomains; i++ {
 		d.finishWG.Add(1)
@@ -129,7 +137,6 @@ func (d *Dispatcher) oneShot(iterations int) error {
 		d.StopDispatcher()
 		return err
 	}
-
 	return d.StopDispatcher()
 }
 
@@ -144,10 +151,7 @@ func (d *Dispatcher) StopDispatcher() error {
 
 func (d *Dispatcher) pollMaxPriority() {
 	// Set the loop interval
-	loopPeriod, err := time.ParseDuration("60s")
-	if err != nil {
-		panic(err)
-	}
+	loopPeriod = 60 * time.Second
 
 	dispatch_interval, err := time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
 	if err != nil {
@@ -324,6 +328,11 @@ func (d *Dispatcher) domainIterator() {
 		if err := domainiter.Close(); err != nil {
 			log4go.Error("Error iterating domains from domain_info: %v", err)
 		}
+
+		// We wait here until all the generateRoutine's finish. The reason is that
+		// the domain_info table is modified in those routines, and we want to make
+		// sure they've done all they're work (particularly setting the dispatched field)
+		// before we start a new iteration.
 		d.generatingWG.Wait()
 
 		// Check for quit signal right away, otherwise if there are no domains
