@@ -63,8 +63,8 @@ type ConfigStruct struct {
 		MaxPathLength            int      `yaml:"max_path_length"`
 
 		UrlNormalizations struct {
-			RemoveDotSegments      bool `yaml:"remove dot segments"`
-			RemoveDuplicateSlashes bool `yaml:"remove duplicate slashes"`
+			RemoveDotSegments      bool `yaml:"remove_dot_segments"`
+			RemoveDuplicateSlashes bool `yaml:"remove_duplicate_slashes"`
 		} `yaml:"url_normalizations"`
 	} `yaml:"fetcher"`
 

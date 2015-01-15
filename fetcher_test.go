@@ -351,6 +351,16 @@ func TestUrlParsing(t *testing.T) {
 			input:  "http://a.com:8080/page1.com",
 			expect: "http://a.com:8080/page1.com",
 		},
+		{
+			tag:    "RemoveDotSegments",
+			input:  "http://a.com:8080/foo/./bar/../baz/page1.com",
+			expect: "http://a.com:8080/foo/baz/page1.com",
+		},
+		{
+			tag:    "RemoveTrailingSlash",
+			input:  "http://a.com:8080/foo//bar///",
+			expect: "http://a.com:8080/foo/bar/",
+		},
 	}
 
 	for _, tst := range tests {
@@ -364,6 +374,46 @@ func TestUrlParsing(t *testing.T) {
 		}
 	}
 }
+
+func TestURLParseConfig(t *testing.T) {
+	orig := Config.Fetcher.UrlNormalizations
+	defer func() {
+		Config.Fetcher.UrlNormalizations = orig
+		PostConfigHooks()
+	}()
+	Config.Fetcher.UrlNormalizations.RemoveDotSegments = false
+	Config.Fetcher.UrlNormalizations.RemoveDuplicateSlashes = false
+	PostConfigHooks()
+
+	tests := []struct {
+		tag    string
+		input  string
+		expect string
+	}{
+		{
+			tag:    "RemoveDotSegments",
+			input:  "http://a.com:8080/foo/./bar/../baz/page1.com",
+			expect: "http://a.com:8080/foo/./bar/../baz/page1.com",
+		},
+		{
+			tag:    "RemoveTrailingSlash",
+			input:  "http://a.com:8080/foo//bar///",
+			expect: "http://a.com:8080/foo//bar///",
+		},
+	}
+
+	for _, tst := range tests {
+		u, err := ParseAndNormalizeURL(tst.input)
+		if err != nil {
+			t.Fatalf("For tag %q ParseURL failed %v", tst.tag, err)
+		}
+		got := u.String()
+		if got != tst.expect {
+			t.Errorf("For tag %q link mismatch got %q, expected %q", tst.tag, got, tst.expect)
+		}
+	}
+}
+
 func TestBasicNoRobots(t *testing.T) {
 	const html_body string = `<!DOCTYPE html>
 <html>

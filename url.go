@@ -79,10 +79,10 @@ func setupNormalizeURL() error {
 
 	normalizationFlags = purell.FlagsSafe | purell.FlagRemoveFragment
 	if Config.Fetcher.UrlNormalizations.RemoveDotSegments {
-		normalizationFlags = normalizationFlags | purell.RemoveDotSegments
+		normalizationFlags = normalizationFlags | purell.FlagRemoveDotSegments
 	}
 	if Config.Fetcher.UrlNormalizations.RemoveDuplicateSlashes {
-		normalizationFlags = normalizationFlags | purell.RemoveTrailingSlash
+		normalizationFlags = normalizationFlags | purell.FlagRemoveDuplicateSlashes
 	}
 
 	return nil
