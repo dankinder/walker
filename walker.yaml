@@ -110,6 +110,12 @@ fetcher:
     # ignore URI path length.
     max_path_length: 2048
 
+    ## walker always applies all safe URL normalizations to each URL. The normalizations below are potentially unsafe,
+    ## but generally safe. Set the value of these options to false to turn the normalization off.
+    url_normalizations:
+        remove dot segments: true
+        remove duplicate slashes: true
+
 # Dispatcher configuration
 dispatcher:
     # maximum number of links added to segments table per dispatch (must be >0)

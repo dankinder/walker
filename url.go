@@ -45,6 +45,7 @@ func CreateURL(domain, subdomain, path, protocol string, lastcrawled time.Time) 
 
 var parseURLPathStrip *regexp.Regexp
 var parseURLPurgeMap map[string]bool
+var normalizationFlags purell.NormalizationFlags
 
 func setupNormalizeURL() error {
 	if len(Config.Fetcher.PurgeSidList) == 0 {
@@ -75,6 +76,15 @@ func setupNormalizeURL() error {
 	for _, p := range Config.Fetcher.PurgeSidList {
 		parseURLPurgeMap[strings.ToLower(p)] = true
 	}
+
+	normalizationFlags = purell.FlagsSafe | purell.FlagRemoveFragment
+	if Config.Fetcher.UrlNormalizations.RemoveDotSegments {
+		normalizationFlags = normalizationFlags | purell.RemoveDotSegments
+	}
+	if Config.Fetcher.UrlNormalizations.RemoveDuplicateSlashes {
+		normalizationFlags = normalizationFlags | purell.RemoveTrailingSlash
+	}
+
 	return nil
 }
 
@@ -106,7 +116,7 @@ func (u *URL) Normalize() {
 
 	// Apply standard normalization filters to url. This call will
 	// modify the url in place.
-	purell.NormalizeURL(rawURL, purell.FlagsSafe|purell.FlagRemoveFragment)
+	purell.NormalizeURL(rawURL, normalizationFlags)
 
 	// Filter the path to catch embedded session ids
 	if parseURLPathStrip != nil {

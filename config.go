@@ -61,15 +61,21 @@ type ConfigStruct struct {
 		HTTPKeepAlive            string   `yaml:"http_keep_alive"`
 		HTTPKeepAliveThreshold   string   `yaml:"http_keep_alive_threshold"`
 		MaxPathLength            int      `yaml:"max_path_length"`
+
+		UrlNormalizations struct {
+			RemoveDotSegments      bool `yaml:"remove dot segments"`
+			RemoveDuplicateSlashes bool `yaml:"remove duplicate slashes"`
+		} `yaml:"url_normalizations"`
 	} `yaml:"fetcher"`
 
 	Dispatcher struct {
-		MaxLinksPerSegment       int     `yaml:"num_links_per_segment"`
-		RefreshPercentage        float64 `yaml:"refresh_percentage"`
-		NumConcurrentDomains     int     `yaml:"num_concurrent_domains"`
-		MinLinkRefreshTime       string  `yaml:"min_link_refresh_time"`
-		DispatchInterval         string  `yaml:"dispatch_interval"`
-		CorrectLinkNormalization bool    `yaml:"correct_link_normalization"`
+		MaxLinksPerSegment         int     `yaml:"num_links_per_segment"`
+		RefreshPercentage          float64 `yaml:"refresh_percentage"`
+		NumConcurrentDomains       int     `yaml:"num_concurrent_domains"`
+		MinLinkRefreshTime         string  `yaml:"min_link_refresh_time"`
+		DispatchInterval           string  `yaml:"dispatch_interval"`
+		CorrectLinkNormalization   bool    `yaml:"correct_link_normalization"`
+		EmptyDispatchRetryInterval string  `yaml:"empty_dispatch_retry_interval"`
 	} `yaml:"dispatcher"`
 
 	Cassandra struct {
@@ -142,6 +148,8 @@ func SetDefaultConfig() {
 	Config.Fetcher.HTTPKeepAlive = "always"
 	Config.Fetcher.HTTPKeepAliveThreshold = "15s"
 	Config.Fetcher.MaxPathLength = 2048
+	Config.Fetcher.UrlNormalizations.RemoveDotSegments = true
+	Config.Fetcher.UrlNormalizations.RemoveDuplicateSlashes = true
 
 	Config.Dispatcher.MaxLinksPerSegment = 500
 	Config.Dispatcher.RefreshPercentage = 25
@@ -149,6 +157,7 @@ func SetDefaultConfig() {
 	Config.Dispatcher.MinLinkRefreshTime = "0s"
 	Config.Dispatcher.DispatchInterval = "10s"
 	Config.Dispatcher.CorrectLinkNormalization = false
+	Config.Dispatcher.EmptyDispatchRetryInterval = "0s"
 
 	Config.Cassandra.Hosts = []string{"localhost"}
 	Config.Cassandra.Keyspace = "walker"
@@ -210,6 +219,10 @@ func assertConfigInvariants() error {
 	_, err = time.ParseDuration(dis.DispatchInterval)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("Dispatcher.DispatchInterval failed to parse: %v", err))
+	}
+	_, err = time.ParseDuration(dis.EmptyDispatchRetryInterval)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("Dispatcher.EmptyDispatchRetryInterval failed to parse: %v", err))
 	}
 
 	fet := &Config.Fetcher
