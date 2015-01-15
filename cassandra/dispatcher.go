@@ -151,7 +151,7 @@ func (d *Dispatcher) StopDispatcher() error {
 
 func (d *Dispatcher) pollMaxPriority() {
 	// Set the loop interval
-	loopPeriod = 60 * time.Second
+	loopPeriod := 60 * time.Second
 
 	dispatch_interval, err := time.ParseDuration(walker.Config.Dispatcher.DispatchInterval)
 	if err != nil {
