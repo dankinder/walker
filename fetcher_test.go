@@ -733,6 +733,9 @@ func TestBasicLinkTest(t *testing.T) {
 	}()
 	Config.Fetcher.AcceptFormats = []string{"text/html", "text/plain"}
 
+	Config.Fetcher.UrlNormalizations.RemoveDotSegments = true
+	PostConfigHooks()
+
 	const html_test_links string = `<!DOCTYPE html>
 <html>
 <head>
