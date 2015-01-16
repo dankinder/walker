@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
-# set the shell to die for any command that returns non-zero
+## set the shell to die for any command that returns non-zero
 set -e 
 
 ## Usage info
 show_help() {
 cat << EOF
-Usage: ${0##*/} [-hk] <HOST> <PORT>
+Usage: schema_diff.sh [-hk] <HOST> <PORT>
 Description:
     Produce a diff of schema in THIS walker repo, and a running cassandra node. Note that the local schema
     is on the left in the diff, and the cassandra node schema is on the right.
-DIAGNOSTIC NOTES:
+Diagnostic Notes:
     * Must run out of the main walker directory.
     * cqlsh must be in your current path.
 Example:
@@ -25,6 +25,7 @@ Options:
 EOF
 }
 
+## echo help and error message to stderr
 die(){
     show_help >&2
     echo "ERROR:" >&2
