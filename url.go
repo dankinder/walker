@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"code.google.com/p/go.net/publicsuffix"
-	"code.google.com/p/log4go"
 	"github.com/PuerkitoBio/purell"
 )
 
@@ -103,14 +102,11 @@ func ParseURL(ref string) (*URL, error) {
 // ParseAndNormalizeURL will walker.ParseURL the argument string,
 // and then Normalize the resulting URL.
 func ParseAndNormalizeURL(ref string) (*URL, error) {
-	log4go.Error("PETE input ref %v", ref)
 	u, err := ParseURL(ref)
 	if err != nil {
 		return u, err
 	}
-	log4go.Error("PETE output url %v", u.String())
 	u.Normalize()
-	log4go.Error("PETE post normal url %v", u.String())
 	return u, nil
 }
 
