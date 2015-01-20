@@ -228,6 +228,13 @@ CREATE TABLE {{.Keyspace}}.domain_info (
 	-- domain. See NOTE over tot_links above.
 	queued_links int,
 
+
+	-- The last time this domain was dispatched
+	last_dispatch timestamp,
+
+	-- The last time the dispatcher saw that this domain had no links to dispatch
+	last_empty_dispatch timestamp,
+
 	---- Items yet to be added to walker
 
 	-- If not null, identifies another domain as a mirror of this one
