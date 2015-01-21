@@ -364,6 +364,7 @@ func TestUrlParsing(t *testing.T) {
 		}
 	}
 }
+
 func TestBasicNoRobots(t *testing.T) {
 	const html_body string = `<!DOCTYPE html>
 <html>
@@ -1325,19 +1326,28 @@ func TestFnvFingerprint(t *testing.T) {
 	Roses are red, violets are blue, golang is the bomb, aint it so true!
 </div>
 </html>`
+	text := "No Links\n\nRoses are red, violets are blue, golang is the bomb, aint it so true!"
+
 	tests := TestSpec{
 		hasParsedLinks: true,
 		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
 	}
 
 	results := runFetcher(tests, t)
+	type expectedFP struct {
+		fp    int64
+		fpTxt int64
+	}
 
-	fnv := fnv.New64()
-	fnv.Write([]byte(html))
-	fp := int64(fnv.Sum64())
+	fnv1 := fnv.New64()
+	fnv1.Write([]byte(html))
+	fp := int64(fnv1.Sum64())
+	fnv2 := fnv.New64()
+	fnv2.Write([]byte(text))
+	fpTxt := int64(fnv2.Sum64())
 
-	expectedFps := map[string]int64{
-		"/page1.html": fp,
+	expectedFps := map[string]expectedFP{
+		"/page1.html": expectedFP{fp: fp, fpTxt: fpTxt},
 	}
 
 	for _, fr := range results.dsStoreURLFetchResultsCalls() {
@@ -1348,8 +1358,12 @@ func TestFnvFingerprint(t *testing.T) {
 			continue
 		}
 
-		if expFp != fr.FnvFingerprint {
-			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvFingerprint, expFp)
+		if expFp.fp != fr.FnvFingerprint {
+			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvFingerprint, expFp.fp)
+		}
+
+		if expFp.fpTxt != fr.FnvTextFingerprint {
+			t.Errorf("Text fingerprint mismatch, got %x, expected %x", fr.FnvTextFingerprint, expFp.fp)
 		}
 
 		delete(expectedFps, path)
@@ -1357,6 +1371,38 @@ func TestFnvFingerprint(t *testing.T) {
 
 	for path := range expectedFps {
 		t.Errorf("Didn't find expected page %q in mock data store", path)
+	}
+}
+
+func TestTagsIgnoredInPageTextFingerprint(t *testing.T) {
+	html := `<!DOCTYPE html><html><head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Bit of content</title></head>
+<div>Real text here</div>
+<script type="text/javascript">this = stuff.shouldBeIgnored()</script>
+This is okay
+<style>
+h1 {so: should-this;}
+	<div>Even in a sub-tag</div>
+</style>
+</html>`
+	text := "Bit of content\n\nReal text here\n\nThis is okay"
+
+	tests := TestSpec{
+		hasParsedLinks: true,
+		hosts:          singleLinkDomainSpecArr("http://a.com/page1.html", &MockResponse{Body: html}),
+	}
+
+	results := runFetcher(tests, t)
+
+	f := fnv.New64()
+	f.Write([]byte(text))
+	expectedTextFP := int64(f.Sum64())
+
+	for _, fr := range results.dsStoreURLFetchResultsCalls() {
+		if expectedTextFP != fr.FnvTextFingerprint {
+			t.Errorf("Fingerprint mismatch, got %x, expected %x", fr.FnvTextFingerprint, expectedTextFP)
+		}
 	}
 }
 

@@ -248,18 +248,19 @@ type StoreURLExpectation struct {
 // The results we expect in the database for various fields. Non-primary
 // keys are pointers so we can expect NULL for any of them
 type LinksExpectation struct {
-	Domain           string
-	Subdomain        string
-	Path             string
-	Protocol         string
-	CrawlTime        time.Time
-	FetchError       string
-	ExcludedByRobots bool
-	Status           int
-	MimeType         string
-	FnvFingerprint   uint64
-	Body             string
-	Headers          map[string]string
+	Domain             string
+	Subdomain          string
+	Path               string
+	Protocol           string
+	CrawlTime          time.Time
+	FetchError         string
+	ExcludedByRobots   bool
+	Status             int
+	MimeType           string
+	FnvFingerprint     uint64
+	FnvTextFingerprint uint64
+	Body               string
+	Headers            map[string]string
 }
 
 var StoreURLExpectations []StoreURLExpectation
@@ -276,17 +277,19 @@ func init() {
 						Host: "test.com",
 					},
 				},
-				MimeType:       "text/html; charset=ISO-8859-4",
-				FnvFingerprint: 1,
+				MimeType:           "text/html; charset=ISO-8859-4",
+				FnvFingerprint:     1,
+				FnvTextFingerprint: 10,
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Path:           "/page1.html",
-				Protocol:       "http",
-				CrawlTime:      time.Unix(0, 0),
-				Status:         200,
-				MimeType:       "text/html; charset=ISO-8859-4",
-				FnvFingerprint: 1,
+				Domain:             "test.com",
+				Path:               "/page1.html",
+				Protocol:           "http",
+				CrawlTime:          time.Unix(0, 0),
+				Status:             200,
+				MimeType:           "text/html; charset=ISO-8859-4",
+				FnvFingerprint:     1,
+				FnvTextFingerprint: 10,
 			},
 		},
 		StoreURLExpectation{
@@ -296,32 +299,36 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
-				MimeType:       "foo/bar",
-				FnvFingerprint: 2,
+				MimeType:           "foo/bar",
+				FnvFingerprint:     2,
+				FnvTextFingerprint: 20,
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Path:           "/page2.html?var1=abc&var2=def",
-				Protocol:       "http",
-				CrawlTime:      time.Unix(0, 0),
-				Status:         200,
-				MimeType:       "foo/bar",
-				FnvFingerprint: 2,
+				Domain:             "test.com",
+				Path:               "/page2.html?var1=abc&var2=def",
+				Protocol:           "http",
+				CrawlTime:          time.Unix(0, 0),
+				Status:             200,
+				MimeType:           "foo/bar",
+				FnvFingerprint:     2,
+				FnvTextFingerprint: 20,
 			},
 		},
 		StoreURLExpectation{
 			Input: &walker.FetchResults{
-				URL:              walker.MustParse("http://test.com/page3.html"),
-				ExcludedByRobots: true,
-				FnvFingerprint:   3,
+				URL:                walker.MustParse("http://test.com/page3.html"),
+				ExcludedByRobots:   true,
+				FnvFingerprint:     3,
+				FnvTextFingerprint: 30,
 			},
 			Expected: &LinksExpectation{
-				Domain:           "test.com",
-				Path:             "/page3.html",
-				Protocol:         "http",
-				CrawlTime:        time.Unix(0, 0),
-				ExcludedByRobots: true,
-				FnvFingerprint:   3,
+				Domain:             "test.com",
+				Path:               "/page3.html",
+				Protocol:           "http",
+				CrawlTime:          time.Unix(0, 0),
+				ExcludedByRobots:   true,
+				FnvFingerprint:     3,
+				FnvTextFingerprint: 30,
 			},
 		},
 		StoreURLExpectation{
@@ -331,15 +338,17 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
-				FnvFingerprint: 4,
+				FnvFingerprint:     4,
+				FnvTextFingerprint: 40,
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Path:           "/page4.html",
-				Protocol:       "http",
-				CrawlTime:      time.Unix(1234, 5678),
-				Status:         200,
-				FnvFingerprint: 4,
+				Domain:             "test.com",
+				Path:               "/page4.html",
+				Protocol:           "http",
+				CrawlTime:          time.Unix(1234, 5678),
+				Status:             200,
+				FnvFingerprint:     4,
+				FnvTextFingerprint: 40,
 			},
 		},
 		StoreURLExpectation{
@@ -349,15 +358,17 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
-				FnvFingerprint: 5,
+				FnvFingerprint:     5,
+				FnvTextFingerprint: 50,
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Path:           "/page5.html",
-				Protocol:       "https",
-				CrawlTime:      time.Unix(0, 0),
-				Status:         200,
-				FnvFingerprint: 5,
+				Domain:             "test.com",
+				Path:               "/page5.html",
+				Protocol:           "https",
+				CrawlTime:          time.Unix(0, 0),
+				Status:             200,
+				FnvFingerprint:     5,
+				FnvTextFingerprint: 50,
 			},
 		},
 		StoreURLExpectation{
@@ -367,16 +378,18 @@ func init() {
 				Response: &http.Response{
 					StatusCode: 200,
 				},
-				FnvFingerprint: 6,
+				FnvFingerprint:     6,
+				FnvTextFingerprint: 60,
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Subdomain:      "sub.dom1",
-				Path:           "/page5.html",
-				Protocol:       "https",
-				CrawlTime:      time.Unix(0, 0),
-				Status:         200,
-				FnvFingerprint: 6,
+				Domain:             "test.com",
+				Subdomain:          "sub.dom1",
+				Path:               "/page5.html",
+				Protocol:           "https",
+				CrawlTime:          time.Unix(0, 0),
+				Status:             200,
+				FnvFingerprint:     6,
+				FnvTextFingerprint: 60,
 			},
 		},
 
@@ -391,18 +404,20 @@ func init() {
 						"baz": []string{"click", "clack"},
 					},
 				},
-				FnvFingerprint: 6,
-				Body:           "The Body of the HTTP pull",
+				FnvFingerprint:     6,
+				FnvTextFingerprint: 60,
+				Body:               "The Body of the HTTP pull",
 			},
 			Expected: &LinksExpectation{
-				Domain:         "test.com",
-				Subdomain:      "sub.dom1",
-				Path:           "/page5.html",
-				Protocol:       "https",
-				CrawlTime:      time.Unix(0, 0),
-				Status:         200,
-				FnvFingerprint: 6,
-				Body:           "The Body of the HTTP pull",
+				Domain:             "test.com",
+				Subdomain:          "sub.dom1",
+				Path:               "/page5.html",
+				Protocol:           "https",
+				CrawlTime:          time.Unix(0, 0),
+				Status:             200,
+				FnvFingerprint:     6,
+				FnvTextFingerprint: 60,
+				Body:               "The Body of the HTTP pull",
 				Headers: map[string]string{
 					"foo": "bar",
 					"baz": "click\000clack",
@@ -432,7 +447,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 		actual := &LinksExpectation{}
 
 		err := db.Query(
-			`SELECT err, robot_ex, stat, mime, fnv, body, headers FROM links
+			`SELECT err, robot_ex, stat, mime, fnv, fnv_txt, body, headers FROM links
 			WHERE dom = ? AND subdom = ? AND path = ? AND proto = ?`, // AND time = ?`,
 			exp.Domain,
 			exp.Subdomain,
@@ -440,7 +455,7 @@ func TestStoreURLFetchResults(t *testing.T) {
 			exp.Protocol,
 			//exp.CrawlTime,
 		).Scan(&actual.FetchError, &actual.ExcludedByRobots, &actual.Status, &actual.MimeType, &actual.FnvFingerprint,
-			&actual.Body, &actual.Headers)
+			&actual.FnvTextFingerprint, &actual.Body, &actual.Headers)
 		if err != nil {
 			t.Errorf("Did not find row in links: %+v\nInput: %+v\nError: %v", exp, tcase.Input, err)
 		}
@@ -464,6 +479,10 @@ func TestStoreURLFetchResults(t *testing.T) {
 		if exp.FnvFingerprint != actual.FnvFingerprint {
 			t.Errorf("Expected FnvFingerprint: %v\nBut got: %v\nFor input: %+v",
 				exp.FnvFingerprint, actual.FnvFingerprint, tcase.Input)
+		}
+		if exp.FnvTextFingerprint != actual.FnvTextFingerprint {
+			t.Errorf("Expected FnvTextFingerprint: %v\nBut got: %v\nFor input: %+v",
+				exp.FnvTextFingerprint, actual.FnvTextFingerprint, tcase.Input)
 		}
 		if exp.Body != actual.Body {
 			t.Errorf("Expected Body: %v\nBut got: %v\nFor input: %+v",

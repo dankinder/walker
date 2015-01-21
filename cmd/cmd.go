@@ -221,15 +221,16 @@ var readLinkCommand = &cobra.Command{
 				}
 			}
 
-			printf("Url:            %v\n", linfo.URL)
-			printf("HttpStatus:     %v\n", linfo.Status)
-			printf("CrawlTime:      %v\n", linfo.CrawlTime)
-			printf("Error:          %v", estring)
-			printf("RobotsExcluded: %v\n", linfo.RobotsExcluded)
-			printf("RedirectedTo:   %v\n", linfo.RedirectedTo)
-			printf("GetNow:         %v\n", linfo.GetNow)
-			printf("Mime:           %v\n", linfo.Mime)
-			printf("FnvFingerprint: %v\n", linfo.FnvFingerprint)
+			printf("Url:                %v\n", linfo.URL)
+			printf("HttpStatus:         %v\n", linfo.Status)
+			printf("CrawlTime:          %v\n", linfo.CrawlTime)
+			printf("Error:              %v", estring)
+			printf("RobotsExcluded:     %v\n", linfo.RobotsExcluded)
+			printf("RedirectedTo:       %v\n", linfo.RedirectedTo)
+			printf("GetNow:             %v\n", linfo.GetNow)
+			printf("Mime:               %v\n", linfo.Mime)
+			printf("FnvFingerprint:     %v\n", linfo.FnvFingerprint)
+			printf("FnvTextFingerprint: %v\n", linfo.FnvTextFingerprint)
 			if linfo.Headers == nil {
 				printf("HEADERS:        <none>\n")
 			} else {

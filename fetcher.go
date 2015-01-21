@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"io"
 	"io/ioutil"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -75,8 +76,13 @@ type FetchResults struct {
 	// The Content-Type of the fetched page.
 	MimeType string
 
-	// Fingerprint computed with fnv algorithm (see hash/fnv in standard library)
+	// Fingerprint of the reponse body computed with fnv algorithm (see
+	// hash/fnv in standard library)
 	FnvFingerprint int64
+
+	// Fingerprint of the text parsed out of the response body, also computed
+	// with fnv
+	FnvTextFingerprint int64
 }
 
 // FetchManager configures and runs the crawl.
@@ -742,6 +748,34 @@ func (f *fetcher) fetch(u *URL) (*http.Response, []*URL, error) {
 	return res, redirectedFrom, nil
 }
 
+// parseLinks tries to parse the http response in the given FetchResults for
+// links and stores them in the datastore.
+func (f *fetcher) parseLinks(body []byte, fr *FetchResults) {
+	p := &HTMLParser{}
+	p.Parse(body)
+
+	if p.HasMetaNoIndex {
+		fr.MetaNoIndex = true
+		log4go.Fine("Page has noindex meta tag: %v", fr.URL)
+	}
+	if p.HasMetaNoFollow {
+		fr.MetaNoFollow = true
+		log4go.Fine("Page has nofollow meta tag: %v", fr.URL)
+	}
+
+	for _, link := range p.Links {
+		link.MakeAbsolute(fr.URL)
+		if f.shouldStoreParsedLink(link) {
+			log4go.Fine("Storing parsed link: %v", link)
+			f.fm.Datastore.StoreParsedURL(link, fr)
+		}
+	}
+
+	fnv := fnv.New64()
+	fnv.Write(p.Text)
+	fr.FnvTextFingerprint = int64(fnv.Sum64())
+}
+
 // shouldStoreParsedLink returns true if the argument URL should
 // be stored in datastore. The link can (currently) be rejected
 // because
@@ -815,5 +849,70 @@ func (f *fetcher) isHandleable(r *http.Response) bool {
 	}
 	ctype := strings.Join(r.Header["Content-Type"], ",")
 	log4go.Fine("URL (%v) did not match accepted content types, had: %v", r.Request.URL, ctype)
+	return false
+}
+
+// getMimeType attempts to get the mime type (i.e. "Content-Type") from the
+// response. Returns an empty string if unable to.
+func getMimeType(r *http.Response) string {
+	ctype, ctypeOk := r.Header["Content-Type"]
+	if ctypeOk && len(ctype) > 0 {
+		mediaType, _, err := mime.ParseMediaType(ctype[0])
+		if err != nil {
+			log4go.Debug("Failed to parse mime header %q: %v", ctype[0], err)
+		} else {
+			return mediaType
+		}
+	}
+	return ""
+}
+
+func isHTML(r *http.Response) bool {
+	if r == nil {
+		return false
+	}
+	for _, ct := range r.Header["Content-Type"] {
+		if strings.HasPrefix(ct, "text/html") {
+			return true
+		}
+	}
+	return false
+}
+
+var privateNetworks = []*net.IPNet{
+	parseCIDR("10.0.0.0/8"),
+	parseCIDR("192.168.0.0/16"),
+	parseCIDR("172.16.0.0/12"),
+	parseCIDR("127.0.0.0/8"),
+}
+
+// parseCIDR is a convenience for creating our static private IPNet ranges
+func parseCIDR(netstring string) *net.IPNet {
+	_, network, err := net.ParseCIDR(netstring)
+	if err != nil {
+		panic(err.Error())
+	}
+	return network
+}
+
+// isPrivateAddr determines whether the input address belongs to any of the
+// private networks specified in privateNetworkStrings. It returns an error
+// if the input string does not represent an IP address.
+func isPrivateAddr(addr string) bool {
+	// Remove the port number if there is one
+	if index := strings.LastIndex(addr, ":"); index != -1 {
+		addr = addr[:index]
+	}
+
+	thisIP := net.ParseIP(addr)
+	if thisIP == nil {
+		log4go.Error("Failed to parse as IP address: %v", addr)
+		return false
+	}
+	for _, network := range privateNetworks {
+		if network.Contains(thisIP) {
+			return true
+		}
+	}
 	return false
 }
