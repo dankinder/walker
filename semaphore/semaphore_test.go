@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+func TestNew(t *testing.T) {
+	semaphore := New()
+	if semaphore.count != 0 {
+		t.Fatalf("New semaphore would block!")
+	}
+}
+
+func TestAddIncrementsCount(t *testing.T) {
+	semaphore := New()
+	semaphore.Add(1)
+	if semaphore.count != 1 {
+		t.Fatalf("After Add(1) applied, found semaphore with count not equal to 1")
+	}
+}
+
+func TestDone(t *testing.T) {
+	semaphore := New()
+	semaphore.Add(1)
+	semaphore.Done()
+	if semaphore.count != 0 {
+		t.Fatalf("After Add(1), followed by Done(), count not returned to 0")
+	}
+}
+
 func TestReset(t *testing.T) {
 	semaphore := New()
 	semaphore.Add(100)
