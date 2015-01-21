@@ -21,7 +21,7 @@ Arguments:
 Options:
     -h: Display this help and exit
     -k: Write two schema files into this directory. One file is the schema for the local repo, called local.txt. And the
-        second files store the schema for the live cassandra source: it is called live.txt. 
+        second file stores the schema for the live cassandra source: it is called live.txt. 
 EOF
 }
 
