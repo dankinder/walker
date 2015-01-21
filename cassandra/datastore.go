@@ -363,6 +363,7 @@ func (ds *Datastore) StoreURLFetchResults(fr *walker.FetchResults) {
 		dbfield{"proto", url.Scheme},
 		dbfield{"time", fr.FetchTime},
 		dbfield{"fnv", fr.FnvFingerprint},
+		dbfield{"fnv_txt", fr.FnvTextFingerprint},
 	}
 
 	if fr.FetchError != nil {
@@ -891,15 +892,16 @@ func (ds *Datastore) ListLinkHistorical(u *walker.URL) ([]*LinkInfo, error) {
 
 		u, _ := walker.CreateURL(dom, sub, path, prot, crawlTime)
 		linfo := &LinkInfo{
-			URL:            u,
-			Status:         status,
-			Error:          getError,
-			CrawlTime:      crawlTime,
-			RobotsExcluded: robotsExcluded,
-			RedirectedTo:   redtoURL,
-			GetNow:         getnow,
-			Mime:           mime,
-			FnvFingerprint: fnvFP,
+			URL:                u,
+			Status:             status,
+			Error:              getError,
+			CrawlTime:          crawlTime,
+			RobotsExcluded:     robotsExcluded,
+			RedirectedTo:       redtoURL,
+			GetNow:             getnow,
+			Mime:               mime,
+			FnvFingerprint:     fnvFP,
+			FnvTextFingerprint: fnvFP,
 		}
 		linfos = append(linfos, linfo)
 

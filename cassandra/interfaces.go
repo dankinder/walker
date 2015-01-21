@@ -98,6 +98,9 @@ type LinkInfo struct {
 	// FNV hash of the contents
 	FnvFingerprint int64
 
+	// FNV hash of the text extracted from the page
+	FnvTextFingerprint int64
+
 	// Body of request (if configured to be stored)
 	Body string
 
