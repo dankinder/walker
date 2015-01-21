@@ -71,7 +71,7 @@ PORT=$2
 
 ## Let's execute
 go run walker/main.go schema -o $LEFT_FILE
-cqlsh -k walker -e 'describe schema' $HOST $PORT > $RIGHT_FILE
+cqlsh -k walker -e 'describe keyspace walker' $HOST $PORT > $RIGHT_FILE
 diff $LEFT_FILE $RIGHT_FILE
 
 if [ $DELETE_FILES -eq "1" ]
