@@ -75,7 +75,7 @@ have crawled so far.
 Make sure you have [go installed and a GOPATH set](https://golang.org/doc/install):
 
 ```sh
-go get github.com/iParadigms/walker
+go get github.com/iParadigms/walker/...
 ```
 
 To get going quickly, you need to install Cassandra. A simple install of

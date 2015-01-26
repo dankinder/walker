@@ -565,8 +565,11 @@ var DispatcherTests = []DispatcherTest{
 }
 
 func runDispatcher(t *testing.T) {
-	d := &Dispatcher{}
-	err := d.oneShot(1)
+	d, err := NewDispatcher()
+	if err != nil {
+		t.Fatalf("Failed to create dispatcher: %v", err)
+	}
+	err = d.oneShot(1)
 	if err != nil {
 		t.Fatalf("Failed to run dispatcher: %v", err)
 	}
@@ -910,8 +913,11 @@ func TestAutoUnclaim(t *testing.T) {
 		// Yes, you DO need to run the dispatcher for two iterations. The first run
 		// will queue the domains, the second will call fetcherIsAlive and
 		// cleanStrandedClaims
-		d := &Dispatcher{}
-		err := d.oneShot(2)
+		d, err := NewDispatcher()
+		if err != nil {
+			t.Fatalf("Failed to create dispatcher: %v", err)
+		}
+		err = d.oneShot(2)
 		if err != nil {
 			t.Fatalf("Failed to run dispatcher: %v", err)
 		}
@@ -994,7 +1000,10 @@ func TestDispatchInterval(t *testing.T) {
 
 		start := time.Now()
 
-		d := &Dispatcher{}
+		d, err := NewDispatcher()
+		if err != nil {
+			t.Fatalf("Failed to create dispatcher: %v", err)
+		}
 		go d.StartDispatcher()
 		time.Sleep(time.Millisecond * 200)
 
@@ -1313,7 +1322,10 @@ func TestDispatchPruning(t *testing.T) {
 		}
 	}
 
-	d := &Dispatcher{}
+	d, err := NewDispatcher()
+	if err != nil {
+		t.Fatalf("Dispatcher failed to initialize: %v", err)
+	}
 	go d.StartDispatcher()
 	time.Sleep(time.Millisecond * 300)
 	d.StopDispatcher()
