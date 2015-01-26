@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -338,18 +339,17 @@ func (d *Dispatcher) quitSignaled() bool {
 	}
 }
 
-//
 // Cell captures all the information for a link in the generateSegments method.
 // Every cell generated in that method shares the same domain (hence we don't
 // store the domain in the struct).
-//
 type cell struct {
 	subdom, path, proto string
 	crawlTime           time.Time
 	getnow              bool
+	fnvText             int64
 }
 
-// 2 cells are equivalent if their full link renders to the same string.
+// equivalent checks if the full link string form of 2 cells could be the same
 func (c *cell) equivalent(other *cell) bool {
 	return c.path == other.path &&
 		c.subdom == other.subdom &&
@@ -362,7 +362,6 @@ func (c *cell) equivalent(other *cell) bool {
 // and returns:
 //   (a) a string that can be used as a CQL insert statement for all of the columns of itr.
 //   (b) The name of the columns that are included in the insert statement.
-//
 func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
 	cols := itr.Columns()
 	colHeaders := []string{}
@@ -408,11 +407,11 @@ type SegmentGenerator struct {
 	domain string
 
 	// links marked getnow
-	getNowLinks []*walker.URL
+	getNowLinks LinkList
 	// links that haven't been crawled
-	uncrawledLinks []*walker.URL
+	uncrawledLinks LinkList
 	// already crawled links, oldest links out first
-	crawledLinks *PriorityURL
+	crawledLinks LinkList
 
 	// Count of the total number of links in this domain
 	totalLinksCount int
@@ -420,7 +419,40 @@ type SegmentGenerator struct {
 	uncrawledLinksCount int
 
 	// after analysis, the links we actually want to put in the segment
-	linksToDispatch []*walker.URL
+	linksToDispatch []*LinkInfo
+}
+
+// LinkList is a list of LinkInfos that implements sort.Interface, so we can
+// easily sort and deduplicate it
+type LinkList []*LinkInfo
+
+func (l LinkList) Len() int           { return len(l) }
+func (l LinkList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
+func (l LinkList) Less(i, j int) bool { return l[i].URL.Path < l[j].URL.Path }
+
+// Uniq assumes this list of links is sorted and gets rid of identical links
+func (l LinkList) Uniq() {
+	deduped := make(LinkList, 0, len(l))
+	if len(l) > 0 {
+		deduped = append(deduped, l[0])
+	}
+	for _, link := range l {
+		if !link.URL.EqualIgnoreLastCrawled(deduped[len(deduped)-1].URL) {
+			deduped = append(deduped, link)
+		}
+	}
+	if len(l) != len(deduped) {
+		log4go.Debug("Deleted duplicate links after filter (%v => %v items)", len(l), len(deduped))
+		log4go.Debug("List before deduplication:")
+		for _, link := range l {
+			log4go.Debug("%v", link.URL)
+		}
+		log4go.Debug("List after deduplication:")
+		for _, link := range deduped {
+			log4go.Debug("%v", link.URL)
+		}
+	}
+	l = deduped
 }
 
 // reset zeroes instance data for another Generate run
@@ -435,13 +467,12 @@ func (sg *SegmentGenerator) reset() {
 		panic(err)
 	}
 
-	sg.getNowLinks = []*walker.URL{}
-	sg.uncrawledLinks = []*walker.URL{}
-	sg.crawledLinks = &PriorityURL{}
-	heap.Init(sg.crawledLinks)
+	sg.getNowLinks = []*LinkInfo{}
+	sg.uncrawledLinks = []*LinkInfo{}
+	sg.crawledLinks = []*LinkInfo{}
 	sg.totalLinksCount = 0
 	sg.uncrawledLinksCount = 0
-	sg.linksToDispatch = []*walker.URL{}
+	sg.linksToDispatch = []*LinkInfo{}
 }
 
 // Generate reads links in for this domain, generates a segment for it, and
@@ -459,10 +490,12 @@ func (sg *SegmentGenerator) Generate(domain string) error {
 	if err := sg.collectLinks(); err != nil {
 		return err
 	}
-	sg.analyzeLinks()
+	sg.filterLinksByDuplicateContent()
+	sg.buildLinksToDispatch()
 	if err := sg.insertSegment(); err != nil {
 		return err
 	}
+
 	log4go.Info("Generated segment for %v (%v links)", domain, len(sg.linksToDispatch))
 	return nil
 }
@@ -488,25 +521,27 @@ func (sg *SegmentGenerator) dispatchedEmptyRecently() bool {
 // collectLinks scans the links table for the current domain and populates our
 // link lists
 func (sg *SegmentGenerator) collectLinks() error {
+	start := time.Now()
+
 	// Making this query consistency = One ensures that when we do this
 	// potentially massive read, the cassandra nodes don't have to waste big
 	// IO/Network verifying the data is consistent between a Quorum of nodes.
 	// The only risk is: if a node is down and does not receive some link
 	// writes, then comes back up and is read for this query it may be missing
 	// some of the newly crawled links. This is unlikely and seems acceptable.
-	q := sg.DB.Query(`SELECT subdom, path, proto, time, getnow
+	q := sg.DB.Query(`SELECT subdom, path, proto, time, getnow, fnv_txt
 						FROM links WHERE dom = ?`, sg.domain)
 	q.Consistency(gocql.One)
 
-	var start = true
-	var finish = true
+	var scanStarted = false
+	var scanFinished = true
 	var current cell
 	var previous cell
 	iter := q.Iter()
-	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawlTime, &current.getnow) {
-		if start {
+	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawlTime, &current.getnow, &current.fnvText) {
+		if !scanStarted {
 			previous = current
-			start = false
+			scanStarted = true
 		}
 
 		// IMPL NOTE: So the trick here is that, within a given domain, the entries
@@ -520,17 +555,19 @@ func (sg *SegmentGenerator) collectLinks() error {
 		previous = current
 
 		if len(sg.getNowLinks) >= walker.Config.Dispatcher.MaxLinksPerSegment {
-			finish = false
+			scanFinished = false
 			break
 		}
 	}
-	// Check !start here because we don't want to push if we queried 0 links
-	if !start && finish {
+	// Check scanStarted here because we don't want to push if we queried 0 links
+	if scanStarted && scanFinished {
 		sg.cellPush(&previous)
 	}
 	if err := iter.Close(); err != nil {
 		return fmt.Errorf("error selecting links for %v: %v", sg.domain, err)
 	}
+
+	log4go.Debug("Collected links for %v in %v", sg.domain, time.Since(start))
 	return nil
 }
 
@@ -553,16 +590,21 @@ func (sg *SegmentGenerator) cellPush(c *cell) {
 		u = sg.correctURLNormalization(u)
 	}
 
+	l := &LinkInfo{
+		URL:                u,
+		FnvTextFingerprint: c.fnvText,
+	}
+
 	if c.getnow {
-		sg.getNowLinks = append(sg.getNowLinks, u)
+		sg.getNowLinks = append(sg.getNowLinks, l)
 	} else if c.crawlTime.Equal(walker.NotYetCrawled) {
 		if len(sg.uncrawledLinks) < walker.Config.Dispatcher.MaxLinksPerSegment {
-			sg.uncrawledLinks = append(sg.uncrawledLinks, u)
+			sg.uncrawledLinks = append(sg.uncrawledLinks, l)
 		}
 	} else {
 		// Was this link crawled less than MinLinkRefreshTime?
 		if c.crawlTime.Add(sg.minRecrawlDelta).Before(time.Now()) {
-			heap.Push(sg.crawledLinks, u)
+			sg.crawledLinks = append(sg.crawledLinks, l)
 		}
 	}
 
@@ -672,10 +714,161 @@ func (sg *SegmentGenerator) correctURLNormalization(u *walker.URL) *walker.URL {
 	return c
 }
 
-// analyzeLinks uses all the available links and data to produce a final list
-// of links (sg.linksToDispatch) that should be in the segment.
-func (sg *SegmentGenerator) analyzeLinks() {
+// filterLinksByDuplicateContent uses the raw data pulled in by collectLinks
+// and filters links, ex. to cut out repeated query parameters that don't
+// affect content
+func (sg *SegmentGenerator) filterLinksByDuplicateContent() {
+	start := time.Now()
+	dupClusters := sg.buildDuplicateLinkClusters()
+	removeableParams := sg.discoverRemoveableQueryParameters(dupClusters)
+	sg.filterLinksWithRules(removeableParams)
+	log4go.Debug("Filtered links for %v in %v", sg.domain, time.Since(start))
+}
+
+// Build clusters of links with duplicate content. One "Cluster" is a group
+// of links with the same fingerprint, which is further grouped by
+// subdomain + path (without query parameters). An example entry might be:
+//		{
+//			29034823084: map[string]LinkList{
+//				"www/index.html": LinkList{
+//					<LinkInfo representing www.test.com/index.html>,
+//					<LinkInfo representing www.test.com/index.html?foo=bar>,
+//				},
+//				"www/": LinkList{
+//					<LinkInfo representing www.test.com/>,
+//					<LinkInfo representing www.test.com/?foo=bar>,
+//				},
+//			},
+//		}
+// In this example all four pages have the same textual content.
+func (sg *SegmentGenerator) buildDuplicateLinkClusters() map[int64]map[string]LinkList {
+	dupClusters := map[int64]map[string]LinkList{}
+	for _, linkList := range []LinkList{sg.uncrawledLinks, sg.crawledLinks} {
+		for _, l := range linkList {
+			entry := dupClusters[l.FnvTextFingerprint]
+			if entry == nil {
+				entry = map[string]LinkList{}
+				dupClusters[l.FnvTextFingerprint] = entry
+			}
+			subdom, err := l.URL.Subdomain()
+			if err != nil {
+				log4go.Error("Dispatcher creating query rules could not get subdomain: %v", err)
+				continue
+			}
+			key := subdom + l.URL.Path
+			entry[key] = append(entry[key], l)
+		}
+	}
+	log4go.Fine("Duplicate cluster map created: %v", dupClusters)
+	return dupClusters
+}
+
+// Discover which query parameters within a given cluster and path (path
+// meaning subdomain+path) differ, so we know those query parameters don't
+// affect content and can be deleted. Build a map identifying, for each
+// path, which we can delete (ex. the parameter 'foo' in examples above)
+func (sg *SegmentGenerator) discoverRemoveableQueryParameters(dupClusters map[int64]map[string]LinkList) map[string]map[string]bool {
+	removeableParamsByPath := map[string]map[string]bool{}
+	for _, linksByPath := range dupClusters {
+		for path, links := range linksByPath {
+			removeableParams := map[string]bool{}
+			if len(links) <= 1 {
+				continue
+			}
+
+			// Use the first link as baseline for comparison. Any differences
+			// or absent parameters in remaining links will mark that parameter
+			// as removeable.
+			compareValues := links[0].URL.Query()
+			for _, l := range links {
+				currentValues := l.URL.Query()
+
+				// First check that all parameters for this link are the same as the comparison
+				for param, vals := range currentValues {
+					if removeableParams[param] {
+						continue
+					}
+
+					compareVals, ok := compareValues[param]
+					if !ok || !stringListsEqual(vals, compareVals) {
+						removeableParams[param] = true
+						continue
+					}
+				}
+
+				// Then see if this link is missing any parameters that are in the comparison
+				for param := range compareValues {
+					_, ok := currentValues[param]
+					if !ok {
+						removeableParams[param] = true
+						continue
+					}
+				}
+			}
+			if len(removeableParams) > 0 {
+				removeableParamsByPath[path] = removeableParams
+				log4go.Debug("Created parameter removal for subdomain/path %v -- %v", path, removeableParams)
+			}
+		}
+	}
+	return removeableParamsByPath
+}
+
+// Filter all links, removing parameters, then sort these lists and remove
+// links that are no longer unique. Ex. www.test.com/?foo=bar will turn
+// into www.test.com/, duplicating the other link in the cluster, so one
+// will be removed.
+func (sg *SegmentGenerator) filterLinksWithRules(removeableParamsByPath map[string]map[string]bool) {
+	for _, linkList := range []LinkList{sg.uncrawledLinks, sg.crawledLinks} {
+		for _, l := range linkList {
+			subdom, err := l.URL.Subdomain()
+			if err != nil {
+				log4go.Error("Dispatcher filtering links could not get subdomain: %v", err)
+				continue
+			}
+			key := subdom + l.URL.Path
+			removeableParams := removeableParamsByPath[key]
+			vals := l.URL.Query()
+
+			// Remove any parameters marked as removeable for this path; use a
+			// boolean as a small optimization to prevent re-encoding query
+			// parameters for URLs where no replacements were made, which is
+			// most URLs
+			paramReplaced := false
+			for param := range removeableParams {
+				vals.Del(param)
+				paramReplaced = true
+			}
+			if paramReplaced {
+				beforeFilter := l.URL.String()
+				l.URL.RawQuery = vals.Encode()
+				log4go.Debug("Dispatcher filtering parameters, turning %s => %s", beforeFilter, l.URL)
+			}
+		}
+		sort.Sort(linkList)
+		linkList.Uniq()
+	}
+}
+
+// buildLinksToDispatch takes the final link lists, post-filtration, and
+// produces a dispatch set (limiting to the requested dispatch size and so on)
+func (sg *SegmentGenerator) buildLinksToDispatch() {
+	start := time.Now()
+
 	sg.linksToDispatch = append(sg.linksToDispatch, sg.getNowLinks...)
+
+	// Create a priority structure out of already-crawled links so we recrawl
+	// the oldest first.
+	crawledPrioritized := &PriorityURL{}
+	heap.Init(crawledPrioritized)
+	for _, l := range sg.crawledLinks {
+		heap.Push(crawledPrioritized, l)
+	}
+
+	// Since we filter query parameters and rewrite links, the crawled and
+	// uncrawled lists could end up with identical links. We use this map to
+	// deduplicate our final segment (keyed by full URL)
+	alreadyAdded := map[string]bool{}
 
 	limit := walker.Config.Dispatcher.MaxLinksPerSegment
 	numRemain := limit - len(sg.linksToDispatch)
@@ -685,40 +878,69 @@ func (sg *SegmentGenerator) analyzeLinks() {
 		idealUncrawled := numRemain - idealCrawled
 
 		for i := 0; i < idealUncrawled && len(sg.uncrawledLinks) > 0 && len(sg.linksToDispatch) < limit; i++ {
-			sg.linksToDispatch = append(sg.linksToDispatch, sg.uncrawledLinks[0])
+			l := sg.uncrawledLinks[0]
 			sg.uncrawledLinks = sg.uncrawledLinks[1:]
+			if alreadyAdded[l.URL.String()] {
+				i--
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
-		for i := 0; i < idealCrawled && sg.crawledLinks.Len() > 0 && len(sg.linksToDispatch) < limit; i++ {
-			sg.linksToDispatch = append(sg.linksToDispatch, heap.Pop(sg.crawledLinks).(*walker.URL))
+		for i := 0; i < idealCrawled && crawledPrioritized.Len() > 0 && len(sg.linksToDispatch) < limit; i++ {
+			l := heap.Pop(crawledPrioritized).(*LinkInfo)
+			if alreadyAdded[l.URL.String()] {
+				i--
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
 		for len(sg.uncrawledLinks) > 0 && len(sg.linksToDispatch) < limit {
-			sg.linksToDispatch = append(sg.linksToDispatch, sg.uncrawledLinks[0])
+			l := sg.uncrawledLinks[0]
 			sg.uncrawledLinks = sg.uncrawledLinks[1:]
+			if alreadyAdded[l.URL.String()] {
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
-		for sg.crawledLinks.Len() > 0 && len(sg.linksToDispatch) < limit {
-			sg.linksToDispatch = append(sg.linksToDispatch, heap.Pop(sg.crawledLinks).(*walker.URL))
+		for crawledPrioritized.Len() > 0 && len(sg.linksToDispatch) < limit {
+			l := heap.Pop(crawledPrioritized).(*LinkInfo)
+			if alreadyAdded[l.URL.String()] {
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 	}
+	log4go.Debug("Build final segment for %v in %v", sg.domain, time.Since(start))
 }
 
 // insertSegment inserts the links in sg.linksToDispatch into cassandra and
 // updates domain_info accordingly
 func (sg *SegmentGenerator) insertSegment() error {
-	for _, u := range sg.linksToDispatch {
-		log4go.Debug("Inserting link in segment: %s", u)
-		dom, subdom, err := u.TLDPlusOneAndSubdomain()
+	start := time.Now()
+
+	for _, l := range sg.linksToDispatch {
+		log4go.Debug("Inserting link in segment: %s", l.URL)
+		dom, subdom, err := l.URL.TLDPlusOneAndSubdomain()
 		if err != nil {
-			return fmt.Errorf("generateSegment not inserting %v: %v", u, err)
+			return fmt.Errorf("generateSegment not inserting %v: %v", l.URL, err)
 		}
 		err = sg.DB.Query(`INSERT INTO segments
 			(dom, subdom, path, proto, time)
 			VALUES (?, ?, ?, ?, ?)`,
-			dom, subdom, u.RequestURI(), u.Scheme, u.LastCrawled).Exec()
+			dom, subdom, l.URL.RequestURI(), l.URL.Scheme, l.URL.LastCrawled).Exec()
 		if err != nil {
-			log4go.Error("Failed to insert link (%v), error: %v", u, err)
+			log4go.Error("Failed to insert link (%v), error: %v", l.URL, err)
 		}
 	}
 
@@ -754,6 +976,8 @@ func (sg *SegmentGenerator) insertSegment() error {
 	if err != nil {
 		return fmt.Errorf("error inserting %v to domain_info: %v", sg.domain, err)
 	}
+
+	log4go.Debug("Inserted segment for %v in %v", sg.domain, time.Since(start))
 	return nil
 }
 
@@ -776,4 +1000,19 @@ func round(f float64) int {
 		return int(sign * (floor + 1))
 	}
 	return int(sign * floor)
+}
+
+// stringListsEqual simply checks for deep equality between two lists of
+// strings (faster than using reflect.DeepEqual). It will return false even if
+// only the string order differs.
+func stringListsEqual(l1 []string, l2 []string) bool {
+	if len(l1) != len(l2) {
+		return false
+	}
+	for i := range l1 {
+		if l1[i] != l2[i] {
+			return false
+		}
+	}
+	return true
 }

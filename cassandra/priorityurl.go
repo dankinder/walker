@@ -1,12 +1,10 @@
 package cassandra
 
-import "github.com/iParadigms/walker"
-
 // PriorityURL is a heap of URLs, where the next element Pop'ed off the list
 // points to the oldest (as measured by LastCrawled) element in the list. This
 // class is designed to be used with the container/heap package. This type is
 // currently only used in generateSegments
-type PriorityURL []*walker.URL
+type PriorityURL []*LinkInfo
 
 // Returns the length of this PriorityURL
 func (pq PriorityURL) Len() int {
@@ -15,7 +13,7 @@ func (pq PriorityURL) Len() int {
 
 // Return logical less-than between two items in this PriorityURL
 func (pq PriorityURL) Less(i, j int) bool {
-	return pq[i].LastCrawled.Before(pq[j].LastCrawled)
+	return pq[i].URL.LastCrawled.Before(pq[j].URL.LastCrawled)
 }
 
 // Swap two items in this PriorityURL
@@ -25,7 +23,7 @@ func (pq PriorityURL) Swap(i, j int) {
 
 // Push an item onto this PriorityURL
 func (pq *PriorityURL) Push(x interface{}) {
-	*pq = append(*pq, x.(*walker.URL))
+	*pq = append(*pq, x.(*LinkInfo))
 }
 
 // Pop an item onto this PriorityURL

@@ -236,3 +236,14 @@ func (u *URL) MakeAbsolute(base *URL) {
 	}
 	u.URL = base.URL.ResolveReference(u.URL)
 }
+
+// Equal returns true if this link is identical to `other`.
+func (u *URL) Equal(other *URL) bool {
+	return u.LastCrawled.Equal(other.LastCrawled) && u.EqualIgnoreLastCrawled(other)
+}
+
+// EqualIgnoreLastCrawled returns true if the URL portion of this link
+// (excluding LastCrawled) is equal to `other`.
+func (u *URL) EqualIgnoreLastCrawled(other *URL) bool {
+	return *u.URL == *other.URL
+}
