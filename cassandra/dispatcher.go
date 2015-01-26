@@ -732,8 +732,8 @@ func (sg *SegmentGenerator) correctURLNormalization(u *walker.URL) *walker.URL {
 func (sg *SegmentGenerator) filterLinksByDuplicateContent() {
 	start := time.Now()
 	dupClusters := sg.buildDuplicateLinkClusters()
-	removeableParams := sg.discoverRemoveableQueryParameters(dupClusters)
-	sg.filterLinksWithRules(removeableParams)
+	removableParams := sg.discoverRemoveableQueryParameters(dupClusters)
+	sg.filterLinksWithRules(removableParams)
 	log4go.Debug("Filtered links for %v in %v", sg.domain, time.Since(start))
 }
 
@@ -780,30 +780,30 @@ func (sg *SegmentGenerator) buildDuplicateLinkClusters() map[int64]map[string]Li
 // affect content and can be deleted. Build a map identifying, for each
 // path, which we can delete (ex. the parameter 'foo' in examples above)
 func (sg *SegmentGenerator) discoverRemoveableQueryParameters(dupClusters map[int64]map[string]LinkList) map[string]map[string]bool {
-	removeableParamsByPath := map[string]map[string]bool{}
+	removableParamsByPath := map[string]map[string]bool{}
 	for _, linksByPath := range dupClusters {
 		for path, links := range linksByPath {
-			removeableParams := map[string]bool{}
+			removableParams := map[string]bool{}
 			if len(links) <= 1 {
 				continue
 			}
 
 			// Use the first link as baseline for comparison. Any differences
 			// or absent parameters in remaining links will mark that parameter
-			// as removeable.
+			// as removable.
 			compareValues := links[0].URL.Query()
 			for _, l := range links {
 				currentValues := l.URL.Query()
 
 				// First check that all parameters for this link are the same as the comparison
 				for param, vals := range currentValues {
-					if removeableParams[param] {
+					if removableParams[param] {
 						continue
 					}
 
 					compareVals, ok := compareValues[param]
 					if !ok || !stringListsEqual(vals, compareVals) {
-						removeableParams[param] = true
+						removableParams[param] = true
 						continue
 					}
 				}
@@ -812,25 +812,25 @@ func (sg *SegmentGenerator) discoverRemoveableQueryParameters(dupClusters map[in
 				for param := range compareValues {
 					_, ok := currentValues[param]
 					if !ok {
-						removeableParams[param] = true
+						removableParams[param] = true
 						continue
 					}
 				}
 			}
-			if len(removeableParams) > 0 {
-				removeableParamsByPath[path] = removeableParams
-				log4go.Debug("Created parameter removal for subdomain/path %v -- %v", path, removeableParams)
+			if len(removableParams) > 0 {
+				removableParamsByPath[path] = removableParams
+				log4go.Debug("Created parameter removal for subdomain/path %v -- %v", path, removableParams)
 			}
 		}
 	}
-	return removeableParamsByPath
+	return removableParamsByPath
 }
 
 // Filter all links, removing parameters, then sort these lists and remove
 // links that are no longer unique. Ex. www.test.com/?foo=bar will turn
 // into www.test.com/, duplicating the other link in the cluster, so one
 // will be removed.
-func (sg *SegmentGenerator) filterLinksWithRules(removeableParamsByPath map[string]map[string]bool) {
+func (sg *SegmentGenerator) filterLinksWithRules(removableParamsByPath map[string]map[string]bool) {
 	for _, linkList := range []LinkList{sg.uncrawledLinks, sg.crawledLinks} {
 		for _, l := range linkList {
 			subdom, err := l.URL.Subdomain()
@@ -839,15 +839,15 @@ func (sg *SegmentGenerator) filterLinksWithRules(removeableParamsByPath map[stri
 				continue
 			}
 			key := subdom + l.URL.Path
-			removeableParams := removeableParamsByPath[key]
+			removableParams := removableParamsByPath[key]
 			vals := l.URL.Query()
 
-			// Remove any parameters marked as removeable for this path; use a
+			// Remove any parameters marked as removable for this path; use a
 			// boolean as a small optimization to prevent re-encoding query
 			// parameters for URLs where no replacements were made, which is
 			// most URLs
 			paramReplaced := false
-			for param := range removeableParams {
+			for param := range removableParams {
 				vals.Del(param)
 				paramReplaced = true
 			}
