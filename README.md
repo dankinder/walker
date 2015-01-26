@@ -13,7 +13,8 @@ An efficient, scalable, continuous crawler leveraging Go/Cassandra
 - [Travis CI](https://travis-ci.org/iParadigms/walker)
 - [FAQ](FAQ.md)
 - [contributing](contributing.md) (see about development, logging, and running
-  tests)
+- [Cassandra](cassandra/doc.md) (see more details about Cassandra data storage
+  and dispatching)
 
 # Alpha Warning
 This project is a work in progress and not ready for production release. Much
