@@ -362,7 +362,7 @@ type cell struct {
 	fnvText             int64
 }
 
-// equivalent checks if the full link string form of 2 cells could be the same
+// equivalent checks if the full link string of 2 cells are the same
 func (c *cell) equivalent(other *cell) bool {
 	return c.path == other.path &&
 		c.subdom == other.subdom &&
