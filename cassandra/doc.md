@@ -11,19 +11,18 @@ largest table, `links` stores all links parsed out of pages and crawled. For
 more details on the data model see `schema.go` or use the `walker schema`
 command.
 
-One key feature provided by Cassandra is clustered storage. Cassadra will
-partition the data across a cluster but also stores data in Sorted String
-Tables (SSTables), which automatically causes de-duplication of links as they
-are inserted (common as pages from the same site are repeatedly fetched).
+One key feature provided by Cassandra is clustered storage. Cassadra partitions
+data across a cluster but also stores data in Sorted String Tables (SSTables),
+which automatically causes de-duplication of links as they are inserted (common
+as pages from the same site are repeatedly fetched).
 
 # Dispatcher
 
 ## Overview
 
 The Cassandra Dispatcher continuously iterates domains checking for ones that
-need a new link segment generated. It reads in all existing links for the
-domain to perform analysis and choose a new set of links to be in the next
-segment.
+need a new link segment generated. It reads in and analyzes all existing links
+for the domain in order to choose a new set of links for the next segment.
 
 ## Link analysis and scheduling rules
 
@@ -48,8 +47,8 @@ and `/page1?lang=en` would always both be crawled).
 
 While crawling, Walker generates a hash fingerprint of the downloaded page's
 text. During analysis, it discovers which links have the same content
-(fingerprint) and path. Comparing these it learns which query parameters do not
-affect the page content, and filters those parameters out from similar pages.
+(fingerprint) and path. Comparing these, it learns which query parameters do
+not affect the page content and filters those parameters out.
 
 For example, suppose the following 2 links produce the same fingerprint:
 - test.com/page1.html
