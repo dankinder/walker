@@ -36,6 +36,9 @@ type ExistingLink struct {
 	URL    walker.URL
 	Status int // -1 indicates this is a parsed link, not yet fetched
 	GetNow bool
+
+	// zero value indicates the page is unique and should use a random unique int64
+	FnvTextFingerprint int64
 }
 
 var MaxPriority = 10
@@ -385,6 +388,180 @@ var DispatcherTests = []DispatcherTest{
 		ExpectedSegmentLinks: []walker.URL{},
 		NoDispatchExpected:   true,
 	},
+
+	DispatcherTest{
+		Tag: "BasicQueryParameterFiltering",
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+		ExistingLinks: []ExistingLink{
+			// First two links should be able to figure out that we don't need 'pag' parameter
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/page1.html").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 12345},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/page1.html?pag=1").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 12345},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/page1.html?pag=1&pag=1").URL,
+				LastCrawled: walker.NotYetCrawled}, Status: -1},
+
+			// Page with different path, should still be crawled
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/page2.html?pag=1").URL,
+				LastCrawled: walker.NotYetCrawled}, Status: -1},
+		},
+		ExpectedSegmentLinks: []walker.URL{
+			{URL: walker.MustParse("http://test.com/page1.html").URL,
+				LastCrawled: walker.NotYetCrawled},
+			{URL: walker.MustParse("http://test.com/page2.html?pag=1").URL,
+				LastCrawled: walker.NotYetCrawled},
+		},
+	},
+
+	DispatcherTest{
+		Tag: "MultiParameterQueryFiltering",
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+		ExistingLinks: []ExistingLink{
+			// parameter 'a' is the only consistent one and should remain
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/?a=b&c=d&e=f").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 3456},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/?e=f&a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 3456},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/?c=d&a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 3456},
+		},
+		ExpectedSegmentLinks: []walker.URL{
+			{URL: walker.MustParse("http://test.com/?a=b").URL,
+				LastCrawled: walker.NotYetCrawled},
+		},
+	},
+
+	DispatcherTest{
+		Tag: "QueryFilteringDistinguishesSubdomains",
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+		ExistingLinks: []ExistingLink{
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/?a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?c=d&e=f").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 1234},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?e=f").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 1234},
+		},
+		ExpectedSegmentLinks: []walker.URL{
+			// Expect parameter 'a' to be gone due to page duplication
+			{URL: walker.MustParse("http://test.com/").URL,
+				LastCrawled: walker.NotYetCrawled},
+
+			// Still expect this www link, since it's on a different subdomain
+			// from the pages with the same fingerprint
+			{URL: walker.MustParse("http://www.test.com/?a=b").URL,
+				LastCrawled: walker.NotYetCrawled},
+
+			// Expect parameter 'c' to be filtered only for the www links
+			{URL: walker.MustParse("http://www.test.com/?e=f").URL,
+				LastCrawled: walker.NotYetCrawled},
+		},
+	},
+
+	DispatcherTest{
+		Tag: "QueryFilteringClearsDuplicateLinks",
+		ExistingDomainInfos: []ExistingDomainInfo{
+			{Dom: "test.com"},
+		},
+		ExistingLinks: []ExistingLink{
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/?a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://test.com/").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?a=b").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 111222},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?c=d&e=f").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 1234},
+			{URL: walker.URL{
+				URL:         walker.MustParse("http://www.test.com/?e=f").URL,
+				LastCrawled: time.Now().AddDate(0, 0, -4),
+			},
+				Status:             http.StatusOK,
+				FnvTextFingerprint: 1234},
+		},
+		ExpectedSegmentLinks: []walker.URL{
+			// Expect parameter 'a' to be gone due to page duplication
+			{URL: walker.MustParse("http://test.com/").URL,
+				LastCrawled: walker.NotYetCrawled},
+
+			// Still expect this www link, since it's on a different subdomain
+			// from the pages with the same fingerprint
+			{URL: walker.MustParse("http://www.test.com/?a=b").URL,
+				LastCrawled: walker.NotYetCrawled},
+
+			// Expect parameter 'c' to be filtered only for the www links
+			{URL: walker.MustParse("http://www.test.com/?e=f").URL,
+				LastCrawled: walker.NotYetCrawled},
+		},
+	},
 }
 
 func runDispatcher(t *testing.T) {
@@ -428,6 +605,7 @@ func TestDispatcherBasic(t *testing.T) {
 			}
 		}
 
+		nextAutoFingerprint := int64(1000)
 		for _, el := range dt.ExistingLinks {
 			dom, subdom, _ := el.URL.TLDPlusOneAndSubdomain()
 			if el.Status == -1 {
@@ -440,15 +618,20 @@ func TestDispatcherBasic(t *testing.T) {
 					el.URL.LastCrawled,
 					el.GetNow)
 			} else {
-				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, stat, getnow)
-								VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				if el.FnvTextFingerprint == 0 {
+					el.FnvTextFingerprint = nextAutoFingerprint
+					nextAutoFingerprint += 1
+				}
+				q = db.Query(`INSERT INTO links (dom, subdom, path, proto, time, stat, getnow, fnv_txt)
+								VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 					dom,
 					subdom,
 					el.URL.RequestURI(),
 					el.URL.Scheme,
 					el.URL.LastCrawled,
 					el.Status,
-					el.GetNow)
+					el.GetNow,
+					el.FnvTextFingerprint)
 			}
 			if err := q.Exec(); err != nil {
 				t.Fatalf("Failed to insert test links: %v\nQuery: %v", err, q)

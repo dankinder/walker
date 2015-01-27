@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,10 +41,6 @@ type Dispatcher struct {
 	// them to finish before we start a new domain iteration
 	generatingWG *semaphore.Semaphore
 
-	// do not dispatch any link that has been crawled within this amount of
-	// time; set by dispatcher.min_link_refresh_time config parameter
-	minRecrawlDelta time.Duration
-
 	// Age at at which an active_fetcher cache entry is considered stale
 	activeFetcherCachetime time.Duration
 
@@ -61,9 +58,6 @@ type Dispatcher struct {
 	// If true, this field signals that this dispatcher run should quit as soon as all
 	// available work is done.
 	oneShotIterations int
-
-	// How long do we wait before retrying a domain that didn't have any links.
-	emptyDispatchRetryInterval time.Duration
 }
 
 func NewDispatcher() (*Dispatcher, error) {
@@ -83,10 +77,6 @@ func NewDispatcher() (*Dispatcher, error) {
 	d.finishWG = semaphore.New()
 	d.generatingWG = semaphore.New()
 
-	d.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
-	if err != nil {
-		panic(err) //Not going to happen, parsed in config
-	}
 	ttl, err := time.ParseDuration(walker.Config.Fetcher.ActiveFetchersTTL)
 	if err != nil {
 		panic(err) //Not going to happen, parsed in config
@@ -97,11 +87,6 @@ func NewDispatcher() (*Dispatcher, error) {
 		panic(err) // Should not happen since it is parsed at config load
 	}
 	d.activeFetcherCachetime = time.Duration(float32(ttl) * walker.Config.Fetcher.ActiveFetchersCacheratio)
-
-	d.emptyDispatchRetryInterval, err = time.ParseDuration(walker.Config.Dispatcher.EmptyDispatchRetryInterval)
-	if err != nil {
-		panic(err)
-	}
 
 	return d, nil
 }
@@ -367,90 +352,21 @@ func (d *Dispatcher) quitSignaled() bool {
 	}
 }
 
-func (d *Dispatcher) generateRoutine() {
-	for domain := range d.domains {
-		if err := d.generateSegment(domain); err != nil {
-			log4go.Error("error generating segment for %v: %v", domain, err)
-		}
-		d.generatingWG.Done()
-	}
-	log4go.Debug("Finishing generateRoutine")
-}
-
-//
-// Some mathy type functions used in generateSegment
-//
-func imin(l int, r int) int {
-	if l < r {
-		return l
-	}
-
-	return r
-}
-
-func round(f float64) int {
-	abs := math.Abs(f)
-	sign := f / abs
-	floor := math.Floor(abs)
-	if abs-floor >= 0.5 {
-		return int(sign * (floor + 1))
-	}
-	return int(sign * floor)
-}
-
-//
 // Cell captures all the information for a link in the generateSegments method.
 // Every cell generated in that method shares the same domain (hence we don't
 // store the domain in the struct).
-//
 type cell struct {
 	subdom, path, proto string
 	crawlTime           time.Time
 	getnow              bool
+	fnvText             int64
 }
 
-// 2 cells are equivalent if their full link renders to the same string.
+// equivalent checks if the full link string of 2 cells are the same
 func (c *cell) equivalent(other *cell) bool {
 	return c.path == other.path &&
 		c.subdom == other.subdom &&
 		c.proto == other.proto
-}
-
-//
-// PriorityURL is a heap of URLs, where the next element Pop'ed off the list
-// points to the oldest (as measured by LastCrawled) element in the list. This
-// class is designed to be used with the container/heap package. This type is
-// currently only used in generateSegments
-//
-type PriorityURL []*walker.URL
-
-// Returns the length of this PriorityURL
-func (pq PriorityURL) Len() int {
-	return len(pq)
-}
-
-// Return logical less-than between two items in this PriorityURL
-func (pq PriorityURL) Less(i, j int) bool {
-	return pq[i].LastCrawled.Before(pq[j].LastCrawled)
-}
-
-// Swap two items in this PriorityURL
-func (pq PriorityURL) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-}
-
-// Push an item onto this PriorityURL
-func (pq *PriorityURL) Push(x interface{}) {
-	*pq = append(*pq, x.(*walker.URL))
-}
-
-// Pop an item onto this PriorityURL
-func (pq *PriorityURL) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	x := old[n-1]
-	*pq = old[0 : n-1]
-	return x
 }
 
 // createInsertAllColumns produces an insert statement that will usable to clone a CQL row. Arguments are:
@@ -459,7 +375,6 @@ func (pq *PriorityURL) Pop() interface{} {
 // and returns:
 //   (a) a string that can be used as a CQL insert statement for all of the columns of itr.
 //   (b) The name of the columns that are included in the insert statement.
-//
 func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
 	cols := itr.Columns()
 	colHeaders := []string{}
@@ -475,10 +390,244 @@ func createInsertAllColumns(table string, itr *gocql.Iter) (string, []string) {
 	return insert, colHeaders
 }
 
-// correctURLNormalization will verify that u is normalized. This method always returns the normalized link. If this
-// method finds that it's argument url is NOT normalized then the Datastore will be updated to reflect the normalized
+func (d *Dispatcher) generateRoutine() {
+	generator := &SegmentGenerator{DB: d.db}
+	for domain := range d.domains {
+		if err := generator.Generate(domain); err != nil {
+			log4go.Error("error generating segment for %v: %v", domain, err)
+		}
+		d.generatingWG.Done()
+	}
+	log4go.Debug("Finishing generateRoutine")
+}
+
+// SegmentGenerator is the dispatcher component for generating a segment of
+// links for an individual domain. See the Generate() function.
+type SegmentGenerator struct {
+	// A DB handle for the generator to use. Should be provided when
+	// constructing a SegmentGenerator
+	DB *gocql.Session
+
+	// do not dispatch any link that has been crawled within this amount of
+	// time; set by dispatcher.min_link_refresh_time config parameter
+	minRecrawlDelta time.Duration
+
+	// How long do we wait before retrying a domain that didn't have any links.
+	emptyDispatchRetryInterval time.Duration
+
+	// the current domain being generated
+	domain string
+
+	// links marked getnow
+	getNowLinks LinkList
+	// links that haven't been crawled
+	uncrawledLinks LinkList
+	// already crawled links, oldest links out first
+	crawledLinks LinkList
+
+	// Count of the total number of links in this domain
+	totalLinksCount int
+	// Count of the links not yet crawled in this domain
+	uncrawledLinksCount int
+
+	// after analysis, the links we actually want to put in the segment
+	linksToDispatch []*LinkInfo
+}
+
+// LinkList is a list of LinkInfos that implements sort.Interface, so we can
+// easily sort and deduplicate it
+type LinkList []*LinkInfo
+
+func (l LinkList) Len() int           { return len(l) }
+func (l LinkList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
+func (l LinkList) Less(i, j int) bool { return l[i].URL.Path < l[j].URL.Path }
+
+// Uniq assumes this list of links is sorted and gets rid of identical links
+func (l LinkList) Uniq() {
+	deduped := make(LinkList, 0, len(l))
+	if len(l) > 0 {
+		deduped = append(deduped, l[0])
+	}
+	for _, link := range l {
+		if !link.URL.EqualIgnoreLastCrawled(deduped[len(deduped)-1].URL) {
+			deduped = append(deduped, link)
+		}
+	}
+	if len(l) != len(deduped) {
+		log4go.Debug("Deleted duplicate links after filter (%v => %v items)", len(l), len(deduped))
+		log4go.Debug("List before deduplication:")
+		for _, link := range l {
+			log4go.Debug("%v", link.URL)
+		}
+		log4go.Debug("List after deduplication:")
+		for _, link := range deduped {
+			log4go.Debug("%v", link.URL)
+		}
+	}
+	l = deduped
+}
+
+// reset zeroes instance data for another Generate run
+func (sg *SegmentGenerator) reset() {
+	var err error
+	sg.minRecrawlDelta, err = time.ParseDuration(walker.Config.Dispatcher.MinLinkRefreshTime)
+	if err != nil {
+		panic(err)
+	}
+	sg.emptyDispatchRetryInterval, err = time.ParseDuration(walker.Config.Dispatcher.EmptyDispatchRetryInterval)
+	if err != nil {
+		panic(err)
+	}
+
+	sg.getNowLinks = []*LinkInfo{}
+	sg.uncrawledLinks = []*LinkInfo{}
+	sg.crawledLinks = []*LinkInfo{}
+	sg.totalLinksCount = 0
+	sg.uncrawledLinksCount = 0
+	sg.linksToDispatch = []*LinkInfo{}
+}
+
+// Generate reads links in for this domain, generates a segment for it, and
+// inserts the domain into domains_to_crawl (assuming a segment is ready to go)
+func (sg *SegmentGenerator) Generate(domain string) error {
+	sg.reset()
+	sg.domain = domain
+
+	if sg.dispatchedEmptyRecently() {
+		log4go.Debug("Domain %v recently dispatched with no links, not generating segment again", domain)
+		return nil
+	}
+	log4go.Info("Generating a crawl segment for %v", domain)
+
+	if err := sg.collectLinks(); err != nil {
+		return err
+	}
+	sg.filterLinksByDuplicateContent()
+	sg.buildLinksToDispatch()
+	if err := sg.insertSegment(); err != nil {
+		return err
+	}
+
+	log4go.Info("Generated segment for %v (%v links)", domain, len(sg.linksToDispatch))
+	return nil
+}
+
+// dispatchedEmptyRecently returns true if this given domain was dispatched
+// empty (meaning no links were chosen to be crawled so no segment was
+// generated) within the past dispatch_retry_interval (see walker.yaml). This
+// indicates that should not bother trying to dispatch it again yet.
+func (sg *SegmentGenerator) dispatchedEmptyRecently() bool {
+	var lastDispatch, lastEmptyDispatch time.Time
+	err := sg.DB.Query("SELECT last_dispatch, last_empty_dispatch FROM domain_info WHERE dom = ?",
+		sg.domain).Scan(&lastDispatch, &lastEmptyDispatch)
+	if err != nil {
+		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", sg.domain, err)
+		return true
+	}
+	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < sg.emptyDispatchRetryInterval {
+		return true
+	}
+	return false
+}
+
+// collectLinks scans the links table for the current domain and populates our
+// link lists
+func (sg *SegmentGenerator) collectLinks() error {
+	start := time.Now()
+
+	// Making this query consistency = One ensures that when we do this
+	// potentially massive read, the cassandra nodes don't have to waste big
+	// IO/Network verifying the data is consistent between a Quorum of nodes.
+	// The only risk is: if a node is down and does not receive some link
+	// writes, then comes back up and is read for this query it may be missing
+	// some of the newly crawled links. This is unlikely and seems acceptable.
+	q := sg.DB.Query(`SELECT subdom, path, proto, time, getnow, fnv_txt
+						FROM links WHERE dom = ?`, sg.domain)
+	q.Consistency(gocql.One)
+
+	var scanStarted = false
+	var scanFinished = true
+	var current cell
+	var previous cell
+	iter := q.Iter()
+	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawlTime, &current.getnow, &current.fnvText) {
+		if !scanStarted {
+			previous = current
+			scanStarted = true
+		}
+
+		// IMPL NOTE: So the trick here is that, within a given domain, the entries
+		// come out so that the crawlTime increases as you iterate. So in order to
+		// get the most recent link, simply take the last link in a series that shares
+		// dom, subdom, path, and protocol
+		if !current.equivalent(&previous) {
+			sg.cellPush(&previous)
+		}
+
+		previous = current
+
+		if len(sg.getNowLinks) >= walker.Config.Dispatcher.MaxLinksPerSegment {
+			scanFinished = false
+			break
+		}
+	}
+	// Check scanStarted here because we don't want to push if we queried 0 links
+	if scanStarted && scanFinished {
+		sg.cellPush(&previous)
+	}
+	if err := iter.Close(); err != nil {
+		return fmt.Errorf("error selecting links for %v: %v", sg.domain, err)
+	}
+
+	log4go.Debug("Collected links for %v in %v", sg.domain, time.Since(start))
+	return nil
+}
+
+// cellPush will push the argument cell onto one of the three link-lists.
+// logs failure if CreateURL fails. It also keeps track of total and uncrawled
+// links by incrementing sg.linksCount and sg.uncrawledLinksCount
+func (sg *SegmentGenerator) cellPush(c *cell) {
+	sg.totalLinksCount++
+	if c.crawlTime.Equal(walker.NotYetCrawled) {
+		sg.uncrawledLinksCount++
+	}
+
+	u, err := walker.CreateURL(sg.domain, c.subdom, c.path, c.proto, c.crawlTime)
+	if err != nil {
+		log4go.Error("CreateURL: " + err.Error())
+		return
+	}
+
+	if walker.Config.Dispatcher.CorrectLinkNormalization {
+		u = sg.correctURLNormalization(u)
+	}
+
+	l := &LinkInfo{
+		URL:                u,
+		FnvTextFingerprint: c.fnvText,
+	}
+
+	if c.getnow {
+		sg.getNowLinks = append(sg.getNowLinks, l)
+	} else if c.crawlTime.Equal(walker.NotYetCrawled) {
+		if len(sg.uncrawledLinks) < walker.Config.Dispatcher.MaxLinksPerSegment {
+			sg.uncrawledLinks = append(sg.uncrawledLinks, l)
+		}
+	} else {
+		// Was this link crawled less than MinLinkRefreshTime?
+		if c.crawlTime.Add(sg.minRecrawlDelta).Before(time.Now()) {
+			sg.crawledLinks = append(sg.crawledLinks, l)
+		}
+	}
+
+	return
+}
+
+// correctURLNormalization will verify that u is normalized. This method always
+// returns the normalized link. If this method finds that it's argument url is
+// NOT normalized then the Datastore will be updated to reflect the normalized
 // link.
-func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
+func (sg *SegmentGenerator) correctURLNormalization(u *walker.URL) *walker.URL {
 	c := u.NormalizedForm()
 	if c == nil {
 		return u
@@ -504,7 +653,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		log4go.Debug("correctURLNormalization adding domain_info entry for %q (derived from %q)", newdom, dom)
 		// Grab all the data for the domain in question
 		mp := map[string]interface{}{}
-		itr := d.db.Query(`SELECT * FROM domain_info WHERE dom = ?`, dom).Iter()
+		itr := sg.DB.Query(`SELECT * FROM domain_info WHERE dom = ?`, dom).Iter()
 		if !itr.MapScan(mp) {
 			log4go.Error("correctURLNormalization error; Failed to select from domain_info for URL %v", u.URL)
 			return u
@@ -522,7 +671,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 		for _, head := range colHeaders {
 			vals = append(vals, mp[head])
 		}
-		err = d.db.Query(insert, vals...).Exec()
+		err = sg.DB.Query(insert, vals...).Exec()
 		if err != nil {
 			log4go.Error("correctURLNormalization error; Failed to insert into domain_info for URL %v: %v", u.URL, err)
 			return u
@@ -531,7 +680,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 	// Create read iterator
 	read := `SELECT * FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
-	itr := d.db.Query(read, dom, subdom, proto, path).Iter()
+	itr := sg.DB.Query(read, dom, subdom, proto, path).Iter()
 
 	// Use the read iterator to fashion a generic insert statement to move all fields from one primary key
 	// to another.
@@ -551,7 +700,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 			vals = append(vals, mp[head])
 		}
 
-		err := d.db.Query(insert, vals...).Exec()
+		err := sg.DB.Query(insert, vals...).Exec()
 		if err != nil {
 			log4go.Error("correctURLNormalization error; Failed to insert for URL %v: %v", u.URL, err)
 			return u
@@ -568,7 +717,7 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 
 	// Now clobber the old rows
 	del := `DELETE FROM links WHERE dom = ? AND subdom = ? AND proto = ? AND path = ?`
-	err = d.db.Query(del, dom, subdom, proto, path).Exec()
+	err = sg.DB.Query(del, dom, subdom, proto, path).Exec()
 	if err != nil {
 		log4go.Error("correctURLNormalization error; Failed to delete for URL %v: %v", u.URL, err)
 		return u
@@ -577,169 +726,233 @@ func (d *Dispatcher) correctURLNormalization(u *walker.URL) *walker.URL {
 	return c
 }
 
-// generateSegment reads links in for this domain, generates a segment for it,
-// and inserts the domain into domains_to_crawl (assuming a segment is ready to
-// go)
-func (d *Dispatcher) generateSegment(domain string) error {
-	//
-	// If domain is empty, return early
-	//
-	var lastDispatch, lastEmptyDispatch time.Time
-	err := d.db.Query("SELECT last_dispatch, last_empty_dispatch FROM domain_info WHERE dom = ?",
-		domain).Scan(&lastDispatch, &lastEmptyDispatch)
-	if err != nil {
-		log4go.Error("Failed to read last_dispatch and last_empty_dispatch for %q: %v", domain, err)
-		return err
-	}
-	if lastEmptyDispatch.After(lastDispatch) && time.Since(lastEmptyDispatch) < d.emptyDispatchRetryInterval {
-		log4go.Debug("generateSegment pruned dispatch of domain %v", domain)
-		return nil
-	}
+// filterLinksByDuplicateContent uses the raw data pulled in by collectLinks
+// and filters links, ex. to cut out repeated query parameters that don't
+// affect content
+func (sg *SegmentGenerator) filterLinksByDuplicateContent() {
+	start := time.Now()
+	dupClusters := sg.buildDuplicateLinkClusters()
+	removableParams := sg.discoverRemoveableQueryParameters(dupClusters)
+	sg.filterLinksWithRules(removableParams)
+	log4go.Debug("Filtered links for %v in %v", sg.domain, time.Since(start))
+}
 
-	log4go.Info("Generating a crawl segment for %v", domain)
-
-	//
-	// Three lists to hold the 3 link types
-	//
-	var getNowLinks []*walker.URL    // links marked getnow
-	var uncrawledLinks []*walker.URL // links that haven't been crawled
-	var crawledLinks PriorityURL     // already crawled links, oldest links out first
-	heap.Init(&crawledLinks)
-
-	// cell push will push the argument cell onto one of the three link-lists.
-	// logs failure if CreateURL fails. It also keeps track of total and uncrawled
-	// links by incrementing linksCount and uncrawledLinksCount
-	var now = time.Now()
-	var limit = walker.Config.Dispatcher.MaxLinksPerSegment
-	linksCount := 0
-	uncrawledLinksCount := 0
-	cellPush := func(c *cell) {
-		linksCount++
-		if c.crawlTime.Equal(walker.NotYetCrawled) {
-			uncrawledLinksCount++
-		}
-
-		u, err := walker.CreateURL(domain, c.subdom, c.path, c.proto, c.crawlTime)
-		if err != nil {
-			log4go.Error("CreateURL: " + err.Error())
-			return
-		}
-
-		if walker.Config.Dispatcher.CorrectLinkNormalization {
-			u = d.correctURLNormalization(u)
-		}
-
-		if c.getnow {
-			getNowLinks = append(getNowLinks, u)
-		} else if c.crawlTime.Equal(walker.NotYetCrawled) {
-			if len(uncrawledLinks) < limit {
-				uncrawledLinks = append(uncrawledLinks, u)
+// Build clusters of links with duplicate content. One "Cluster" is a group
+// of links with the same fingerprint, which is further grouped by
+// subdomain + path (without query parameters). An example entry might be:
+//		{
+//			29034823084: map[string]LinkList{
+//				"www/index.html": LinkList{
+//					<LinkInfo representing www.test.com/index.html>,
+//					<LinkInfo representing www.test.com/index.html?foo=bar>,
+//				},
+//				"www/": LinkList{
+//					<LinkInfo representing www.test.com/>,
+//					<LinkInfo representing www.test.com/?foo=bar>,
+//				},
+//			},
+//		}
+// In this example all four pages have the same textual content.
+func (sg *SegmentGenerator) buildDuplicateLinkClusters() map[int64]map[string]LinkList {
+	dupClusters := map[int64]map[string]LinkList{}
+	for _, linkList := range []LinkList{sg.uncrawledLinks, sg.crawledLinks} {
+		for _, l := range linkList {
+			entry := dupClusters[l.FnvTextFingerprint]
+			if entry == nil {
+				entry = map[string]LinkList{}
+				dupClusters[l.FnvTextFingerprint] = entry
 			}
-		} else {
-			// Was this link crawled less than MinLinkRefreshTime?
-			if c.crawlTime.Add(d.minRecrawlDelta).Before(now) {
-				heap.Push(&crawledLinks, u)
+			subdom, err := l.URL.Subdomain()
+			if err != nil {
+				log4go.Error("Dispatcher creating query rules could not get subdomain: %v", err)
+				continue
+			}
+			key := subdom + l.URL.Path
+			entry[key] = append(entry[key], l)
+		}
+	}
+	log4go.Fine("Duplicate cluster map created: %v", dupClusters)
+	return dupClusters
+}
+
+// Discover which query parameters within a given cluster and path (path
+// meaning subdomain+path) differ, so we know those query parameters don't
+// affect content and can be deleted. Build a map identifying, for each
+// path, which we can delete (ex. the parameter 'foo' in examples above)
+func (sg *SegmentGenerator) discoverRemoveableQueryParameters(dupClusters map[int64]map[string]LinkList) map[string]map[string]bool {
+	removableParamsByPath := map[string]map[string]bool{}
+	for _, linksByPath := range dupClusters {
+		for path, links := range linksByPath {
+			removableParams := map[string]bool{}
+			if len(links) <= 1 {
+				continue
+			}
+
+			// Use the first link as baseline for comparison. Any differences
+			// or absent parameters in remaining links will mark that parameter
+			// as removable.
+			compareValues := links[0].URL.Query()
+			for _, l := range links {
+				currentValues := l.URL.Query()
+
+				// First check that all parameters for this link are the same as the comparison
+				for param, vals := range currentValues {
+					if removableParams[param] {
+						continue
+					}
+
+					compareVals, ok := compareValues[param]
+					if !ok || !stringListsEqual(vals, compareVals) {
+						removableParams[param] = true
+						continue
+					}
+				}
+
+				// Then see if this link is missing any parameters that are in the comparison
+				for param := range compareValues {
+					_, ok := currentValues[param]
+					if !ok {
+						removableParams[param] = true
+						continue
+					}
+				}
+			}
+			if len(removableParams) > 0 {
+				removableParamsByPath[path] = removableParams
+				log4go.Debug("Created parameter removal for subdomain/path %v -- %v", path, removableParams)
 			}
 		}
-
-		return
 	}
+	return removableParamsByPath
+}
 
-	//
-	// Do the scan, and populate the 3 lists
-	//
+// Filter all links, removing parameters, then sort these lists and remove
+// links that are no longer unique. Ex. www.test.com/?foo=bar will turn
+// into www.test.com/, duplicating the other link in the cluster, so one
+// will be removed.
+func (sg *SegmentGenerator) filterLinksWithRules(removableParamsByPath map[string]map[string]bool) {
+	for _, linkList := range []LinkList{sg.uncrawledLinks, sg.crawledLinks} {
+		for _, l := range linkList {
+			subdom, err := l.URL.Subdomain()
+			if err != nil {
+				log4go.Error("Dispatcher filtering links could not get subdomain: %v", err)
+				continue
+			}
+			key := subdom + l.URL.Path
+			removableParams := removableParamsByPath[key]
+			vals := l.URL.Query()
 
-	// Making this query consistency = One ensures that when we do this
-	// potentially massive read, the cassandra nodes don't have to waste big
-	// IO/Network verifying the data is consistent between a Quorum of nodes.
-	// The only risk is: if a node is down and does not receive some link
-	// writes, then comes back up and is read for this query it may be missing
-	// some of the newly crawled links. This is unlikely and seems acceptable.
-	q := d.db.Query(`SELECT subdom, path, proto, time, getnow
-						FROM links WHERE dom = ?`, domain)
-	q.Consistency(gocql.One)
-
-	var start = true
-	var finish = true
-	var current cell
-	var previous cell
-	iter := q.Iter()
-	for iter.Scan(&current.subdom, &current.path, &current.proto, &current.crawlTime, &current.getnow) {
-		if start {
-			previous = current
-			start = false
+			// Remove any parameters marked as removable for this path; use a
+			// boolean as a small optimization to prevent re-encoding query
+			// parameters for URLs where no replacements were made, which is
+			// most URLs
+			paramReplaced := false
+			for param := range removableParams {
+				vals.Del(param)
+				paramReplaced = true
+			}
+			if paramReplaced {
+				beforeFilter := l.URL.String()
+				l.URL.RawQuery = vals.Encode()
+				log4go.Debug("Dispatcher filtering parameters, turning %s => %s", beforeFilter, l.URL)
+			}
 		}
-
-		// IMPL NOTE: So the trick here is that, within a given domain, the entries
-		// come out so that the crawlTime increases as you iterate. So in order to
-		// get the most recent link, simply take the last link in a series that shares
-		// dom, subdom, path, and protocol
-		if !current.equivalent(&previous) {
-			cellPush(&previous)
-		}
-
-		previous = current
-
-		if len(getNowLinks) >= limit {
-			finish = false
-			break
-		}
+		sort.Sort(linkList)
+		linkList.Uniq()
 	}
-	// Check !start here because we don't want to push if we queried 0 links
-	if !start && finish {
-		cellPush(&previous)
-	}
-	if err := iter.Close(); err != nil {
-		return fmt.Errorf("error selecting links for %v: %v", domain, err)
+}
+
+// buildLinksToDispatch takes the final link lists, post-filtration, and
+// produces a dispatch set (limiting to the requested dispatch size and so on)
+func (sg *SegmentGenerator) buildLinksToDispatch() {
+	start := time.Now()
+
+	sg.linksToDispatch = append(sg.linksToDispatch, sg.getNowLinks...)
+
+	// Create a priority structure out of already-crawled links so we recrawl
+	// the oldest first.
+	crawledPrioritized := &PriorityURL{}
+	heap.Init(crawledPrioritized)
+	for _, l := range sg.crawledLinks {
+		heap.Push(crawledPrioritized, l)
 	}
 
-	//
-	// Merge the 3 link types
-	//
-	var links []*walker.URL
-	links = append(links, getNowLinks...)
+	// Since we filter query parameters and rewrite links, the crawled and
+	// uncrawled lists could end up with identical links. We use this map to
+	// deduplicate our final segment (keyed by full URL)
+	alreadyAdded := map[string]bool{}
 
-	numRemain := limit - len(links)
+	limit := walker.Config.Dispatcher.MaxLinksPerSegment
+	numRemain := limit - len(sg.linksToDispatch)
 	if numRemain > 0 {
 		refreshDecimal := walker.Config.Dispatcher.RefreshPercentage / 100.0
 		idealCrawled := round(refreshDecimal * float64(numRemain))
 		idealUncrawled := numRemain - idealCrawled
 
-		for i := 0; i < idealUncrawled && len(uncrawledLinks) > 0 && len(links) < limit; i++ {
-			links = append(links, uncrawledLinks[0])
-			uncrawledLinks = uncrawledLinks[1:]
+		for i := 0; i < idealUncrawled && len(sg.uncrawledLinks) > 0 && len(sg.linksToDispatch) < limit; i++ {
+			l := sg.uncrawledLinks[0]
+			sg.uncrawledLinks = sg.uncrawledLinks[1:]
+			if alreadyAdded[l.URL.String()] {
+				i--
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
-		for i := 0; i < idealCrawled && crawledLinks.Len() > 0 && len(links) < limit; i++ {
-			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
+		for i := 0; i < idealCrawled && crawledPrioritized.Len() > 0 && len(sg.linksToDispatch) < limit; i++ {
+			l := heap.Pop(crawledPrioritized).(*LinkInfo)
+			if alreadyAdded[l.URL.String()] {
+				i--
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
-		for len(uncrawledLinks) > 0 && len(links) < limit {
-			links = append(links, uncrawledLinks[0])
-			uncrawledLinks = uncrawledLinks[1:]
+		for len(sg.uncrawledLinks) > 0 && len(sg.linksToDispatch) < limit {
+			l := sg.uncrawledLinks[0]
+			sg.uncrawledLinks = sg.uncrawledLinks[1:]
+			if alreadyAdded[l.URL.String()] {
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 
-		for crawledLinks.Len() > 0 && len(links) < limit {
-			links = append(links, heap.Pop(&crawledLinks).(*walker.URL))
+		for crawledPrioritized.Len() > 0 && len(sg.linksToDispatch) < limit {
+			l := heap.Pop(crawledPrioritized).(*LinkInfo)
+			if alreadyAdded[l.URL.String()] {
+				continue
+			} else {
+				sg.linksToDispatch = append(sg.linksToDispatch, l)
+				alreadyAdded[l.URL.String()] = true
+			}
 		}
 	}
+	log4go.Debug("Build final segment for %v in %v", sg.domain, time.Since(start))
+}
 
-	//
-	// Insert into segments
-	//
-	for _, u := range links {
-		log4go.Debug("Inserting link in segment: %v", u.String())
-		dom, subdom, err := u.TLDPlusOneAndSubdomain()
+// insertSegment inserts the links in sg.linksToDispatch into cassandra and
+// updates domain_info accordingly
+func (sg *SegmentGenerator) insertSegment() error {
+	start := time.Now()
+
+	for _, l := range sg.linksToDispatch {
+		log4go.Debug("Inserting link in segment: %s", l.URL)
+		dom, subdom, err := l.URL.TLDPlusOneAndSubdomain()
 		if err != nil {
-			log4go.Error("generateSegment not inserting %v: %v", u, err)
-			return err
+			return fmt.Errorf("generateSegment not inserting %v: %v", l.URL, err)
 		}
-		err = d.db.Query(`INSERT INTO segments
+		err = sg.DB.Query(`INSERT INTO segments
 			(dom, subdom, path, proto, time)
 			VALUES (?, ?, ?, ?, ?)`,
-			dom, subdom, u.RequestURI(), u.Scheme, u.LastCrawled).Exec()
+			dom, subdom, l.URL.RequestURI(), l.URL.Scheme, l.URL.LastCrawled).Exec()
 		if err != nil {
-			log4go.Error("Failed to insert link (%v), error: %v", u, err)
+			log4go.Error("Failed to insert link (%v), error: %v", l.URL, err)
 		}
 	}
 
@@ -747,8 +960,8 @@ func (d *Dispatcher) generateSegment(domain string) error {
 	// Got any links
 	//
 	dispatched := true
-	if len(links) == 0 {
-		log4go.Info("No links to dispatch for %v", domain)
+	if len(sg.linksToDispatch) == 0 {
+		log4go.Info("No links to dispatch for %v", sg.domain)
 		dispatched = false
 	}
 
@@ -770,12 +983,48 @@ func (d *Dispatcher) generateSegment(domain string) error {
 								   		%s = ?
 								   WHERE dom = ?`, dispatchFieldName)
 
-	err = d.db.Query(updateQuery, dispatched, linksCount, uncrawledLinksCount, len(links), dispatchStamp,
-		domain).Exec()
+	err := sg.DB.Query(updateQuery, dispatched, sg.totalLinksCount, sg.uncrawledLinksCount, len(sg.linksToDispatch),
+		dispatchStamp, sg.domain).Exec()
 	if err != nil {
-		return fmt.Errorf("error inserting %v to domain_info: %v", domain, err)
+		return fmt.Errorf("error inserting %v to domain_info: %v", sg.domain, err)
 	}
-	log4go.Info("Generated segment for %v (%v links)", domain, len(links))
 
+	log4go.Debug("Inserted segment for %v in %v", sg.domain, time.Since(start))
 	return nil
+}
+
+//
+// Some mathy type functions used in generateSegment
+//
+func imin(l int, r int) int {
+	if l < r {
+		return l
+	}
+
+	return r
+}
+
+func round(f float64) int {
+	abs := math.Abs(f)
+	sign := f / abs
+	floor := math.Floor(abs)
+	if abs-floor >= 0.5 {
+		return int(sign * (floor + 1))
+	}
+	return int(sign * floor)
+}
+
+// stringListsEqual simply checks for deep equality between two lists of
+// strings (faster than using reflect.DeepEqual). It will return false even if
+// only the string order differs.
+func stringListsEqual(l1 []string, l2 []string) bool {
+	if len(l1) != len(l2) {
+		return false
+	}
+	for i := range l1 {
+		if l1[i] != l2[i] {
+			return false
+		}
+	}
+	return true
 }
