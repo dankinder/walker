@@ -455,13 +455,13 @@ func (l LinkList) Uniq() {
 	}
 	if len(l) != len(deduped) {
 		log4go.Debug("Deleted duplicate links after filter (%v => %v items)", len(l), len(deduped))
-		log4go.Debug("List before deduplication:")
+		log4go.Fine("List before deduplication:")
 		for _, link := range l {
-			log4go.Debug("%v", link.URL)
+			log4go.Fine("%v", link.URL)
 		}
-		log4go.Debug("List after deduplication:")
+		log4go.Fine("List after deduplication:")
 		for _, link := range deduped {
-			log4go.Debug("%v", link.URL)
+			log4go.Fine("%v", link.URL)
 		}
 	}
 	l = deduped
